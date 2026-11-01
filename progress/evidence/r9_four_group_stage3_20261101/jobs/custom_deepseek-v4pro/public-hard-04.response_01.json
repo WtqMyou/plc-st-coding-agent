@@ -1,0 +1,19 @@
+{
+  "model": "deepseek-v4-pro-0813",
+  "usage": {
+    "input_tokens": 1429,
+    "output_tokens": 6521,
+    "total_tokens": 7950,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens_details": {
+      "reasoning_tokens": 5944
+    }
+  },
+  "protocol": "responses",
+  "finish_reason": "completed",
+  "message": {
+    "content": "```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset : BOOL;\n    capacity : DINT;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    item : DINT;\n    buffer : ARRAY[1..4] OF DINT;\nEND_VAR\nVAR\n    headIdx : DINT := 1;\n    tailIdx : DINT := 1;\n    cnt : DINT := 0;\n    enqueue_prev : BOOL := FALSE;\n    dequeue_prev : BOOL := FALSE;\n    enqueue_rise : BOOL;\n    dequeue_rise : BOOL;\n    capEff : DINT;\nEND_VAR\n\n// 限制有效容量到数组边界 1..4\ncapEff := capacity;\nIF capEff < 1 THEN\n    capEff := 1;\nELSIF capEff > 4 THEN\n    capEff := 4;\nEND_IF\n\n// 边沿检测并更新历史\nenqueue_rise := enqueue AND NOT enqueue_prev;\ndequeue_rise := dequeue AND NOT dequeue_prev;\nenqueue_prev := enqueue;\ndequeue_prev := dequeue;\n\n// 默认无错误\nstatus := 0;\n\nIF reset THEN\n    // 复位优先：清空队列，忽略入队/出队请求\n    cnt := 0;\n    headIdx := 1;\n    tailIdx := 1;\nELSE\n    // 处理入队请求\n    IF enqueue_rise THEN\n        IF cnt < capEff THEN\n            buffer[tailIdx] := item;\n            tailIdx := tailIdx + 1;\n            IF tailIdx > capEff THEN\n                tailIdx := 1;\n            END_IF\n            cnt := cnt + 1;\n            status := 0;\n        ELSE\n            status := WORD#16#8002; // 满队入队被拒\n        END_IF\n    END_IF\n\n    // 处理出队请求\n    IF dequeue_rise THEN\n        IF cnt > 0 THEN\n            item := buffer[headIdx];\n            headIdx := headIdx + 1;\n            IF headIdx > capEff THEN\n                headIdx := 1;\n            END_IF\n            cnt := cnt - 1;\n            status := 0;\n        ELSE\n            status := WORD#16#8001; // 空队出队被拒\n        END_IF\n    END_IF\nEND_IF\n\n// 更新输出计数\nelementCount := cnt;\n\nEND_FUNCTION_BLOCK\n```"
+  }
+}
