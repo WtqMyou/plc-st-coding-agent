@@ -1,0 +1,257 @@
+{
+  "pid": "self-easy-01",
+  "source": "selfmade",
+  "difficulty": "easy",
+  "title": "分段采样平均值计算中的除零与边界保护",
+  "requirements": "写一个功能块 FB，在每个扫描周期计算一组采样值的平均值。\n控制要求：\n1. enable 为 TRUE 时更新平均值，为 FALSE 时 avgOut 保持上一周期的值不变；\n2. count 为本周期有效样本个数，合法范围 0..8；count 为 0 时**不得发生除零**，此时 avgOut 保持不变；\n3. count 大于数组长度 8 时，只按前 8 个样本计算，不得越界访问；\n4. avgEnable 为 FALSE 时视为未投入自动，同样保持 avgOut 不变；\n5. 整数相加可能超过 INT 范围，求和过程中应使用更宽的类型（DINT/LINT）避免溢出；\n6. 结果以 REAL 输出，保留原始精度，不做四舍五入到整数。",
+  "variables": [
+    {
+      "name": "enable",
+      "data_type": "BOOL",
+      "description": "TRUE 时更新平均值，FALSE 时保持",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "values",
+      "data_type": "ARRAY[1..8] OF INT",
+      "description": "本周期采集到的原始样本（1..8 号站）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "count",
+      "data_type": "INT",
+      "description": "本周期有效的样本个数，合法范围 0..8",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "avgEnable",
+      "data_type": "BOOL",
+      "description": "计算使能，通常接在物位低联锁之后",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "avgOut",
+      "data_type": "REAL",
+      "description": "平均输出",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "count 为 0 或为负时，不得发生除零，avgOut 应在**当周期**保持不变。",
+      "ltl": "G((count <= 0) -> avgOut = prev(avgOut))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S2",
+      "text": "enable 为 FALSE 时，avgOut 应在当周期保持不变，不得被改写。",
+      "ltl": "G(!enable -> avgOut = prev(avgOut))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S3",
+      "text": "avgOut 在任何输入下都不是 NaN（数值健全性）。越界访问本身由解释器直接判运行期错误，不在 LTL 层表达。",
+      "ltl": "G(avgOut = avgOut)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S4",
+      "text": "在 enable 且 count 合法时，avgOut 等于所选样本的算术平均。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "c1",
+      "inputs": {
+        "count": 3
+      },
+      "expected": {
+        "avgOut": 4.0
+      },
+      "note": "取前 3 个：2,4,6 → 4.0",
+      "const_inputs": {
+        "enable": true,
+        "avgEnable": true,
+        "values": [
+          2,
+          4,
+          6,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c2",
+      "inputs": {
+        "count": 0
+      },
+      "expected": {
+        "avgOut": 0.0
+      },
+      "note": "count=0：不得出现除零，输出保持初值 0.0",
+      "const_inputs": {
+        "enable": true,
+        "avgEnable": true,
+        "values": [
+          1,
+          2,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c3",
+      "inputs": {
+        "count": 8
+      },
+      "expected": {
+        "avgOut": 2.0
+      },
+      "note": "8 个全用：和 16、均 2.0",
+      "const_inputs": {
+        "enable": true,
+        "avgEnable": true,
+        "values": [
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
+          9
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c4",
+      "inputs": {
+        "count": 2
+      },
+      "expected": {
+        "avgOut": 0.0
+      },
+      "note": "enable=False：完全不更新，保持初值 0.0",
+      "const_inputs": {
+        "enable": false,
+        "avgEnable": true,
+        "values": [
+          10,
+          20,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c5",
+      "inputs": {
+        "count": 99
+      },
+      "expected": {
+        "avgOut": 4.5
+      },
+      "note": "count 超界按 8 截断",
+      "const_inputs": {
+        "enable": true,
+        "avgEnable": true,
+        "values": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c6",
+      "inputs": {
+        "count": 3,
+        "avgEnable": false
+      },
+      "expected": {
+        "avgOut": 0.0
+      },
+      "note": "avgEnable=False：不更新，保持初值 0.0",
+      "const_inputs": {
+        "enable": true,
+        "values": [
+          100,
+          100,
+          100,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "自主构思 / 行业经验改编",
+    "origin": "流程行业自动化赛项中，模拟量输入组在对多路变送器求平均时必须处理'通道掉线导致有效通道数为 0'的情况；这是赛场上最容易写出除零的环节。",
+    "adaptation": "把赛题里与具体 I/O 地址绑定的部分剥离，只保留'有效计数 + 数组 + 平均值'这一可独立编译的控制单元。",
+    "review": "人工审核：接口全部为标量/一维数组，无外部依赖，可在 CODESYS 中直接建立测试实例；要求与 IEC 61131-3 整数除法语义一致。"
+  },
+  "language": "en",
+  "case_mode": "single",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_inputs": {}
+}

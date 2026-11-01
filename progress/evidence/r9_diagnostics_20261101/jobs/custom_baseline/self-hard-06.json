@@ -1,0 +1,311 @@
+{
+  "pid": "self-hard-06",
+  "model": "MiniMax-M2.7",
+  "provider": "openai-compat",
+  "setting": "one-shot",
+  "max_iters": 1,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    runRequest      : BOOL;\n    pressure        : REAL;\n    pressureValid   : BOOL;\n    fuelFlow        : REAL;\n    steamFlow       : REAL;\n    outletCmd       : INT;\n    outletFeedback  : INT;\n    resetBtn        : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    tripLatched      : BOOL;\n    fuelPermit       : BOOL;\n    currentCauseMask : WORD;\n    latchedCauseMask : WORD;\n    diagnosticActive : BOOL;\nEND_VAR\n\nVAR\n    lastResetBtn     : BOOL;\n    consecStuckCount : INT;\n    resetRising      : BOOL;\n    tripCondition    : BOOL;\nEND_VAR\n\n(* Detect rising edge of reset button *)\nresetRising    := resetBtn AND NOT lastResetBtn;\nlastResetBtn   := resetBtn;\n\n(* Determine current diagnostic cause mask *)\nIF NOT runRequest THEN\n    currentCauseMask  := 0;\n    consecStuckCount  := 0;\nELSE\n    (* Bit0: pressure transmitter failure *)\n    IF NOT pressureValid THEN\n        currentCauseMask := WORD#1;            (* 1 << 0 *)\n    ELSE\n        currentCauseMask := WORD#0;\n    END_IF\n\n    (* Valve stuck detection (bit1) *)\n    IF runRequest AND pressureValid AND (pressure >= 4500.0)\n        AND (outletCmd >= 50) AND (outletFeedback <= 10) THEN\n        consecStuckCount := consecStuckCount + 1;\n    ELSE\n        consecStuckCount := 0;\n    END_IF\n\n    IF consecStuckCount >= 3 THEN\n        currentCauseMask := currentCauseMask OR WORD#2;   (* 1 << 1 *)\n    END_IF\n\n    (* Bit2: excess fuel (fuelFlow >= 4.0 and steamFlow <= 10.0) *)\n    IF (fuelFlow >= 4.0) AND (steamFlow <= 10.0) THEN\n        currentCauseMask := currentCauseMask OR WORD#4;   (* 1 << 2 *)\n    END_IF\n\n    (* Bit3: unidentified cause when overpressure but no other cause *)\n    IF pressureValid AND (pressure >= 4500.0) AND (currentCauseMask = WORD#0) THEN\n        currentCauseMask := currentCauseMask OR WORD#8;   (* 1 << 3 *)\n    END_IF\nEND_IF\n\n(* Trip condition: runRequest AND (pressureValid & overpressure OR pressureValid false) *)\ntripCondition := runRequest AND ( (pressureValid AND (pressure >= 4500.0)) OR (NOT pressureValid) );\n\n(* Set trip latch *)\nIF tripCondition THEN\n    tripLatched := TRUE;\nEND_IF\n\n(* Reset handling *)\nIF resetRising AND (NOT runRequest) AND pressureValid AND (pressure <= 4200.0) THEN\n    tripLatched      := FALSE;\n    latchedCauseMask := WORD#0;\n    consecStuckCount := 0;\nEND_IF\n\n(* Accumulate latched cause mask while trip is active *)\nIF tripLatched THEN\n    latchedCauseMask := latchedCauseMask OR currentCauseMask;\nEND_IF\n\n(* Fuel permit *)\nfuelPermit := runRequest AND NOT tripLatched;\n\n(* Diagnostic active flag *)\ndiagnosticActive := (currentCauseMask <> WORD#0);\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 9,
+      "tests_total": 10,
+      "feedback": "自动测试：9/10。\n用例 q10，模式 sequence，行为不匹配，请检查 currentCauseMask, tripLatched。\nLTL 检查：not_run。",
+      "prompt_tokens": 1404,
+      "completion_tokens": 7244,
+      "latency_s": 176.8130000000001,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 15.890999999999622,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-06_a79e4e42de",
+          "source_sha256": "9845e419f39be030d8c54f678fcca8680d6458d659e742d47ddec76514319804",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9\\scripts\\codesys_build.py": "f99996fb59af5a189c37c13bb463e11fccc7fcf12363e9d7b19897794cbf61df",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9\\stbench\\platforms.py": "2bfe4de2915d5423740960f0799ab1c4c5ea6aca8ab7089e86916ffff52eef5f",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "9845e419f39be030d8c54f678fcca8680d6458d659e742d47ddec76514319804",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 10,
+        "tests_passed": 9,
+        "pass_rate": 0.9,
+        "failure_summary": "q10: currentCauseMask 期望 1，实际 5",
+        "cases": [
+          {
+            "tc_id": "q1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": true,
+              "currentCauseMask": 0
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": true,
+              "currentCauseMask": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 12
+            },
+            "actual": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 12
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 14
+            },
+            "actual": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 14
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 14,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 14,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0
+            },
+            "actual": {
+              "tripLatched": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 4,
+              "latchedCauseMask": 4
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 4,
+              "latchedCauseMask": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q10",
+            "passed": false,
+            "mode": "sequence",
+            "message": "currentCauseMask 期望 1，实际 5",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 1
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 5
+            },
+            "hint": "q10（变送器失效：线索=1（优先于压力判据），并入累积 5）：currentCauseMask 期望 1，实际 5"
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.890999999999622,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-06_a79e4e42de",
+            "source_sha256": "9845e419f39be030d8c54f678fcca8680d6458d659e742d47ddec76514319804",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9\\scripts\\codesys_build.py": "f99996fb59af5a189c37c13bb463e11fccc7fcf12363e9d7b19897794cbf61df",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9\\stbench\\platforms.py": "2bfe4de2915d5423740960f0799ab1c4c5ea6aca8ab7089e86916ffff52eef5f",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "db12b9a8ec758ed933dcc57037d9836fa48a63753a43f6b1b56dfd2bccdb00f2",
+          "source_sha256": "9845e419f39be030d8c54f678fcca8680d6458d659e742d47ddec76514319804",
+          "problem_sha256": "ec7f50e6fefd1f630e291f89d759b4ac193aff4f3e1d58963096c3010f12098a",
+          "mc_timeout_seconds": 30,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {},
+          "cache_hit": false
+        }
+      },
+      "cost_cny": 0.05040042,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793517366.8431063,
+  "finished_at": 1793517543.6543546,
+  "error": "",
+  "stop_reason": "max_candidates",
+  "run_signature": "46c9260ed28682be7c5432236e75c9b8b0bf50c14b4907d73ec7031c1c81629e",
+  "experiment_kind": "live",
+  "tests_total": 10,
+  "request_window_seconds": 450,
+  "prompt_version": "v2.4-observable-st",
+  "solved": false,
+  "first_try": false,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 8648,
+  "total_latency_s": 176.8130000000001,
+  "n_attempts": 1
+}

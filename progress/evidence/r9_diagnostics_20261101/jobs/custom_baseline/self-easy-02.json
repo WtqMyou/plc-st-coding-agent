@@ -1,0 +1,257 @@
+{
+  "pid": "self-easy-02",
+  "model": "MiniMax-M2.7",
+  "provider": "openai-compat",
+  "setting": "one-shot",
+  "max_iters": 1,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    tankLevel    : REAL;\n    outletFlow   : REAL;\n    inletPermit  : BOOL;\n    resetBtn     : BOOL;\nEND_VAR\nVAR_OUTPUT\n    pumpRun          : BOOL;\n    alarmHigh        : BOOL;\n    alarmLow         : BOOL;\n    outletValveOpen  : BOOL;\nEND_VAR\nVAR\n    prevResetBtn   : BOOL := FALSE;\n    risingReset    : BOOL;\n    activeAlarmHigh : BOOL := FALSE;\n    activeAlarmLow  : BOOL := FALSE;\nEND_VAR\n\n    // 计算复位按钮上升沿\n    risingReset := resetBtn AND NOT prevResetBtn;\n\n    // 更新上一周期复位按钮状态\n    prevResetBtn := resetBtn;\n\n    // 高液位报警检测（自保持）\n    IF tankLevel >= 85.0 THEN\n        activeAlarmHigh := TRUE;\n    END_IF\n\n    // 低液位报警检测（自保持）\n    IF tankLevel <= 15.0 THEN\n        activeAlarmLow := TRUE;\n    END_IF\n\n    // 复位逻辑：仅当无报警时上升沿才生效\n    IF risingReset AND NOT activeAlarmHigh AND NOT activeAlarmLow THEN\n        activeAlarmHigh := FALSE;\n        activeAlarmLow  := FALSE;\n    END_IF\n\n    // 控制逻辑（报警优先）\n    // 高液位报警时立即停止进料泵\n    IF activeAlarmHigh THEN\n        pumpRun := FALSE;\n    ELSE\n        // 无高液位报警时：液位<85%、有进料许可、无低液位报警则启动泵\n        IF tankLevel < 85.0 AND inletPermit AND NOT activeAlarmLow THEN\n            pumpRun := TRUE;\n        ELSE\n            pumpRun := FALSE;\n        END_IF\n    END_IF\n\n    // 低液位报警时关闭出口阀\n    IF activeAlarmLow THEN\n        outletValveOpen := FALSE;\n    ELSE\n        // 无低液位报警时：液位>15%、无高液位报警则打开出口阀\n        IF tankLevel > 15.0 AND NOT activeAlarmHigh THEN\n            outletValveOpen := TRUE;\n        ELSE\n            outletValveOpen := FALSE;\n        END_IF\n    END_IF\n\n    // 输出报警状态\n    alarmHigh := activeAlarmHigh;\n    alarmLow  := activeAlarmLow;\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 5,
+      "tests_total": 8,
+      "feedback": "自动测试：5/8。\n用例 s4，模式 sequence，行为不匹配，请检查 alarmHigh。\n用例 s5，模式 sequence，行为不匹配，请检查 alarmHigh。\n用例 s8，模式 sequence，行为不匹配，请检查 alarmHigh。\nLTL 检查：not_run。",
+      "prompt_tokens": 1034,
+      "completion_tokens": 2190,
+      "latency_s": 64.875,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 16.547000000000025,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-easy-02_55358b4d95",
+          "source_sha256": "d101125de07842f5ceef9847bfe5904abdacd7efe77307467fb97fe6da4baed3",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9\\scripts\\codesys_build.py": "f99996fb59af5a189c37c13bb463e11fccc7fcf12363e9d7b19897794cbf61df",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9\\stbench\\platforms.py": "2bfe4de2915d5423740960f0799ab1c4c5ea6aca8ab7089e86916ffff52eef5f",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "d101125de07842f5ceef9847bfe5904abdacd7efe77307467fb97fe6da4baed3",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 8,
+        "tests_passed": 5,
+        "pass_rate": 0.625,
+        "failure_summary": "s4: alarmHigh 期望 False，实际 True",
+        "cases": [
+          {
+            "tc_id": "s1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "pumpRun": true,
+              "alarmHigh": false,
+              "alarmLow": false,
+              "outletValveOpen": true
+            },
+            "actual": {
+              "pumpRun": true,
+              "alarmHigh": false,
+              "alarmLow": false,
+              "outletValveOpen": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "alarmHigh": true,
+              "pumpRun": false
+            },
+            "actual": {
+              "alarmHigh": true,
+              "pumpRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "alarmHigh": true,
+              "pumpRun": false
+            },
+            "actual": {
+              "alarmHigh": true,
+              "pumpRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s4",
+            "passed": false,
+            "mode": "sequence",
+            "message": "alarmHigh 期望 False，实际 True",
+            "expected": {
+              "alarmHigh": false
+            },
+            "actual": {
+              "alarmHigh": true
+            },
+            "hint": "s4（复位上升沿 → 清报警、恢复运行）：alarmHigh 期望 False，实际 True"
+          },
+          {
+            "tc_id": "s5",
+            "passed": false,
+            "mode": "sequence",
+            "message": "alarmHigh 期望 False，实际 True",
+            "expected": {
+              "alarmHigh": false
+            },
+            "actual": {
+              "alarmHigh": true
+            },
+            "hint": "s5（松开复位 → 报警不得复现（证明是边沿触发））：alarmHigh 期望 False，实际 True"
+          },
+          {
+            "tc_id": "s6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "alarmLow": true,
+              "pumpRun": false,
+              "outletValveOpen": false
+            },
+            "actual": {
+              "alarmLow": true,
+              "pumpRun": false,
+              "outletValveOpen": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "alarmLow": true,
+              "alarmHigh": true,
+              "pumpRun": false
+            },
+            "actual": {
+              "alarmLow": true,
+              "alarmHigh": true,
+              "pumpRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s8",
+            "passed": false,
+            "mode": "sequence",
+            "message": "alarmHigh 期望 False，实际 True",
+            "expected": {
+              "alarmHigh": false
+            },
+            "actual": {
+              "alarmHigh": true
+            },
+            "hint": "s8（复位清报警；无进料许可 → 停泵）：alarmHigh 期望 False，实际 True"
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 16.547000000000025,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-easy-02_55358b4d95",
+            "source_sha256": "d101125de07842f5ceef9847bfe5904abdacd7efe77307467fb97fe6da4baed3",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9\\scripts\\codesys_build.py": "f99996fb59af5a189c37c13bb463e11fccc7fcf12363e9d7b19897794cbf61df",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9\\stbench\\platforms.py": "2bfe4de2915d5423740960f0799ab1c4c5ea6aca8ab7089e86916ffff52eef5f",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "db12b9a8ec758ed933dcc57037d9836fa48a63753a43f6b1b56dfd2bccdb00f2",
+          "source_sha256": "d101125de07842f5ceef9847bfe5904abdacd7efe77307467fb97fe6da4baed3",
+          "problem_sha256": "eae60fe023857ef87200904d9290d4090f96e7d8453d27069f862aa8fa6d7c25",
+          "mc_timeout_seconds": 30,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {},
+          "cache_hit": false
+        }
+      },
+      "cost_cny": 0.016248246,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793515568.2809696,
+  "finished_at": 1793515633.1483822,
+  "error": "",
+  "stop_reason": "max_candidates",
+  "run_signature": "3cffd234a74d89d2963591b560701f689d181c4ea53abac4e949b137397c5847",
+  "experiment_kind": "live",
+  "tests_total": 8,
+  "request_window_seconds": 450,
+  "prompt_version": "v2.4-observable-st",
+  "solved": false,
+  "first_try": false,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 3224,
+  "total_latency_s": 64.875,
+  "n_attempts": 1
+}
