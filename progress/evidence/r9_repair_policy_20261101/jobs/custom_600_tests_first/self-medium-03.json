@@ -1,0 +1,166 @@
+{
+  "pid": "self-medium-03",
+  "model": "MiniMax-M2.7",
+  "provider": "openai-compat",
+  "setting": "iterative",
+  "max_iters": 2,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "TYPE E_GateState\n    (* 四状态枚举 *)\n    TX_NAMESPACE.E_GateState : (\n        IDLE    := 0,\n        OPENING := 1,\n        CLOSING := 2,\n        FAULT   := 3\n    );\nEND_TYPE\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n    openBtn    : BOOL;  (* 开门按钮，上升沿有效 *)\n    closeBtn   : BOOL;  (* 关门按钮，上升沿有效 *)\n    openLimit  : BOOL;  (* 开到位限位开关 *)\n    closeLimit : BOOL;  (* 关到位限位开关 *)\n    obstacle   : BOOL;  (* 防夹物体检测 *)\nEND_VAR\nVAR_OUTPUT\n    motorUp   : BOOL;  (* 电机上升输出 *)\n    motorDown : BOOL;  (* 电机下降输出 *)\n    errorFlag : BOOL;  (* 故障锁存标志 *)\nEND_VAR\nVAR\n    state       : E_GateState := IDLE;  (* 当前状态 *)\n    prevOpenBtn : BOOL := FALSE;        (* 上一周期开门按钮状态 *)\n    prevCloseBtn: BOOL := FALSE;        (* 上一周期关门按钮状态 *)\n    edgeOpen    : BOOL;                 (* 开门按钮上升沿 *)\n    edgeClose   : BOOL;                 (* 关门按钮上升沿 *)\nEND_VAR\n\n    (* 计算上升沿 *)\n    edgeOpen  := openBtn AND NOT prevOpenBtn;\n    edgeClose := closeBtn AND NOT prevCloseBtn;\n\n    CASE state OF\n        IDLE:\n            motorUp   := FALSE;\n            motorDown := FALSE;\n            errorFlag := FALSE;\n            (* 检测开门/关门按钮上升沿，且未到对应限位 *)\n            IF edgeOpen AND NOT openLimit THEN\n                state := OPENING;\n            ELSIF edgeClose AND NOT closeLimit THEN\n                state := CLOSING;\n            END_IF\n\n        OPENING:\n            (* 安全互锁：检测到障碍立即停机并进入FAULT *)\n            IF obstacle THEN\n                motorUp   := FALSE;\n                state     := FAULT;\n            ELSE\n                motorUp := NOT openLimit;\n                IF openLimit THEN\n                    motorUp := FALSE;\n                    state   := IDLE;\n                END_IF\n            END_IF\n\n        CLOSING:\n            (* 安全互锁：检测到障碍立即停止并反向开门 *)\n            IF obstacle THEN\n                motorDown := FALSE;\n                state     := OPENING;\n            ELSE\n                motorDown := NOT closeLimit;\n                IF closeLimit THEN\n                    motorDown := FALSE;\n                    state     := IDLE;\n                END_IF\n            END_IF\n\n        FAULT:\n            (* 故障锁存，电机不得动作 *)\n            motorUp   := FALSE;\n            motorDown := FALSE;\n            errorFlag := TRUE;\n            (* 仅当 openBtn 与 closeBtn 同时按下时解除故障 *)\n            IF openBtn AND closeBtn THEN\n                errorFlag := FALSE;\n                state     := IDLE;\n            END_IF\n    END_CASE\n\n    (* 更新历史状态以供下一周期边沿检测 *)\n    prevOpenBtn  := openBtn;\n    prevCloseBtn := closeBtn;\nEND_FUNCTION_BLOCK",
+      "compiles": false,
+      "tests_passed": 0,
+      "tests_total": 10,
+      "feedback": "静态检查或接口契约失败：\n第 25 行 [E_UNDECLARED] 使用了未声明的标识符 'IDLE'（state 的初值）\n第 37 行 [E_UNDECLARED] 使用了未声明的标识符 'IDLE'\n第 43 行 [E_UNDECLARED] 使用了未声明的标识符 'OPENING'\n第 45 行 [E_UNDECLARED] 使用了未声明的标识符 'CLOSING'\n第 48 行 [E_UNDECLARED] 使用了未声明的标识符 'OPENING'\n真实平台 codesys：not_run。\nStatic or interface gate failed\nLTL 检查：not_run。",
+      "prompt_tokens": 1059,
+      "completion_tokens": 3951,
+      "latency_s": 147.09399999999732,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "not_run",
+          "diagnostics": [
+            "Static or interface gate failed"
+          ]
+        }
+      },
+      "code_hash": "15dd28527fa2040aca8f414bc4289b4eefb9ee1de1f6c63590fa365652093e72",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 25,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'IDLE'（state 的初值）"
+          },
+          {
+            "level": "error",
+            "line": 37,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'IDLE'"
+          },
+          {
+            "level": "error",
+            "line": 43,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'OPENING'"
+          },
+          {
+            "level": "error",
+            "line": 45,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'CLOSING'"
+          },
+          {
+            "level": "error",
+            "line": 48,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'OPENING'"
+          },
+          {
+            "level": "error",
+            "line": 52,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'FAULT'"
+          },
+          {
+            "level": "error",
+            "line": 57,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'IDLE'"
+          },
+          {
+            "level": "error",
+            "line": 61,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'CLOSING'"
+          },
+          {
+            "level": "error",
+            "line": 65,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'OPENING'"
+          },
+          {
+            "level": "error",
+            "line": 70,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'IDLE'"
+          },
+          {
+            "level": "error",
+            "line": 74,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'FAULT'"
+          },
+          {
+            "level": "error",
+            "line": 82,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'IDLE'"
+          }
+        ],
+        "tests_total": 10,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_UNDECLARED] 第25行 使用了未声明的标识符 'IDLE'（state 的初值）; [E_UNDECLARED] 第37行 使用了未声明的标识符 'IDLE'; [E_UNDECLARED] 第43行 使用了未声明的标识符 'OPENING'",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static or interface gate failed"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "db12b9a8ec758ed933dcc57037d9836fa48a63753a43f6b1b56dfd2bccdb00f2",
+          "source_sha256": "15dd28527fa2040aca8f414bc4289b4eefb9ee1de1f6c63590fa365652093e72",
+          "problem_sha256": "9b7edcf5f2d7ca42448dc198c0210667a2d204c15176c04cfb1429ffec01fa9e",
+          "mc_timeout_seconds": 30,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {}
+        }
+      },
+      "cost_cny": 0.027975717,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793536528.4364014,
+  "finished_at": 1793536675.525597,
+  "error": "",
+  "stop_reason": "",
+  "run_signature": "e0cec9d0537bad29b89a0a85dda2933c399288ca2c3d426131d854e0ddaaad73",
+  "experiment_kind": "live",
+  "tests_total": 10,
+  "request_window_seconds": 450,
+  "prompt_version": "v2.4-observable-st",
+  "solved": false,
+  "first_try": false,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 0.0,
+  "total_tokens": 5010,
+  "total_latency_s": 147.09399999999732,
+  "n_attempts": 1
+}
