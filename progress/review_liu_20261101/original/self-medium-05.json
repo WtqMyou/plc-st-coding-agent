@@ -1,0 +1,454 @@
+{
+  "pid": "self-medium-05",
+  "source": "selfmade",
+  "difficulty": "medium",
+  "title": "合格蒸汽产量与净收益累计（闭区间判定 + 数据故障冻结）",
+  "requirements": "写一个功能块 FB，按扫描周期累计锅炉的合格蒸汽产量、燃料消耗与净收益。\n控制要求：\n1. 合格判据：steamTemp 在 [447.0, 453.0] 且 steamPressure 在 [3750.0, 3850.0]（**闭区间**，端点合格）；\n2. 本周期合格且 enable=TRUE 且无数据故障时，qualifiedTon += steamFlow * dt / 1000.0（kg/s × s ÷ 1000 → t）；无论是否合格，只要 enable 且无故障，fuelTon += fuelFlow * dt / 1000.0；\n3. 数据故障判据：dt <= 0.0 或 dt > 10.0 或 steamFlow 不在 [0,90] 或 fuelFlow 不在 [0,6]；故障拍**不累计**，累计值保持不变；\n4. resetBtn 上升沿：两个累计量清零，且**当拍不再累计**；\n5. revenue = qualifiedTon * 280.0，cost = fuelTon * 1500.0，netProfit = revenue - cost，三者每拍都要更新（即使不累计）。\n6. 所有累计量必须是非负的；enable=FALSE 时只更新判定位，不改累计量。",
+  "variables": [
+    {
+      "name": "enable",
+      "data_type": "BOOL",
+      "description": "计量使能",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "resetBtn",
+      "data_type": "BOOL",
+      "description": "清零按钮（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "dt",
+      "data_type": "LREAL",
+      "description": "本周期时长（s），合法 0 < dt <= 10",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "steamFlow",
+      "data_type": "LREAL",
+      "description": "蒸汽流量（kg/s），合法 0..90",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "fuelFlow",
+      "data_type": "LREAL",
+      "description": "燃料流量（kg/s），合法 0..6",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "steamTemp",
+      "data_type": "LREAL",
+      "description": "蒸汽温度（℃）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "steamPressure",
+      "data_type": "LREAL",
+      "description": "蒸汽压力（kPa）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "qualified",
+      "data_type": "BOOL",
+      "description": "本周期蒸汽是否合格",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "dataFault",
+      "data_type": "BOOL",
+      "description": "数据故障（参数越界）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "qualifiedTon",
+      "data_type": "LREAL",
+      "description": "累计合格蒸汽产量（t）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "fuelTon",
+      "data_type": "LREAL",
+      "description": "累计燃料消耗（t）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "revenue",
+      "data_type": "LREAL",
+      "description": "累计收入（元）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "cost",
+      "data_type": "LREAL",
+      "description": "累计成本（元）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "netProfit",
+      "data_type": "LREAL",
+      "description": "累计净收益（元）",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "合格判据：温度 447..453 ℃ 且 压力 3750..3850 kPa（闭区间）。",
+      "ltl": "G(qualified <-> (steamTemp >= 447.0 & steamTemp <= 453.0 & steamPressure >= 3750.0 & steamPressure <= 3850.0))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S2",
+      "text": "累计产量与累计燃料消耗永远非负。",
+      "ltl": "G((qualifiedTon >= 0.0) & (fuelTon >= 0.0))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S3",
+      "text": "复位上升沿当拍把两个累计量清零。",
+      "ltl": "G(rising(resetBtn) -> (qualifiedTon = 0.0 & fuelTon = 0.0))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S4",
+      "text": "数据故障判据：dt 不在 (0,10] 或流量越界。",
+      "ltl": "G(dataFault <-> (dt <= 0.0 | dt > 10.0 | steamFlow < 0.0 | steamFlow > 90.0 | fuelFlow < 0.0 | fuelFlow > 6.0))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S5",
+      "text": "数据故障或未使能时，累计燃料在本拍保持不变。",
+      "ltl": "G((!rising(resetBtn) & (!enable | dataFault)) -> fuelTon = prev(fuelTon))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S6",
+      "text": "数据故障且未复位时，累计产量在本拍保持不变。",
+      "ltl": "G((dataFault & !rising(resetBtn)) -> qualifiedTon = prev(qualifiedTon))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S7",
+      "text": "收入与成本随累计量单调（不得出现负收入）。",
+      "ltl": "G(revenue >= 0.0 & cost >= 0.0)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S8",
+      "text": "累计量按 flow*dt/1000 递推，收入=产量*280，成本=燃料*1500。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "q1",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "dt": 1.0,
+        "steamFlow": 20.0,
+        "fuelFlow": 1.0,
+        "steamTemp": 450.0,
+        "steamPressure": 3800.0
+      },
+      "expected": {
+        "qualified": true,
+        "dataFault": false,
+        "qualifiedTon": 0.02,
+        "fuelTon": 0.001,
+        "revenue": 5.6,
+        "cost": 1.5,
+        "netProfit": 4.1
+      },
+      "note": "正常：q=20*1/1000=0.02t，f=1*1/1000=0.001t",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q2",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "dt": 2.0,
+        "steamFlow": 20.0,
+        "fuelFlow": 1.0,
+        "steamTemp": 446.0,
+        "steamPressure": 3800.0
+      },
+      "expected": {
+        "qualified": false,
+        "dataFault": false,
+        "qualifiedTon": 0.02,
+        "fuelTon": 0.003,
+        "revenue": 5.6,
+        "cost": 4.5,
+        "netProfit": 1.1
+      },
+      "note": "温度 446 不合格：只累计燃料，不累计产量",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q3",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "dt": 1.0,
+        "steamFlow": 20.0,
+        "fuelFlow": 1.0,
+        "steamTemp": 447.0,
+        "steamPressure": 3750.0
+      },
+      "expected": {
+        "qualified": true,
+        "qualifiedTon": 0.04,
+        "fuelTon": 0.004,
+        "revenue": 11.2,
+        "cost": 6.0,
+        "netProfit": 5.2
+      },
+      "note": "【边界】447.0 与 3750.0 恰好合格（闭区间）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q4",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "dt": 0.0,
+        "steamFlow": 20.0,
+        "fuelFlow": 1.0,
+        "steamTemp": 450.0,
+        "steamPressure": 3800.0
+      },
+      "expected": {
+        "dataFault": true,
+        "qualifiedTon": 0.04,
+        "fuelTon": 0.004,
+        "netProfit": 5.2
+      },
+      "note": "【边界】dt=0 判数据故障：本拍不累计，不得除零也不得写坏累计值",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q5",
+      "inputs": {
+        "enable": true,
+        "resetBtn": true,
+        "dt": 1.0,
+        "steamFlow": 20.0,
+        "fuelFlow": 1.0,
+        "steamTemp": 450.0,
+        "steamPressure": 3800.0
+      },
+      "expected": {
+        "qualifiedTon": 0.0,
+        "fuelTon": 0.0,
+        "revenue": 0.0,
+        "cost": 0.0,
+        "netProfit": 0.0
+      },
+      "note": "复位上升沿：累计量清零，当拍不累计",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q6",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "dt": 1.0,
+        "steamFlow": 0.0,
+        "fuelFlow": 1.0,
+        "steamTemp": 450.0,
+        "steamPressure": 3800.0
+      },
+      "expected": {
+        "qualifiedTon": 0.0,
+        "fuelTon": 0.001,
+        "revenue": 0.0,
+        "cost": 1.5,
+        "netProfit": -1.5
+      },
+      "note": "只烧燃料不产汽：净收益为负，累计燃料照记",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q7",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "dt": 11.0,
+        "steamFlow": 20.0,
+        "fuelFlow": 1.0,
+        "steamTemp": 450.0,
+        "steamPressure": 3800.0
+      },
+      "expected": {
+        "dataFault": true,
+        "fuelTon": 0.001
+      },
+      "note": "【边界】dt=11 超上限 → 故障，不累计",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q8",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "dt": 1.0,
+        "steamFlow": 91.0,
+        "fuelFlow": 1.0,
+        "steamTemp": 450.0,
+        "steamPressure": 3800.0
+      },
+      "expected": {
+        "dataFault": true,
+        "fuelTon": 0.001,
+        "qualifiedTon": 0.0
+      },
+      "note": "【边界】蒸汽流量 91 超量程 → 故障",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q9",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "dt": 2.0,
+        "steamFlow": 90.0,
+        "fuelFlow": 6.0,
+        "steamTemp": 453.0,
+        "steamPressure": 3850.0
+      },
+      "expected": {
+        "qualified": true,
+        "dataFault": false,
+        "qualifiedTon": 0.18,
+        "fuelTon": 0.013,
+        "revenue": 50.4,
+        "cost": 19.5,
+        "netProfit": 30.9
+      },
+      "note": "【边界】四个量全部取合法上界：90*2/1000=0.18t，6*2/1000=0.012t",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q10",
+      "inputs": {
+        "enable": false,
+        "resetBtn": false,
+        "dt": 1.0,
+        "steamFlow": 50.0,
+        "fuelFlow": 2.0,
+        "steamTemp": 451.0,
+        "steamPressure": 3800.0
+      },
+      "expected": {
+        "qualified": true,
+        "qualifiedTon": 0.18,
+        "fuelTon": 0.013,
+        "netProfit": 30.9
+      },
+      "note": "enable=FALSE：只更新判定位，累计量保持（不得静默累加）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q11",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "dt": 1.0,
+        "steamFlow": 50.0,
+        "fuelFlow": 6.1,
+        "steamTemp": 451.0,
+        "steamPressure": 3800.0
+      },
+      "expected": {
+        "dataFault": true,
+        "fuelTon": 0.013
+      },
+      "note": "【边界】燃料 6.1 超量程 → 故障",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "队友评审草案改编（P02）",
+    "origin": "流程行业锅炉产汽计量与能耗核算：合格判定与累计量的关系在赛场上是高频错误点（把不合格蒸汽也算进产量）。",
+    "adaptation": "原草案用派生谓词 totalFlow/steamOK 表达判据，改为直接对接口变量写规约；补充 dt 越界与复位当拍不累计两条边界。",
+    "review": "人工审核：纯标量接口；浮点比较用闭区间；LREAL 与 REAL 语义一致。",
+    "agent_review": "2026-10-30 工程复验；上游人工审核声明原样保留，其完成状态未独立确认。数字测试期望保持不变；本地修订见二次更新整合说明。"
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 60.0,
+  "mc_inputs": {}
+}

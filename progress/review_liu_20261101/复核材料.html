@@ -1,0 +1,1717 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>五题工艺复核材料 · 刘晏铭</title><style>body{margin:0;background:#f2f5f9;color:#1c2b40;font:16px/1.8 system-ui,"Microsoft YaHei",sans-serif}main{max-width:1050px;margin:auto;padding:32px 20px}h1{font-size:29px}h2{font-size:22px}article,.intro{background:white;padding:26px;margin:24px 0;border:1px solid #dce4ed;border-radius:12px}nav a{display:inline-block;margin:4px 14px 4px 0;color:#1558a2}pre{white-space:pre-wrap;overflow-wrap:anywhere}.code{background:#f5f7fa;padding:18px;font:13px/1.65 Consolas,monospace}table{width:100%;border-collapse:collapse;font-size:14px}th,td{text-align:left;border-bottom:1px solid #dce4ed;padding:9px}.scroll{overflow:auto}summary{cursor:pointer;color:#1558a2;padding:12px 0}.pending{color:#97540b}small{color:#65758a}@media print{body{background:white}article{break-before:page;border:0}details{display:block}}</style><main><h1>五题工艺复核材料</h1><div class="intro"><p>指定负责人：刘晏铭 · 状态：待人工复核</p><p>请核对题目、参考答案和测试的单位、阈值、故障/复位优先级及未覆盖工况。已有自动测试通过不替代人工判断。</p><p>逐题回复：通过 / 需修改 / 无法确认，并附问题、建议、实际审阅人和日期。填写同包的“复核记录.md”即可。</p><p>本页可离线浏览，不调用模型，不运行设备。原始来源中的审核措辞尚未独立确认，本材料没有预填通过结论。</p><nav><a href="#self-hard-05">self-hard-05</a><a href="#self-hard-06">self-hard-06</a><a href="#self-hard-07">self-hard-07</a><a href="#self-medium-05">self-medium-05</a><a href="#self-medium-06">self-medium-06</a></nav></div><article id="self-hard-05"><h2>self-hard-05 · 燃烧状态与氧量修正联锁（熄火跳闸 + 分析仪故障降级）</h2><p class="pending">待人工复核</p><h3>建议核对</h3><ul><li>熄火同拍跳闸、燃料许可与风量输出的关系是否明确？</li><li>氧量分析仪故障仅切除修正的设定是否适合本题边界？</li><li>复位上升沿及其前置条件、修正和风量的限幅是否合理？</li></ul><h3>题目与平台适配要求</h3><pre>写一个功能块 FB，实现燃烧器的火焰联锁与烟气氧量修正。
+控制要求：
+1. 运行请求 runRequest 为 TRUE 且火焰探测器 flameOK 为 FALSE 时，**当拍**置位熄火跳闸 tripLatched，并切断燃料许可；
+2. tripLatched 自保持，只有在 runRequest=FALSE 且 flameOK=FALSE 的前提下，resetBtn 的**上升沿**才能清除；
+3. fuelPermit = runRequest AND flameOK AND NOT tripLatched；
+4. 氧量修正：trimEnable = fuelPermit AND NOT o2Fault；trimmer = 2.0 * (2.0 - o2PV)，并钳位到 [-10, +10]；trimEnable=FALSE 时 airTrim 必须为 0.0；
+5. o2Fault = NOT o2Valid OR o2PV &lt; 0.0 OR o2PV &gt; 21.0（分析仪故障只切除修正，**不得**切除燃料）；
+6. airCommand = baseAir + airTrim，钳位到 [0, 100]；fuelPermit=FALSE 时 airCommand 必须为 0.0。</pre><h3>接口</h3><div class="scroll"><table><thead><tr><th>变量</th><th>方向</th><th>类型</th><th>说明</th></tr></thead><tbody><tr><td>runRequest</td><td>输入</td><td>BOOL</td><td>燃烧运行请求</td></tr><tr><td>flameOK</td><td>输入</td><td>BOOL</td><td>火焰探测器反馈（TRUE=检测到火焰）</td></tr><tr><td>o2Valid</td><td>输入</td><td>BOOL</td><td>氧量分析仪数据有效</td></tr><tr><td>o2PV</td><td>输入</td><td>REAL</td><td>烟气含氧量测量值（%）</td></tr><tr><td>baseAir</td><td>输入</td><td>REAL</td><td>主风门基础开度给定（%）</td></tr><tr><td>resetBtn</td><td>输入</td><td>BOOL</td><td>复位按钮（上升沿有效）</td></tr><tr><td>fuelPermit</td><td>输出</td><td>BOOL</td><td>燃料允许（联锁输出）</td></tr><tr><td>trimEnable</td><td>输出</td><td>BOOL</td><td>氧量修正投入（无故障才为 TRUE）</td></tr><tr><td>airTrim</td><td>输出</td><td>REAL</td><td>氧量修正偏置（%），钳位 ±10</td></tr><tr><td>airCommand</td><td>输出</td><td>REAL</td><td>风门开度命令（%），钳位 0..100</td></tr><tr><td>tripLatched</td><td>输出</td><td>BOOL</td><td>熄火跳闸自保持</td></tr><tr><td>o2Fault</td><td>输出</td><td>BOOL</td><td>氧量分析仪故障（无效或越界）</td></tr></tbody></table></div><h3>性质说明</h3><ul><li><b>S1</b> 运行中失去火焰时，**同一周期**就必须跳闸（不得延迟一拍）。 <small>已有公式</small></li><li><b>S2</b> 跳闸一旦置位就自保持，只能由复位上升沿清除。 <small>已有公式</small></li><li><b>S3</b> 跳闸状态下绝不允许燃料许可。 <small>已有公式</small></li><li><b>S4</b> 无运行请求时不得给出燃料许可。 <small>已有公式</small></li><li><b>S5</b> 无燃料许可时风门命令必须归零（防止停机后残留开度）。 <small>已有公式</small></li><li><b>S6</b> 风门命令恒在 0..100 之间。 <small>已有公式</small></li><li><b>S7</b> 氧量修正偏置恒在 ±10 之间。 <small>已有公式</small></li><li><b>S8</b> 氧量分析仪故障当拍必须切除修正。 <small>已有公式</small></li><li><b>S9</b> 故障判据：数据无效或超出 0..21 量程。 <small>已有公式</small></li><li><b>S10</b> 修正系数与钳位后的合成值。 <small>仅测试覆盖</small></li></ul><details><summary>展开参考 ST 程序</summary><pre class="code">FUNCTION_BLOCK FB
+VAR_INPUT
+ runRequest : BOOL;
+ flameOK : BOOL;
+ o2Valid : BOOL;
+ o2PV : REAL;
+ baseAir : REAL;
+ resetBtn : BOOL;
+END_VAR
+VAR_OUTPUT
+ fuelPermit : BOOL;
+ trimEnable : BOOL;
+ airTrim : REAL;
+ airCommand : REAL;
+ tripLatched : BOOL;
+ o2Fault : BOOL;
+END_VAR
+VAR
+ prevReset : BOOL;
+ tripMem : BOOL;
+END_VAR
+o2Fault := (NOT o2Valid) OR (o2PV &lt; 0.0) OR (o2PV &gt; 21.0);
+IF runRequest AND NOT flameOK THEN
+ tripMem := TRUE;
+ELSIF resetBtn AND NOT prevReset AND NOT runRequest AND NOT flameOK THEN
+ tripMem := FALSE;
+END_IF;
+prevReset := resetBtn;
+tripLatched := tripMem;
+fuelPermit := runRequest AND flameOK AND NOT tripMem;
+trimEnable := fuelPermit AND NOT o2Fault;
+IF trimEnable THEN
+ airTrim := 2.0 * (2.0 - o2PV);
+ IF airTrim &gt; 10.0 THEN airTrim := 10.0; END_IF;
+ IF airTrim &lt; -10.0 THEN airTrim := -10.0; END_IF;
+ELSE
+ airTrim := 0.0;
+END_IF;
+IF fuelPermit THEN
+ airCommand := baseAir + airTrim;
+ IF airCommand &gt; 100.0 THEN airCommand := 100.0; END_IF;
+ IF airCommand &lt; 0.0 THEN airCommand := 0.0; END_IF;
+ELSE
+ airCommand := 0.0;
+END_IF;
+END_FUNCTION_BLOCK
+</pre></details><details><summary>展开测试与期望值</summary><pre class="code">[
+  {
+    &quot;tc_id&quot;: &quot;q1&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: false,
+      &quot;flameOK&quot;: false,
+      &quot;o2Valid&quot;: true,
+      &quot;o2PV&quot;: 4.0,
+      &quot;baseAir&quot;: 50.0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;o2Fault&quot;: false,
+      &quot;tripLatched&quot;: false,
+      &quot;fuelPermit&quot;: false,
+      &quot;trimEnable&quot;: false,
+      &quot;airTrim&quot;: 0.0,
+      &quot;airCommand&quot;: 0.0
+    },
+    &quot;note&quot;: &quot;停机初始：无故障、不跳闸、无燃料许可，风门命令归 0&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q2&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;flameOK&quot;: true,
+      &quot;o2Valid&quot;: true,
+      &quot;o2PV&quot;: 4.0,
+      &quot;baseAir&quot;: 50.0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;o2Fault&quot;: false,
+      &quot;fuelPermit&quot;: true,
+      &quot;trimEnable&quot;: true,
+      &quot;airTrim&quot;: -4.0,
+      &quot;airCommand&quot;: 46.0
+    },
+    &quot;note&quot;: &quot;正常运行：o2=4.0 → trim=2*(2-4)=-4，风门 46&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q3&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;flameOK&quot;: false,
+      &quot;o2Valid&quot;: true,
+      &quot;o2PV&quot;: 4.0,
+      &quot;baseAir&quot;: 50.0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;tripLatched&quot;: true,
+      &quot;fuelPermit&quot;: false,
+      &quot;trimEnable&quot;: false,
+      &quot;airTrim&quot;: 0.0,
+      &quot;airCommand&quot;: 0.0
+    },
+    &quot;note&quot;: &quot;运行中熄火：**当拍**跳闸并切断燃料（不得等到下一拍）&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q4&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;flameOK&quot;: true,
+      &quot;o2Valid&quot;: true,
+      &quot;o2PV&quot;: 4.0,
+      &quot;baseAir&quot;: 50.0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;tripLatched&quot;: true,
+      &quot;fuelPermit&quot;: false,
+      &quot;airCommand&quot;: 0.0
+    },
+    &quot;note&quot;: &quot;跳闸自保持：火焰恢复也不自动复位&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q5&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: false,
+      &quot;flameOK&quot;: false,
+      &quot;o2Valid&quot;: true,
+      &quot;o2PV&quot;: 4.0,
+      &quot;baseAir&quot;: 50.0,
+      &quot;resetBtn&quot;: true
+    },
+    &quot;expected&quot;: {
+      &quot;tripLatched&quot;: false,
+      &quot;fuelPermit&quot;: false,
+      &quot;airCommand&quot;: 0.0
+    },
+    &quot;note&quot;: &quot;复位：runRequest=FALSE 且 flameOK=FALSE 时上升沿清除跳闸&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q6&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;flameOK&quot;: true,
+      &quot;o2Valid&quot;: false,
+      &quot;o2PV&quot;: 4.0,
+      &quot;baseAir&quot;: 50.0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;o2Fault&quot;: true,
+      &quot;fuelPermit&quot;: true,
+      &quot;trimEnable&quot;: false,
+      &quot;airTrim&quot;: 0.0,
+      &quot;airCommand&quot;: 50.0
+    },
+    &quot;note&quot;: &quot;分析仪无效：切除修正但**不**切燃料，风门只跟基础给定&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q7&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;flameOK&quot;: true,
+      &quot;o2Valid&quot;: true,
+      &quot;o2PV&quot;: 1.0,
+      &quot;baseAir&quot;: 50.0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;o2Fault&quot;: false,
+      &quot;trimEnable&quot;: true,
+      &quot;airTrim&quot;: 2.0,
+      &quot;airCommand&quot;: 52.0
+    },
+    &quot;note&quot;: &quot;恢复有效：o2 偏低 → 加风 +2&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q8&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;flameOK&quot;: true,
+      &quot;o2Valid&quot;: true,
+      &quot;o2PV&quot;: 5.5,
+      &quot;baseAir&quot;: 80.0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;airTrim&quot;: -7.0,
+      &quot;airCommand&quot;: 73.0
+    },
+    &quot;note&quot;: &quot;o2 偏高 → trim=-7，风门 73&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q9&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;flameOK&quot;: true,
+      &quot;o2Valid&quot;: true,
+      &quot;o2PV&quot;: 8.0,
+      &quot;baseAir&quot;: 95.0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;airTrim&quot;: -10.0,
+      &quot;airCommand&quot;: 85.0
+    },
+    &quot;note&quot;: &quot;【边界】原始 trim=2*(2-8)=-12，必须钳位到 -10&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q10&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;flameOK&quot;: true,
+      &quot;o2Valid&quot;: true,
+      &quot;o2PV&quot;: 1.0,
+      &quot;baseAir&quot;: 95.0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;airTrim&quot;: 2.0,
+      &quot;airCommand&quot;: 97.0
+    },
+    &quot;note&quot;: &quot;正修正：95+2=97，尚在范围内&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q11&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;flameOK&quot;: true,
+      &quot;o2Valid&quot;: true,
+      &quot;o2PV&quot;: 0.0,
+      &quot;baseAir&quot;: 99.0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;airTrim&quot;: 4.0,
+      &quot;airCommand&quot;: 100.0
+    },
+    &quot;note&quot;: &quot;【边界】99+4=103，风门命令必须钳位到 100&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q12&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;flameOK&quot;: true,
+      &quot;o2Valid&quot;: true,
+      &quot;o2PV&quot;: 21.0,
+      &quot;baseAir&quot;: 100.0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;o2Fault&quot;: false,
+      &quot;airTrim&quot;: -10.0,
+      &quot;airCommand&quot;: 90.0
+    },
+    &quot;note&quot;: &quot;【边界】o2=21.0 仍属合法量程（&lt;=21），trim 钳位 -10&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q13&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;flameOK&quot;: true,
+      &quot;o2Valid&quot;: true,
+      &quot;o2PV&quot;: 21.1,
+      &quot;baseAir&quot;: 100.0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;o2Fault&quot;: true,
+      &quot;trimEnable&quot;: false,
+      &quot;airTrim&quot;: 0.0,
+      &quot;airCommand&quot;: 100.0
+    },
+    &quot;note&quot;: &quot;【边界】o2=21.1 越界 → 判故障、切除修正&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  }
+]</pre></details></article><article id="self-hard-06"><h2>self-hard-06 · 蒸汽母管超压联锁与故障线索诊断（按位编码 + 足迹保留）</h2><p class="pending">待人工复核</p><h3>建议核对</h3><ul><li>压力单位 kPa，4500 跳闸与 4200 复位的闭区间和滞环是否明确？</li><li>压力数据失效与复位的优先关系是否清楚？</li><li>卡滞连续三拍及中断清零、线索位和历史足迹是否一致？三拍依赖扫描周期的假设是否应补充？</li></ul><h3>题目与平台适配要求</h3><pre>写一个功能块 FB，实现母管超压联锁，并在跳闸时记录**故障线索**。
+控制要求：
+1. 压力有效判据 pressureValid；&gt;= 4500.0 kPa 判超压；
+2. 跳闸条件（任一成立）：runRequest 且 pressureValid 且 pressure &gt;= 4500.0；runRequest 且 NOT pressureValid（数据失效按最坏情况处理）；跳闸与本拍线索同拍生效；
+3. tripLatched 自保持；清除条件：resetBtn 上升沿 且 NOT runRequest 且 pressureValid 且 pressure &lt;= 4200.0（滞环，防抖动）；
+4. 线索位（currentCauseMask，WORD，本拍重新计算）：bit0=1 变送器失效；bit1=2 减温减压阀卡滞（outletCmd&gt;=50 且 outletFeedback&lt;=10 连续 **3 拍及以上**，每拍须同时满足运行、压力有效且压力&gt;=4500；任一中断清零）；bit2=4 燃烧过剩（fuelFlow &gt;= 4.0 且 steamFlow &lt;= 10.0）；若超压但以上线索都不成立，置 bit3=8（未定位）；NOT runRequest 时线索为 0；
+5. latchedCauseMask：tripLatched 为 TRUE 时把 currentCauseMask **按位或**并入（32 位字，不会溢出），复位时清零；
+6. fuelPermit = runRequest AND NOT tripLatched；diagnosticActive = (currentCauseMask &lt;&gt; 0)。</pre><h3>接口</h3><div class="scroll"><table><thead><tr><th>变量</th><th>方向</th><th>类型</th><th>说明</th></tr></thead><tbody><tr><td>runRequest</td><td>输入</td><td>BOOL</td><td>运行请求</td></tr><tr><td>pressure</td><td>输入</td><td>REAL</td><td>母管压力（kPa）</td></tr><tr><td>pressureValid</td><td>输入</td><td>BOOL</td><td>压力变送器数据有效</td></tr><tr><td>fuelFlow</td><td>输入</td><td>REAL</td><td>燃料流量（kg/s）</td></tr><tr><td>steamFlow</td><td>输入</td><td>REAL</td><td>蒸汽流量（kg/s）</td></tr><tr><td>outletCmd</td><td>输入</td><td>INT</td><td>减温减压阀开度命令（%）</td></tr><tr><td>outletFeedback</td><td>输入</td><td>INT</td><td>减温减压阀开度反馈（%）</td></tr><tr><td>resetBtn</td><td>输入</td><td>BOOL</td><td>复位按钮（上升沿有效）</td></tr><tr><td>tripLatched</td><td>输出</td><td>BOOL</td><td>超压跳闸自保持</td></tr><tr><td>fuelPermit</td><td>输出</td><td>BOOL</td><td>燃料许可</td></tr><tr><td>currentCauseMask</td><td>输出</td><td>WORD</td><td>本周期诊断线索位掩码</td></tr><tr><td>latchedCauseMask</td><td>输出</td><td>WORD</td><td>跳闸时的线索累积掩码</td></tr><tr><td>diagnosticActive</td><td>输出</td><td>BOOL</td><td>存在有效诊断线索</td></tr></tbody></table></div><h3>性质说明</h3><ul><li><b>S1</b> 压力变送器失效且仍在运行时，必须当拍跳闸并切除燃料。 <small>已有公式</small></li><li><b>S2</b> 母管压力达到 4500 kPa（数据有效）时必须当拍跳闸。 <small>已有公式</small></li><li><b>S3</b> 跳闸状态下绝不允许燃料许可。 <small>已有公式</small></li><li><b>S4</b> 跳闸自保持，非复位上升沿不得自动清除。 <small>已有公式</small></li><li><b>S5</b> 无运行请求时本周期线索掩码必须为 0。 <small>已有公式</small></li><li><b>S6</b> 压力未越限且数据有效时不产生线索。 <small>已有公式</small></li><li><b>S7</b> 诊断有效位与线索掩码一致。 <small>已有公式</small></li><li><b>S8</b> 复位条件满足时跳闸必须清除。 <small>已有公式</small></li><li><b>S9</b> 诊断线索的位含义与累积方式（按位或并入足迹）。 <small>仅测试覆盖</small></li></ul><details><summary>展开参考 ST 程序</summary><pre class="code">FUNCTION_BLOCK FB
+VAR_INPUT
+ runRequest : BOOL;
+ pressure : REAL;
+ pressureValid : BOOL;
+ fuelFlow : REAL;
+ steamFlow : REAL;
+ outletCmd : INT;
+ outletFeedback : INT;
+ resetBtn : BOOL;
+END_VAR
+VAR_OUTPUT
+ tripLatched : BOOL;
+ fuelPermit : BOOL;
+ currentCauseMask : WORD;
+ latchedCauseMask : WORD;
+ diagnosticActive : BOOL;
+END_VAR
+VAR
+ prevReset : BOOL;
+ tripMem : BOOL;
+ latMem : WORD;
+ valveCnt : INT;
+END_VAR
+currentCauseMask := 0;
+IF resetBtn AND NOT prevReset AND NOT runRequest AND pressureValid
+ AND (pressure &lt;= 4200.0) THEN
+ tripMem := FALSE;
+ latMem := 0;
+ valveCnt := 0;
+END_IF;
+prevReset := resetBtn;
+IF NOT runRequest THEN
+ valveCnt := 0;
+ELSIF NOT pressureValid THEN
+ currentCauseMask := 16#0001;
+ valveCnt := 0;
+ tripMem := TRUE;
+ELSIF pressureValid AND (pressure &gt;= 4500.0) THEN
+ IF (outletCmd &gt;= 50) AND (outletFeedback &lt;= 10) THEN
+  valveCnt := valveCnt + 1;
+  IF valveCnt &gt; 3 THEN valveCnt := 3; END_IF;
+ ELSE
+  valveCnt := 0;
+ END_IF;
+ IF valveCnt &gt;= 3 THEN
+  currentCauseMask := currentCauseMask OR 16#0002;
+ END_IF;
+ IF (fuelFlow &gt;= 4.0) AND (steamFlow &lt;= 10.0) THEN
+  currentCauseMask := currentCauseMask OR 16#0004;
+ END_IF;
+ IF currentCauseMask = 0 THEN
+  currentCauseMask := 16#0008;
+ END_IF;
+ tripMem := TRUE;
+ELSE
+ valveCnt := 0;
+END_IF;
+IF tripMem THEN
+ latMem := latMem OR currentCauseMask;
+END_IF;
+tripLatched := tripMem;
+latchedCauseMask := latMem;
+diagnosticActive := (currentCauseMask &lt;&gt; 0);
+fuelPermit := runRequest AND NOT tripMem;
+END_FUNCTION_BLOCK
+</pre></details><details><summary>展开测试与期望值</summary><pre class="code">[
+  {
+    &quot;tc_id&quot;: &quot;q1&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: false,
+      &quot;pressure&quot;: 4000.0,
+      &quot;pressureValid&quot;: true,
+      &quot;fuelFlow&quot;: 1.0,
+      &quot;steamFlow&quot;: 20.0,
+      &quot;outletCmd&quot;: 0,
+      &quot;outletFeedback&quot;: 0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;tripLatched&quot;: false,
+      &quot;fuelPermit&quot;: false,
+      &quot;currentCauseMask&quot;: 0,
+      &quot;latchedCauseMask&quot;: 0,
+      &quot;diagnosticActive&quot;: false
+    },
+    &quot;note&quot;: &quot;停机初始：无跳闸、无线索&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q2&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;pressure&quot;: 4200.0,
+      &quot;pressureValid&quot;: true,
+      &quot;fuelFlow&quot;: 2.0,
+      &quot;steamFlow&quot;: 20.0,
+      &quot;outletCmd&quot;: 60,
+      &quot;outletFeedback&quot;: 60,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;tripLatched&quot;: false,
+      &quot;fuelPermit&quot;: true,
+      &quot;currentCauseMask&quot;: 0
+    },
+    &quot;note&quot;: &quot;压力 4200 未达 4500：允许燃料，无线索&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q3&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;pressure&quot;: 4600.0,
+      &quot;pressureValid&quot;: true,
+      &quot;fuelFlow&quot;: 2.0,
+      &quot;steamFlow&quot;: 20.0,
+      &quot;outletCmd&quot;: 60,
+      &quot;outletFeedback&quot;: 60,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;tripLatched&quot;: true,
+      &quot;fuelPermit&quot;: false,
+      &quot;currentCauseMask&quot;: 8,
+      &quot;latchedCauseMask&quot;: 8,
+      &quot;diagnosticActive&quot;: true
+    },
+    &quot;note&quot;: &quot;超压但阀位正常、燃烧正常 → 线索=8（未定位）&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q4&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;pressure&quot;: 4600.0,
+      &quot;pressureValid&quot;: true,
+      &quot;fuelFlow&quot;: 2.0,
+      &quot;steamFlow&quot;: 20.0,
+      &quot;outletCmd&quot;: 80,
+      &quot;outletFeedback&quot;: 0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;tripLatched&quot;: true,
+      &quot;currentCauseMask&quot;: 8,
+      &quot;latchedCauseMask&quot;: 8
+    },
+    &quot;note&quot;: &quot;阀卡滞第 1 拍（计数 1，未达 3 拍判据）仍只报 8&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q5&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;pressure&quot;: 4600.0,
+      &quot;pressureValid&quot;: true,
+      &quot;fuelFlow&quot;: 4.5,
+      &quot;steamFlow&quot;: 5.0,
+      &quot;outletCmd&quot;: 80,
+      &quot;outletFeedback&quot;: 0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;currentCauseMask&quot;: 4,
+      &quot;latchedCauseMask&quot;: 12
+    },
+    &quot;note&quot;: &quot;阀计数 2 + 燃烧过剩 → 位2 已置（8|4=12）&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q6&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;pressure&quot;: 4600.0,
+      &quot;pressureValid&quot;: true,
+      &quot;fuelFlow&quot;: 4.5,
+      &quot;steamFlow&quot;: 5.0,
+      &quot;outletCmd&quot;: 80,
+      &quot;outletFeedback&quot;: 0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;currentCauseMask&quot;: 6,
+      &quot;latchedCauseMask&quot;: 14
+    },
+    &quot;note&quot;: &quot;阀计数达 3 → 位1 置；与位2 合并得 6（14=8|4|2）&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q7&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: false,
+      &quot;pressure&quot;: 4000.0,
+      &quot;pressureValid&quot;: true,
+      &quot;fuelFlow&quot;: 0.0,
+      &quot;steamFlow&quot;: 0.0,
+      &quot;outletCmd&quot;: 0,
+      &quot;outletFeedback&quot;: 0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;tripLatched&quot;: true,
+      &quot;fuelPermit&quot;: false,
+      &quot;currentCauseMask&quot;: 0,
+      &quot;latchedCauseMask&quot;: 14,
+      &quot;diagnosticActive&quot;: false
+    },
+    &quot;note&quot;: &quot;停机后本拍无线索，但**已累积**的足迹必须保留（供事后诊断）&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q8&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: false,
+      &quot;pressure&quot;: 4000.0,
+      &quot;pressureValid&quot;: true,
+      &quot;fuelFlow&quot;: 0.0,
+      &quot;steamFlow&quot;: 0.0,
+      &quot;outletCmd&quot;: 0,
+      &quot;outletFeedback&quot;: 0,
+      &quot;resetBtn&quot;: true
+    },
+    &quot;expected&quot;: {
+      &quot;tripLatched&quot;: false,
+      &quot;currentCauseMask&quot;: 0,
+      &quot;latchedCauseMask&quot;: 0
+    },
+    &quot;note&quot;: &quot;复位：runRequest=FALSE、压力已回落到 &lt;=4200 → 跳闸与足迹一起清&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q9&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;pressure&quot;: 4600.0,
+      &quot;pressureValid&quot;: true,
+      &quot;fuelFlow&quot;: 4.5,
+      &quot;steamFlow&quot;: 5.0,
+      &quot;outletCmd&quot;: 0,
+      &quot;outletFeedback&quot;: 0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;tripLatched&quot;: true,
+      &quot;currentCauseMask&quot;: 4,
+      &quot;latchedCauseMask&quot;: 4
+    },
+    &quot;note&quot;: &quot;阀命令未达 50 → 不计卡滞；只剩燃烧过剩线索&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q10&quot;,
+    &quot;inputs&quot;: {
+      &quot;runRequest&quot;: true,
+      &quot;pressure&quot;: 4600.0,
+      &quot;pressureValid&quot;: false,
+      &quot;fuelFlow&quot;: 4.5,
+      &quot;steamFlow&quot;: 5.0,
+      &quot;outletCmd&quot;: 90,
+      &quot;outletFeedback&quot;: 0,
+      &quot;resetBtn&quot;: false
+    },
+    &quot;expected&quot;: {
+      &quot;tripLatched&quot;: true,
+      &quot;currentCauseMask&quot;: 1,
+      &quot;latchedCauseMask&quot;: 5
+    },
+    &quot;note&quot;: &quot;变送器失效：线索=1（优先于压力判据），并入累积 5&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  }
+]</pre></details></article><article id="self-hard-07"><h2>self-hard-07 · 串级 PI 手自动无扰切换（积分预置 + 切换拍保持）</h2><p class="pending">待人工复核</p><h3>建议核对</h3><ul><li>三模式含义、初始化/故障/复位/模式切换的优先关系是否一致？</li><li>切换当拍保持阀位、不积分，以及积分预置和输出限幅是否对应？</li><li>给定 PI 参数、流量单位、手动输入范围和有效扫描周期的假设是否完整？</li></ul><h3>题目与平台适配要求</h3><pre>写一个功能块 FB，实现温度-流量串级 PI 控制的三模式无扰切换。
+控制要求：
+1. mode：0=手动、1=外环手动/内环自动、2=串级全自动；mode 不在 0..2、scanSeconds&lt;=0 或 scanSeconds&gt;10 判 fault；
+2. 初始化、复位上升沿、fault 三者的当拍：flowSP = manualFlowSP、valveCommand = manualValve，并把积分项预置为无扰值：iT = flowSP - KpT*(tempSP-tempPV)，iF = valveCommand - KpF*(flowSP-flowPV)（KpT=1.0，KpF=2.0）；
+3. **模式切换的当拍不做积分**：阀位保持上一拍；切到 mode=2 时 flowSP 也保持上一拍，切到其它模式时 flowSP 跟 manualFlowSP；切换拍同时按上面公式重算 iT、iF；
+4. 正常运算拍（normalMode=TRUE）：
+   mode=0：flowSP=manualFlowSP、valveCommand=manualValve，重算 iT、iF；
+   mode=1：flowSP=manualFlowSP、iT 按公式跟踪；eF=flowSP-flowPV，iF += KiF*eF*scanSeconds（KiF=0.5），valveCommand=clamp(KpF*eF+iF,0,100)，随后 iF=valveCommand-KpF*eF；
+   mode=2：eT=tempSP-tempPV，iT += KiT*eT*scanSeconds（KiT=0.2），flowSP=clamp(KpT*eT+iT,0,50)，iT=flowSP-KpT*eT；再按 mode=1 的公式算内环；
+5. 模式切换的识别：非初始化拍比较 mode 与内部上一模式；即使连续两拍切换也必须识别；初始化记录当前 mode；下一合法非复位拍 mode 未变则正常运算（与 q2 一致），mode 变化则切换保持；
+6. normalMode 输出：本拍按正常 PI 规则运算则为 TRUE，初始化/切换/故障拍为 FALSE。调用方保证 manualFlowSP 在 [0,50]、manualValve 在 [0,100]；输入均为有限数。
+平台适配：原接口 dt（IEC 日期时间类型别名）统一重命名为 scanSeconds；单位秒、类型及原数字断言不变。</pre><h3>接口</h3><div class="scroll"><table><thead><tr><th>变量</th><th>方向</th><th>类型</th><th>说明</th></tr></thead><tbody><tr><td>mode</td><td>输入</td><td>INT</td><td>0=手动 1=外环手动/内环自动 2=串级全自动</td></tr><tr><td>resetBtn</td><td>输入</td><td>BOOL</td><td>复位（上升沿）</td></tr><tr><td>scanSeconds</td><td>输入</td><td>REAL</td><td>本周期时长（s），合法 0 &lt; dt &lt;= 10</td></tr><tr><td>tempSP</td><td>输入</td><td>REAL</td><td>温度设定（℃）</td></tr><tr><td>tempPV</td><td>输入</td><td>REAL</td><td>温度测量（℃）</td></tr><tr><td>flowPV</td><td>输入</td><td>REAL</td><td>流量测量（t/h）</td></tr><tr><td>manualFlowSP</td><td>输入</td><td>REAL</td><td>流量设定手操值（t/h）</td></tr><tr><td>manualValve</td><td>输入</td><td>REAL</td><td>阀位手操值（%）</td></tr><tr><td>flowSP</td><td>输出</td><td>REAL</td><td>流量设定输出（t/h），钳位 0..50</td></tr><tr><td>valveCommand</td><td>输出</td><td>REAL</td><td>阀位命令（%），钳位 0..100</td></tr><tr><td>fault</td><td>输出</td><td>BOOL</td><td>模式或参数非法</td></tr><tr><td>normalMode</td><td>输出</td><td>BOOL</td><td>本拍按正常 PI 规则运算（非初始化/切换拍）</td></tr></tbody></table></div><h3>性质说明</h3><ul><li><b>S1</b> 流量设定输出恒在 0..50 t/h 之间。 <small>已有公式</small></li><li><b>S2</b> 阀位命令恒在 0..100 % 之间。 <small>已有公式</small></li><li><b>S3</b> 模式切换的当拍阀位命令必须保持上一拍（无扰切换的核心）。 <small>已有公式</small></li><li><b>S4</b> 切入串级模式的当拍，流量设定必须保持上一拍值。 <small>已有公式</small></li><li><b>S5</b> 故障拍退回无扰跟踪：流量设定跟手操、阀位跟手操。 <small>已有公式</small></li><li><b>S6</b> 正常运算拍必须处于合法模式且无故障。 <small>已有公式</small></li><li><b>S7</b> 积分项递推与无扰预置（内环/外环）。 <small>仅测试覆盖</small></li></ul><details><summary>展开参考 ST 程序</summary><pre class="code">FUNCTION_BLOCK FB
+VAR_INPUT
+ mode : INT;
+ resetBtn : BOOL;
+ scanSeconds : REAL;
+ tempSP : REAL;
+ tempPV : REAL;
+ flowPV : REAL;
+ manualFlowSP : REAL;
+ manualValve : REAL;
+END_VAR
+VAR_OUTPUT
+ flowSP : REAL;
+ valveCommand : REAL;
+ fault : BOOL;
+ normalMode : BOOL;
+END_VAR
+VAR
+ prevReset : BOOL;
+ initDone : BOOL;
+ lastMode : INT;
+ accT : REAL;
+ accF : REAL;
+ oFlow : REAL;
+ oValve : REAL;
+ eTemp : REAL;
+ eFlow : REAL;
+ trial : REAL;
+ normalMem : BOOL;
+END_VAR
+fault := (mode &lt; 0) OR (mode &gt; 2) OR (scanSeconds &lt;= 0.0) OR (scanSeconds &gt; 10.0);
+normalMem := FALSE;
+IF (NOT initDone) OR (resetBtn AND NOT prevReset) OR fault THEN
+ oFlow := manualFlowSP;
+ oValve := manualValve;
+ accT := oFlow - 1.0 * (tempSP - tempPV);
+ accF := oValve - 2.0 * (oFlow - flowPV);
+ lastMode := mode;
+ initDone := TRUE;
+ELSIF lastMode &lt;&gt; mode THEN
+ IF mode &lt;&gt; 2 THEN
+  oFlow := manualFlowSP;
+ END_IF;
+ accT := oFlow - 1.0 * (tempSP - tempPV);
+ accF := oValve - 2.0 * (oFlow - flowPV);
+ lastMode := mode;
+ELSE
+ normalMem := TRUE;
+ IF mode = 0 THEN
+  oFlow := manualFlowSP;
+  oValve := manualValve;
+  accT := oFlow - 1.0 * (tempSP - tempPV);
+  accF := oValve - 2.0 * (oFlow - flowPV);
+ ELSIF mode = 1 THEN
+  oFlow := manualFlowSP;
+  accT := oFlow - 1.0 * (tempSP - tempPV);
+  eFlow := oFlow - flowPV;
+  trial := accF + 0.5 * eFlow * scanSeconds;
+  oValve := 2.0 * eFlow + trial;
+  IF oValve &gt; 100.0 THEN oValve := 100.0; END_IF;
+  IF oValve &lt; 0.0 THEN oValve := 0.0; END_IF;
+  accF := oValve - 2.0 * eFlow;
+ ELSE
+  eTemp := tempSP - tempPV;
+  trial := accT + 0.2 * eTemp * scanSeconds;
+  oFlow := 1.0 * eTemp + trial;
+  IF oFlow &gt; 50.0 THEN oFlow := 50.0; END_IF;
+  IF oFlow &lt; 0.0 THEN oFlow := 0.0; END_IF;
+  accT := oFlow - 1.0 * eTemp;
+  eFlow := oFlow - flowPV;
+  trial := accF + 0.5 * eFlow * scanSeconds;
+  oValve := 2.0 * eFlow + trial;
+  IF oValve &gt; 100.0 THEN oValve := 100.0; END_IF;
+  IF oValve &lt; 0.0 THEN oValve := 0.0; END_IF;
+  accF := oValve - 2.0 * eFlow;
+ END_IF;
+END_IF;
+prevReset := resetBtn;
+flowSP := oFlow;
+valveCommand := oValve;
+normalMode := normalMem;
+END_FUNCTION_BLOCK
+</pre></details><details><summary>展开测试与期望值</summary><pre class="code">[
+  {
+    &quot;tc_id&quot;: &quot;q1&quot;,
+    &quot;inputs&quot;: {
+      &quot;mode&quot;: 0,
+      &quot;resetBtn&quot;: false,
+      &quot;tempSP&quot;: 100.0,
+      &quot;tempPV&quot;: 90.0,
+      &quot;flowPV&quot;: 10.0,
+      &quot;manualFlowSP&quot;: 10.0,
+      &quot;manualValve&quot;: 40.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;fault&quot;: false,
+      &quot;flowSP&quot;: 10.0,
+      &quot;valveCommand&quot;: 40.0,
+      &quot;normalMode&quot;: false
+    },
+    &quot;note&quot;: &quot;初始化拍：跟踪手操值，并把积分项预置成无扰初值&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q2&quot;,
+    &quot;inputs&quot;: {
+      &quot;mode&quot;: 0,
+      &quot;resetBtn&quot;: false,
+      &quot;tempSP&quot;: 100.0,
+      &quot;tempPV&quot;: 90.0,
+      &quot;flowPV&quot;: 10.0,
+      &quot;manualFlowSP&quot;: 10.0,
+      &quot;manualValve&quot;: 40.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;flowSP&quot;: 10.0,
+      &quot;valveCommand&quot;: 40.0,
+      &quot;normalMode&quot;: true
+    },
+    &quot;note&quot;: &quot;手动稳定拍：直接跟手操值，积分项持续跟踪&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q3&quot;,
+    &quot;inputs&quot;: {
+      &quot;mode&quot;: 1,
+      &quot;resetBtn&quot;: false,
+      &quot;tempSP&quot;: 100.0,
+      &quot;tempPV&quot;: 90.0,
+      &quot;flowPV&quot;: 10.0,
+      &quot;manualFlowSP&quot;: 10.0,
+      &quot;manualValve&quot;: 40.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;flowSP&quot;: 10.0,
+      &quot;valveCommand&quot;: 40.0,
+      &quot;normalMode&quot;: false
+    },
+    &quot;note&quot;: &quot;切到模式 1 的当拍：**不做积分**，阀位保持上一拍 40&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q4&quot;,
+    &quot;inputs&quot;: {
+      &quot;mode&quot;: 1,
+      &quot;resetBtn&quot;: false,
+      &quot;tempSP&quot;: 100.0,
+      &quot;tempPV&quot;: 90.0,
+      &quot;flowPV&quot;: 10.0,
+      &quot;manualFlowSP&quot;: 10.0,
+      &quot;manualValve&quot;: 40.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;flowSP&quot;: 10.0,
+      &quot;valveCommand&quot;: 40.0,
+      &quot;normalMode&quot;: true
+    },
+    &quot;note&quot;: &quot;模式 1 正常拍：eF=0 → 阀位不变&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q5&quot;,
+    &quot;inputs&quot;: {
+      &quot;mode&quot;: 2,
+      &quot;resetBtn&quot;: false,
+      &quot;tempSP&quot;: 100.0,
+      &quot;tempPV&quot;: 90.0,
+      &quot;flowPV&quot;: 10.0,
+      &quot;manualFlowSP&quot;: 10.0,
+      &quot;manualValve&quot;: 40.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;flowSP&quot;: 10.0,
+      &quot;valveCommand&quot;: 40.0,
+      &quot;normalMode&quot;: false
+    },
+    &quot;note&quot;: &quot;切到串级：流量设定必须**保持**上一拍值（不得跳到手操值）&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q6&quot;,
+    &quot;inputs&quot;: {
+      &quot;mode&quot;: 2,
+      &quot;resetBtn&quot;: false,
+      &quot;tempSP&quot;: 100.0,
+      &quot;tempPV&quot;: 90.0,
+      &quot;flowPV&quot;: 10.0,
+      &quot;manualFlowSP&quot;: 10.0,
+      &quot;manualValve&quot;: 40.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;flowSP&quot;: 12.0,
+      &quot;valveCommand&quot;: 45.0,
+      &quot;normalMode&quot;: true
+    },
+    &quot;note&quot;: &quot;串级第一正常拍：外环 eT=10 → flowSP=12，内环出 45&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q7&quot;,
+    &quot;inputs&quot;: {
+      &quot;mode&quot;: 2,
+      &quot;resetBtn&quot;: false,
+      &quot;tempSP&quot;: 100.0,
+      &quot;tempPV&quot;: 90.0,
+      &quot;flowPV&quot;: 10.0,
+      &quot;manualFlowSP&quot;: 10.0,
+      &quot;manualValve&quot;: 40.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;flowSP&quot;: 14.0,
+      &quot;valveCommand&quot;: 51.0,
+      &quot;normalMode&quot;: true
+    },
+    &quot;note&quot;: &quot;串级第二拍：积分继续累积 → 14 / 51&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q8&quot;,
+    &quot;inputs&quot;: {
+      &quot;mode&quot;: 0,
+      &quot;resetBtn&quot;: false,
+      &quot;tempSP&quot;: 100.0,
+      &quot;tempPV&quot;: 90.0,
+      &quot;flowPV&quot;: 10.0,
+      &quot;manualFlowSP&quot;: 10.0,
+      &quot;manualValve&quot;: 20.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;flowSP&quot;: 10.0,
+      &quot;valveCommand&quot;: 51.0,
+      &quot;normalMode&quot;: false
+    },
+    &quot;note&quot;: &quot;切回手动当拍：阀位保持 51（不跟手操 20），避免突跳&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q9&quot;,
+    &quot;inputs&quot;: {
+      &quot;mode&quot;: 0,
+      &quot;resetBtn&quot;: false,
+      &quot;tempSP&quot;: 100.0,
+      &quot;tempPV&quot;: 90.0,
+      &quot;flowPV&quot;: 10.0,
+      &quot;manualFlowSP&quot;: 10.0,
+      &quot;manualValve&quot;: 20.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;flowSP&quot;: 10.0,
+      &quot;valveCommand&quot;: 20.0,
+      &quot;normalMode&quot;: true
+    },
+    &quot;note&quot;: &quot;手动正常拍：跟手操 20，并把积分项重新预置成 20&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q10&quot;,
+    &quot;inputs&quot;: {
+      &quot;mode&quot;: 1,
+      &quot;resetBtn&quot;: false,
+      &quot;tempSP&quot;: 100.0,
+      &quot;tempPV&quot;: 90.0,
+      &quot;flowPV&quot;: 10.0,
+      &quot;manualFlowSP&quot;: 10.0,
+      &quot;manualValve&quot;: 30.0,
+      &quot;scanSeconds&quot;: 0.0
+    },
+    &quot;expected&quot;: {
+      &quot;fault&quot;: true,
+      &quot;flowSP&quot;: 10.0,
+      &quot;valveCommand&quot;: 30.0,
+      &quot;normalMode&quot;: false
+    },
+    &quot;note&quot;: &quot;【边界】dt=0 → 故障，退回无扰跟踪并置 normalMode=FALSE&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q11&quot;,
+    &quot;inputs&quot;: {
+      &quot;mode&quot;: 3,
+      &quot;resetBtn&quot;: false,
+      &quot;tempSP&quot;: 100.0,
+      &quot;tempPV&quot;: 90.0,
+      &quot;flowPV&quot;: 10.0,
+      &quot;manualFlowSP&quot;: 10.0,
+      &quot;manualValve&quot;: 30.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;fault&quot;: true,
+      &quot;valveCommand&quot;: 30.0,
+      &quot;normalMode&quot;: false
+    },
+    &quot;note&quot;: &quot;【边界】mode=3 非法 → 故障；不得按未知模式继续积分&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q12&quot;,
+    &quot;inputs&quot;: {
+      &quot;mode&quot;: 1,
+      &quot;resetBtn&quot;: false,
+      &quot;tempSP&quot;: 100.0,
+      &quot;tempPV&quot;: 90.0,
+      &quot;flowPV&quot;: 20.0,
+      &quot;manualFlowSP&quot;: 10.0,
+      &quot;manualValve&quot;: 30.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;fault&quot;: false,
+      &quot;flowSP&quot;: 10.0,
+      &quot;valveCommand&quot;: 30.0,
+      &quot;normalMode&quot;: false
+    },
+    &quot;note&quot;: &quot;从非法模式恢复：仍按切换拍处理，阀位保持&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q13&quot;,
+    &quot;inputs&quot;: {
+      &quot;mode&quot;: 1,
+      &quot;resetBtn&quot;: false,
+      &quot;tempSP&quot;: 100.0,
+      &quot;tempPV&quot;: 90.0,
+      &quot;flowPV&quot;: 20.0,
+      &quot;manualFlowSP&quot;: 10.0,
+      &quot;manualValve&quot;: 30.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;flowSP&quot;: 10.0,
+      &quot;valveCommand&quot;: 25.0,
+      &quot;normalMode&quot;: true
+    },
+    &quot;note&quot;: &quot;模式 1 正常拍：eF=10-20=-10，iF=50（q12 预置）→ 阀位 clamp(2*(-10)+50)=25&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  }
+]</pre></details></article><article id="self-medium-05"><h2>self-medium-05 · 合格蒸汽产量与净收益累计（闭区间判定 + 数据故障冻结）</h2><p class="pending">待人工复核</p><h3>建议核对</h3><ul><li>蒸汽和燃料流量 kg/s 与秒、吨的换算是否一致？</li><li>温度/压力闭区间端点、数据故障冻结、复位当拍不累计是否对应？</li><li>产量与燃料累计条件的差异、收益和成本题内常数是否写清楚？</li></ul><h3>题目与平台适配要求</h3><pre>写一个功能块 FB，按扫描周期累计锅炉的合格蒸汽产量、燃料消耗与净收益。
+控制要求：
+1. 合格判据：steamTemp 在 [447.0, 453.0] 且 steamPressure 在 [3750.0, 3850.0]（**闭区间**，端点合格）；
+2. 本周期合格且 enable=TRUE 且无数据故障时，qualifiedTon += steamFlow * scanSeconds / 1000.0（kg/s × s ÷ 1000 → t）；无论是否合格，只要 enable 且无故障，fuelTon += fuelFlow * scanSeconds / 1000.0；
+3. 数据故障判据：scanSeconds &lt;= 0.0 或 scanSeconds &gt; 10.0 或 steamFlow 不在 [0,90] 或 fuelFlow 不在 [0,6]；故障拍**不累计**，累计值保持不变；
+4. resetBtn 上升沿：两个累计量清零，且**当拍不再累计**；
+5. revenue = qualifiedTon * 280.0，cost = fuelTon * 1500.0，netProfit = revenue - cost，三者每拍都要更新（即使不累计）。
+6. 所有累计量必须是非负的；enable=FALSE 时只更新判定位，不改累计量。
+平台适配：原接口 dt（IEC 日期时间类型别名）统一重命名为 scanSeconds；单位秒、类型及原数字断言不变。</pre><h3>接口</h3><div class="scroll"><table><thead><tr><th>变量</th><th>方向</th><th>类型</th><th>说明</th></tr></thead><tbody><tr><td>enable</td><td>输入</td><td>BOOL</td><td>计量使能</td></tr><tr><td>resetBtn</td><td>输入</td><td>BOOL</td><td>清零按钮（上升沿有效）</td></tr><tr><td>scanSeconds</td><td>输入</td><td>LREAL</td><td>本周期时长（s），合法 0 &lt; dt &lt;= 10</td></tr><tr><td>steamFlow</td><td>输入</td><td>LREAL</td><td>蒸汽流量（kg/s），合法 0..90</td></tr><tr><td>fuelFlow</td><td>输入</td><td>LREAL</td><td>燃料流量（kg/s），合法 0..6</td></tr><tr><td>steamTemp</td><td>输入</td><td>LREAL</td><td>蒸汽温度（℃）</td></tr><tr><td>steamPressure</td><td>输入</td><td>LREAL</td><td>蒸汽压力（kPa）</td></tr><tr><td>qualified</td><td>输出</td><td>BOOL</td><td>本周期蒸汽是否合格</td></tr><tr><td>dataFault</td><td>输出</td><td>BOOL</td><td>数据故障（参数越界）</td></tr><tr><td>qualifiedTon</td><td>输出</td><td>LREAL</td><td>累计合格蒸汽产量（t）</td></tr><tr><td>fuelTon</td><td>输出</td><td>LREAL</td><td>累计燃料消耗（t）</td></tr><tr><td>revenue</td><td>输出</td><td>LREAL</td><td>累计收入（元）</td></tr><tr><td>cost</td><td>输出</td><td>LREAL</td><td>累计成本（元）</td></tr><tr><td>netProfit</td><td>输出</td><td>LREAL</td><td>累计净收益（元）</td></tr></tbody></table></div><h3>性质说明</h3><ul><li><b>S1</b> 合格判据：温度 447..453 ℃ 且 压力 3750..3850 kPa（闭区间）。 <small>已有公式</small></li><li><b>S2</b> 累计产量与累计燃料消耗永远非负。 <small>已有公式</small></li><li><b>S3</b> 复位上升沿当拍把两个累计量清零。 <small>已有公式</small></li><li><b>S4</b> 数据故障判据：scanSeconds 不在 (0,10] 或流量越界。 <small>已有公式</small></li><li><b>S5</b> 数据故障或未使能时，累计燃料在本拍保持不变。 <small>已有公式</small></li><li><b>S6</b> 数据故障且未复位时，累计产量在本拍保持不变。 <small>已有公式</small></li><li><b>S7</b> 收入与成本随累计量单调（不得出现负收入）。 <small>已有公式</small></li><li><b>S8</b> 公开输入和累计输出的增量及收入成本关系；复位拍不累计，浮点容差 1e-6。 <small>已有公式</small></li></ul><details><summary>展开参考 ST 程序</summary><pre class="code">FUNCTION_BLOCK FB
+VAR_INPUT
+ enable : BOOL;
+ resetBtn : BOOL;
+ scanSeconds : LREAL;
+ steamFlow : LREAL;
+ fuelFlow : LREAL;
+ steamTemp : LREAL;
+ steamPressure : LREAL;
+END_VAR
+VAR_OUTPUT
+ qualified : BOOL;
+ dataFault : BOOL;
+ qualifiedTon : LREAL;
+ fuelTon : LREAL;
+ revenue : LREAL;
+ cost : LREAL;
+ netProfit : LREAL;
+END_VAR
+VAR
+ prevReset : BOOL;
+ qTon : LREAL;
+ fTon : LREAL;
+END_VAR
+qualified := (steamTemp &gt;= 447.0) AND (steamTemp &lt;= 453.0)
+ AND (steamPressure &gt;= 3750.0) AND (steamPressure &lt;= 3850.0);
+dataFault := (scanSeconds &lt;= 0.0) OR (scanSeconds &gt; 10.0)
+ OR (steamFlow &lt; 0.0) OR (steamFlow &gt; 90.0)
+ OR (fuelFlow &lt; 0.0) OR (fuelFlow &gt; 6.0);
+IF resetBtn AND NOT prevReset THEN
+ qTon := 0.0;
+ fTon := 0.0;
+ELSIF enable AND NOT dataFault THEN
+ fTon := fTon + fuelFlow * scanSeconds / 1000.0;
+ IF qualified THEN
+  qTon := qTon + steamFlow * scanSeconds / 1000.0;
+ END_IF;
+END_IF;
+prevReset := resetBtn;
+qualifiedTon := qTon;
+fuelTon := fTon;
+revenue := qTon * 280.0;
+cost := fTon * 1500.0;
+netProfit := revenue - cost;
+END_FUNCTION_BLOCK
+</pre></details><details><summary>展开测试与期望值</summary><pre class="code">[
+  {
+    &quot;tc_id&quot;: &quot;q1&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;steamFlow&quot;: 20.0,
+      &quot;fuelFlow&quot;: 1.0,
+      &quot;steamTemp&quot;: 450.0,
+      &quot;steamPressure&quot;: 3800.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;qualified&quot;: true,
+      &quot;dataFault&quot;: false,
+      &quot;qualifiedTon&quot;: 0.02,
+      &quot;fuelTon&quot;: 0.001,
+      &quot;revenue&quot;: 5.6,
+      &quot;cost&quot;: 1.5,
+      &quot;netProfit&quot;: 4.1
+    },
+    &quot;note&quot;: &quot;正常：q=20*1/1000=0.02t，f=1*1/1000=0.001t&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q2&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;steamFlow&quot;: 20.0,
+      &quot;fuelFlow&quot;: 1.0,
+      &quot;steamTemp&quot;: 446.0,
+      &quot;steamPressure&quot;: 3800.0,
+      &quot;scanSeconds&quot;: 2.0
+    },
+    &quot;expected&quot;: {
+      &quot;qualified&quot;: false,
+      &quot;dataFault&quot;: false,
+      &quot;qualifiedTon&quot;: 0.02,
+      &quot;fuelTon&quot;: 0.003,
+      &quot;revenue&quot;: 5.6,
+      &quot;cost&quot;: 4.5,
+      &quot;netProfit&quot;: 1.1
+    },
+    &quot;note&quot;: &quot;温度 446 不合格：只累计燃料，不累计产量&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q3&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;steamFlow&quot;: 20.0,
+      &quot;fuelFlow&quot;: 1.0,
+      &quot;steamTemp&quot;: 447.0,
+      &quot;steamPressure&quot;: 3750.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;qualified&quot;: true,
+      &quot;qualifiedTon&quot;: 0.04,
+      &quot;fuelTon&quot;: 0.004,
+      &quot;revenue&quot;: 11.2,
+      &quot;cost&quot;: 6.0,
+      &quot;netProfit&quot;: 5.2
+    },
+    &quot;note&quot;: &quot;【边界】447.0 与 3750.0 恰好合格（闭区间）&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q4&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;steamFlow&quot;: 20.0,
+      &quot;fuelFlow&quot;: 1.0,
+      &quot;steamTemp&quot;: 450.0,
+      &quot;steamPressure&quot;: 3800.0,
+      &quot;scanSeconds&quot;: 0.0
+    },
+    &quot;expected&quot;: {
+      &quot;dataFault&quot;: true,
+      &quot;qualifiedTon&quot;: 0.04,
+      &quot;fuelTon&quot;: 0.004,
+      &quot;netProfit&quot;: 5.2
+    },
+    &quot;note&quot;: &quot;【边界】dt=0 判数据故障：本拍不累计，不得除零也不得写坏累计值&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q5&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: true,
+      &quot;steamFlow&quot;: 20.0,
+      &quot;fuelFlow&quot;: 1.0,
+      &quot;steamTemp&quot;: 450.0,
+      &quot;steamPressure&quot;: 3800.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;qualifiedTon&quot;: 0.0,
+      &quot;fuelTon&quot;: 0.0,
+      &quot;revenue&quot;: 0.0,
+      &quot;cost&quot;: 0.0,
+      &quot;netProfit&quot;: 0.0
+    },
+    &quot;note&quot;: &quot;复位上升沿：累计量清零，当拍不累计&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q6&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;steamFlow&quot;: 0.0,
+      &quot;fuelFlow&quot;: 1.0,
+      &quot;steamTemp&quot;: 450.0,
+      &quot;steamPressure&quot;: 3800.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;qualifiedTon&quot;: 0.0,
+      &quot;fuelTon&quot;: 0.001,
+      &quot;revenue&quot;: 0.0,
+      &quot;cost&quot;: 1.5,
+      &quot;netProfit&quot;: -1.5
+    },
+    &quot;note&quot;: &quot;只烧燃料不产汽：净收益为负，累计燃料照记&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q7&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;steamFlow&quot;: 20.0,
+      &quot;fuelFlow&quot;: 1.0,
+      &quot;steamTemp&quot;: 450.0,
+      &quot;steamPressure&quot;: 3800.0,
+      &quot;scanSeconds&quot;: 11.0
+    },
+    &quot;expected&quot;: {
+      &quot;dataFault&quot;: true,
+      &quot;fuelTon&quot;: 0.001
+    },
+    &quot;note&quot;: &quot;【边界】dt=11 超上限 → 故障，不累计&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q8&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;steamFlow&quot;: 91.0,
+      &quot;fuelFlow&quot;: 1.0,
+      &quot;steamTemp&quot;: 450.0,
+      &quot;steamPressure&quot;: 3800.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;dataFault&quot;: true,
+      &quot;fuelTon&quot;: 0.001,
+      &quot;qualifiedTon&quot;: 0.0
+    },
+    &quot;note&quot;: &quot;【边界】蒸汽流量 91 超量程 → 故障&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q9&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;steamFlow&quot;: 90.0,
+      &quot;fuelFlow&quot;: 6.0,
+      &quot;steamTemp&quot;: 453.0,
+      &quot;steamPressure&quot;: 3850.0,
+      &quot;scanSeconds&quot;: 2.0
+    },
+    &quot;expected&quot;: {
+      &quot;qualified&quot;: true,
+      &quot;dataFault&quot;: false,
+      &quot;qualifiedTon&quot;: 0.18,
+      &quot;fuelTon&quot;: 0.013,
+      &quot;revenue&quot;: 50.4,
+      &quot;cost&quot;: 19.5,
+      &quot;netProfit&quot;: 30.9
+    },
+    &quot;note&quot;: &quot;【边界】四个量全部取合法上界：90*2/1000=0.18t，6*2/1000=0.012t&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q10&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: false,
+      &quot;resetBtn&quot;: false,
+      &quot;steamFlow&quot;: 50.0,
+      &quot;fuelFlow&quot;: 2.0,
+      &quot;steamTemp&quot;: 451.0,
+      &quot;steamPressure&quot;: 3800.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;qualified&quot;: true,
+      &quot;qualifiedTon&quot;: 0.18,
+      &quot;fuelTon&quot;: 0.013,
+      &quot;netProfit&quot;: 30.9
+    },
+    &quot;note&quot;: &quot;enable=FALSE：只更新判定位，累计量保持（不得静默累加）&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q11&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;steamFlow&quot;: 50.0,
+      &quot;fuelFlow&quot;: 6.1,
+      &quot;steamTemp&quot;: 451.0,
+      &quot;steamPressure&quot;: 3800.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;dataFault&quot;: true,
+      &quot;fuelTon&quot;: 0.013
+    },
+    &quot;note&quot;: &quot;【边界】燃料 6.1 超量程 → 故障&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  }
+]</pre></details></article><article id="self-medium-06"><h2>self-medium-06 · 温度模糊控制与输出钳位（重心法 + 历史误差清除）</h2><p class="pending">待人工复核</p><h3>建议核对</h3><ul><li>误差及误差变化率的单位、采样周期与归一化范围是否清楚？</li><li>九条规则和加权输出、功率限幅与修正量的区别是否一致？</li><li>首次扫描、禁用、故障和复位清除历史后的恢复行为是否覆盖？</li></ul><h3>题目与平台适配要求</h3><pre>写一个功能块 FB，用九条规则的温度模糊控制器计算加热功率。
+控制要求：
+1. e = setpoint - temperature；de = (e - ePrev) / scanSeconds，**首拍**或历史被清除时 de = 0；
+2. x = clamp(e / 10.0, -1, 1)，y = clamp(de / 2.0, -1, 1)；
+3. 隶属度：μN(z)=max(-z,0)、μZ(z)=1-|z|、μP(z)=max(z,0)；
+4. 九条规则的单点输出：N×N=-30、N×Z=-20、N×P=-10、Z×N=-10、Z×Z=0、Z×P=10、P×N=10、P×Z=20、P×P=30；correction = Σ(w·c)/Σw（重心法），Σw=0 时 correction=0；
+5. power = clamp(bias + correction, 0, 100)，**correction 不钳位**；
+6. fault = NOT sensorValid OR scanSeconds &lt;= 0.0 OR scanSeconds &gt; 10.0；fault、enable=FALSE 或 resetBtn 上升沿时：power=0、correction=0，并清除历史（ePrev=0、历史标志=FALSE）。
+平台适配：原接口 dt（IEC 日期时间类型别名）统一重命名为 scanSeconds；单位秒、类型及原数字断言不变。</pre><h3>接口</h3><div class="scroll"><table><thead><tr><th>变量</th><th>方向</th><th>类型</th><th>说明</th></tr></thead><tbody><tr><td>enable</td><td>输入</td><td>BOOL</td><td>自动投入</td></tr><tr><td>resetBtn</td><td>输入</td><td>BOOL</td><td>复位（上升沿清除历史误差）</td></tr><tr><td>sensorValid</td><td>输入</td><td>BOOL</td><td>温度传感器数据有效</td></tr><tr><td>setpoint</td><td>输入</td><td>REAL</td><td>温度设定值（℃）</td></tr><tr><td>temperature</td><td>输入</td><td>REAL</td><td>温度测量值（℃）</td></tr><tr><td>scanSeconds</td><td>输入</td><td>REAL</td><td>本周期时长（s），合法 0 &lt; dt &lt;= 10</td></tr><tr><td>bias</td><td>输入</td><td>REAL</td><td>基础输出（%）</td></tr><tr><td>power</td><td>输出</td><td>REAL</td><td>加热功率输出（%），钳位 0..100</td></tr><tr><td>correction</td><td>输出</td><td>REAL</td><td>模糊修正量（%）</td></tr><tr><td>fault</td><td>输出</td><td>BOOL</td><td>传感器或参数故障</td></tr></tbody></table></div><h3>性质说明</h3><ul><li><b>S1</b> 加热功率恒在 0..100 之间。 <small>已有公式</small></li><li><b>S2</b> 模糊修正量恒在 ±30 之间（九个单点输出量的极值）。 <small>已有公式</small></li><li><b>S3</b> 未投入、复位上升沿或故障时，输出与修正必须归零。 <small>已有公式</small></li><li><b>S4</b> 故障判据：传感器无效或 scanSeconds 越界。 <small>已有公式</small></li><li><b>S5</b> 传感器无效必然判故障（不允许用坏数据继续闭环）。 <small>已有公式</small></li><li><b>S6</b> 有效工作拍功率为 bias 加修正后的 0..100 钳位；停用、故障或复位拍为零。 <small>已有公式</small></li></ul><details><summary>展开参考 ST 程序</summary><pre class="code">FUNCTION_BLOCK FB
+VAR_INPUT
+ enable : BOOL;
+ resetBtn : BOOL;
+ sensorValid : BOOL;
+ setpoint : REAL;
+ temperature : REAL;
+ scanSeconds : REAL;
+ bias : REAL;
+END_VAR
+VAR_OUTPUT
+ power : REAL;
+ correction : REAL;
+ fault : BOOL;
+END_VAR
+VAR
+ prevReset : BOOL;
+ prevE : REAL;
+ hasHist : BOOL;
+ eNow : REAL;
+ eDe : REAL;
+ xx : REAL;
+ yy : REAL;
+ mx : REAL;
+ zx : REAL;
+ px : REAL;
+ my : REAL;
+ zy : REAL;
+ py : REAL;
+ wsum : REAL;
+ wc : REAL;
+ cOut : REAL;
+ edgeReset : BOOL;
+END_VAR
+fault := (NOT sensorValid) OR (scanSeconds &lt;= 0.0) OR (scanSeconds &gt; 10.0);
+edgeReset := resetBtn AND NOT prevReset;
+IF edgeReset OR (NOT enable) OR fault THEN
+ cOut := 0.0;
+ hasHist := FALSE;
+ prevE := 0.0;
+ELSE
+ eNow := setpoint - temperature;
+ IF hasHist THEN
+  eDe := (eNow - prevE) / scanSeconds;
+ ELSE
+  eDe := 0.0;
+ END_IF;
+ xx := eNow / 10.0;
+ IF xx &gt; 1.0 THEN xx := 1.0; END_IF;
+ IF xx &lt; -1.0 THEN xx := -1.0; END_IF;
+ yy := eDe / 2.0;
+ IF yy &gt; 1.0 THEN yy := 1.0; END_IF;
+ IF yy &lt; -1.0 THEN yy := -1.0; END_IF;
+ mx := MAX(-xx, 0.0);
+ zx := 1.0 - ABS(xx);
+ px := MAX(xx, 0.0);
+ my := MAX(-yy, 0.0);
+ zy := 1.0 - ABS(yy);
+ py := MAX(yy, 0.0);
+ wsum := mx * my + mx * zy + mx * py + zx * my + zx * zy + zx * py
+  + px * my + px * zy + px * py;
+ wc := mx * my * (-30.0) + mx * zy * (-20.0) + mx * py * (-10.0)
+  + zx * my * (-10.0) + zx * zy * 0.0 + zx * py * 10.0
+  + px * my * 10.0 + px * zy * 20.0 + px * py * 30.0;
+ IF wsum &gt; 0.0 THEN
+  cOut := wc / wsum;
+ ELSE
+  cOut := 0.0;
+ END_IF;
+ prevE := eNow;
+ hasHist := TRUE;
+END_IF;
+prevReset := resetBtn;
+correction := cOut;
+IF edgeReset OR (NOT enable) OR fault THEN
+ power := 0.0;
+ELSE
+ power := bias + cOut;
+ IF power &gt; 100.0 THEN power := 100.0; END_IF;
+ IF power &lt; 0.0 THEN power := 0.0; END_IF;
+END_IF;
+END_FUNCTION_BLOCK
+</pre></details><details><summary>展开测试与期望值</summary><pre class="code">[
+  {
+    &quot;tc_id&quot;: &quot;q1&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;sensorValid&quot;: true,
+      &quot;setpoint&quot;: 100.0,
+      &quot;temperature&quot;: 90.0,
+      &quot;bias&quot;: 50.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;fault&quot;: false,
+      &quot;correction&quot;: 20.0,
+      &quot;power&quot;: 70.0
+    },
+    &quot;note&quot;: &quot;首拍无历史：de=0，x=1.0/y=0 → 只踩 Z×P 规则，修正 +20&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q2&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;sensorValid&quot;: true,
+      &quot;setpoint&quot;: 100.0,
+      &quot;temperature&quot;: 92.0,
+      &quot;bias&quot;: 50.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;correction&quot;: 6.0,
+      &quot;power&quot;: 56.0
+    },
+    &quot;note&quot;: &quot;e=8、de=(8-10)/1=-2 → x=0.8/y=-1：命中 Z×N(-10) 与 P×N(+10)，重心 = (-2+8)/1 = +6&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q3&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;sensorValid&quot;: true,
+      &quot;setpoint&quot;: 100.0,
+      &quot;temperature&quot;: 100.0,
+      &quot;bias&quot;: 50.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;correction&quot;: -10.0,
+      &quot;power&quot;: 40.0
+    },
+    &quot;note&quot;: &quot;e=0、de=-8 → 命中 Z×N，修正 -10（误差为零也要抑制负向趋势）&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q4&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;sensorValid&quot;: true,
+      &quot;setpoint&quot;: 100.0,
+      &quot;temperature&quot;: 98.0,
+      &quot;bias&quot;: 50.0,
+      &quot;scanSeconds&quot;: 2.0
+    },
+    &quot;expected&quot;: {
+      &quot;correction&quot;: 9.0,
+      &quot;power&quot;: 59.0
+    },
+    &quot;note&quot;: &quot;三邻域同时激活：x=0.2/y=0.5 → 权重 Z×P(.4)、P×Z(.2)、P×P(.3) 与 P×Z 归一分母1 → 修正 (+4+2+3)/1 = 9.0&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q5&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;sensorValid&quot;: false,
+      &quot;setpoint&quot;: 100.0,
+      &quot;temperature&quot;: 98.0,
+      &quot;bias&quot;: 50.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;fault&quot;: true,
+      &quot;power&quot;: 0.0,
+      &quot;correction&quot;: 0.0
+    },
+    &quot;note&quot;: &quot;传感器故障：功率与修正都归零，并清除历史误差&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q6&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;sensorValid&quot;: true,
+      &quot;setpoint&quot;: 100.0,
+      &quot;temperature&quot;: 100.0,
+      &quot;bias&quot;: 50.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;fault&quot;: false,
+      &quot;correction&quot;: 0.0,
+      &quot;power&quot;: 50.0
+    },
+    &quot;note&quot;: &quot;故障恢复首拍：历史已清除，按 de=0 处理，只出基础输出&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q7&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;sensorValid&quot;: true,
+      &quot;setpoint&quot;: 100.0,
+      &quot;temperature&quot;: 90.0,
+      &quot;bias&quot;: 120.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;correction&quot;: 30.0,
+      &quot;power&quot;: 100.0
+    },
+    &quot;note&quot;: &quot;【边界】120+30=150 越界 → power 钳位 100，但 correction 仍报 30&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q8&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;sensorValid&quot;: true,
+      &quot;setpoint&quot;: 100.0,
+      &quot;temperature&quot;: 90.0,
+      &quot;bias&quot;: 0.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;correction&quot;: 20.0,
+      &quot;power&quot;: 20.0
+    },
+    &quot;note&quot;: &quot;下界侧：0+20=20 在范围内，不触发钳位&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q9&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: true,
+      &quot;resetBtn&quot;: false,
+      &quot;sensorValid&quot;: true,
+      &quot;setpoint&quot;: 100.0,
+      &quot;temperature&quot;: 90.0,
+      &quot;bias&quot;: 50.0,
+      &quot;scanSeconds&quot;: 0.0
+    },
+    &quot;expected&quot;: {
+      &quot;fault&quot;: true,
+      &quot;power&quot;: 0.0,
+      &quot;correction&quot;: 0.0
+    },
+    &quot;note&quot;: &quot;【边界】dt=0 → 故障（既不能除零，也不允许按 0 周期积分）&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  },
+  {
+    &quot;tc_id&quot;: &quot;q10&quot;,
+    &quot;inputs&quot;: {
+      &quot;enable&quot;: false,
+      &quot;resetBtn&quot;: false,
+      &quot;sensorValid&quot;: true,
+      &quot;setpoint&quot;: 100.0,
+      &quot;temperature&quot;: 90.0,
+      &quot;bias&quot;: 50.0,
+      &quot;scanSeconds&quot;: 1.0
+    },
+    &quot;expected&quot;: {
+      &quot;fault&quot;: false,
+      &quot;power&quot;: 0.0,
+      &quot;correction&quot;: 0.0
+    },
+    &quot;note&quot;: &quot;未投入自动：输出归零&quot;,
+    &quot;const_inputs&quot;: {},
+    &quot;init&quot;: {},
+    &quot;mode&quot;: &quot;sequence&quot;,
+    &quot;cycles&quot;: 1,
+    &quot;expect_full&quot;: false
+  }
+]</pre></details></article></main></html>
