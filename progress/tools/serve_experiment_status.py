@@ -20,7 +20,11 @@ CST = timezone(timedelta(hours=8))
 
 
 def page():
-    cfg = load(CFG)
+    active = load(REPO / 'progress/active_experiment.json')
+    selected_cfg = (REPO / active['config']).resolve() if active.get('config') else CFG
+    if not selected_cfg.is_relative_to(REPO.resolve()):
+        raise RuntimeError('Status configuration must stay in this repository')
+    cfg = load(selected_cfg)
     root = Path(cfg['campaign_root'])
     state = load(root / 'study_state.json')
     summary = load(root / 'study_summary.json')
@@ -33,9 +37,11 @@ def page():
         title = '运行进程未找到，需检查'
     color = '#18764a' if alive or state.get('state') == 'completed' else '#996114'
     completed = int(summary.get('recorded', 0))
-    planned = int(summary.get('planned', 16))
+    planned = int(summary.get('planned', 8 if active else 16))
     total = ledger.get('spent_cny', 0)
     stage = total - plan.get('initial_spent_cny', total)
+    stage_cap = float(plan.get('study_additional_cap_cny', 8))
+    label = summary.get('label') or active.get('label') or 'R9 小规模多轮修复对照'
     now = datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S')
     current = str(state.get('current_job', '—'))
     elapsed = ''
@@ -44,14 +50,17 @@ def page():
         elapsed = f' · 本题次已运行约 {minutes:.1f} 分钟'
     rows = []
     for r in summary.get('rows', []):
-        values = ['自研' if r['framework'] == 'custom' else 'Codex', f"{r['task_seconds']} 秒",
+        framework = '自研' if r['framework'] == 'custom' else 'Codex'
+        if r.get('model_id'):
+            framework += ' / ' + {'deepseek-v4pro':'DeepSeek','minimax-m27':'MiniMax'}.get(r['model_id'],r['model_id'])
+        values = [framework, f"{r['task_seconds']} 秒",
                   '暂缓，先修复功能' if r['verification_after_tests'] else '继续检查',
                   f"{r['attempted']}/{r['n']}", f"{r['first_solved']}/{r['n']}",
                   f"{r['solved']}/{r['n']}", r['repaired'], r['two_attempts']]
         rows.append('<tr>' + ''.join('<td>' + escape(str(v)) + '</td>' for v in values) + '</tr>')
     attention = '<p class="attention">' + escape(state.get('error', '')) + '</p>' if state.get('error') else ''
     repo_url = 'https://github.com/WtqMyou/plc-st-coding-agent'
-    status_url = repo_url + '/blob/main/' + quote('progress/evidence/r9_repair_policy_20261101/实验状态.md')
+    status_url = repo_url + '/blob/main/' + quote(active.get('status_path','progress/evidence/r9_repair_policy_20261101/实验状态.md'))
     sync_text = ('已同步至 GitHub' if sync.get('state') == 'synced' else '同步状态需检查')
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="15">
@@ -67,12 +76,12 @@ main{{max-width:1180px;margin:auto;padding:30px 22px}}h1{{font-size:30px;margin:
 td,th{{text-align:left;white-space:nowrap;padding:11px 9px;border-bottom:1px solid #e6ecf3}}
 th{{background:#f7f9fc}}a{{color:#155eab}}.links a{{display:inline-block;margin:5px 18px 5px 0}}
 code{{overflow-wrap:anywhere;background:#f2f6fa;padding:3px 6px}}.attention{{color:#a43325}}
-</style><main><div class="muted">PLC ST Coding Agent · R9 小规模多轮修复对照</div>
+</style><main><div class="muted">PLC ST Coding Agent · {escape(label)}</div>
 <h1>实验实时状态</h1><div class="badge">● {escape(title)}</div>
 <p class="muted">本机数据 · 每 15 秒自动刷新 · 页面读取时间 {now}（北京时间）</p>
 <div class="cards"><section class="card"><div>已归档题次</div><div class="value">{completed} / {planned}</div>
 <div class="bar"><span></span></div><div class="muted">完成数量包含失败，不等于通过数量</div></section>
-<section class="card"><div>本阶段累计计入</div><div class="value">¥{stage:.3f}</div><div class="muted">阶段上限 ¥8，包含在途预留</div></section>
+<section class="card"><div>本阶段累计计入</div><div class="value">¥{stage:.3f}</div><div class="muted">阶段上限 ¥{stage_cap:g}，包含在途预留</div></section>
 <section class="card"><div>全部实验累计计入</div><div class="value">¥{total:.3f}</div><div class="muted">总授权 ¥75，未增加额度</div></section>
 <section class="card"><div>原诊断阶段累计增量</div><div class="value">¥{total - 34.011998:.3f}</div><div class="muted">原追加上限 ¥10，接续不重置</div></section></div>
 <section class="panel"><h2>当前执行</h2><p><code>{escape(current)}</code>{escape(elapsed)}</p>{attention}
@@ -118,7 +127,9 @@ def main():
     parser.add_argument('--port', type=int, default=8879)
     args = parser.parse_args()
     server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
-    root = Path(load(CFG)['campaign_root'])
+    active = load(REPO / 'progress/active_experiment.json')
+    selected_cfg = REPO / active['config'] if active.get('config') else CFG
+    root = Path(load(selected_cfg)['campaign_root'])
     marker = dict(**current_process_marker(), url=f'http://127.0.0.1:{server.server_port}/status.html')
     (root / 'status_viewer.json').write_text(json.dumps(marker, ensure_ascii=False, indent=2), encoding='utf-8')
     print(marker['url'], flush=True)

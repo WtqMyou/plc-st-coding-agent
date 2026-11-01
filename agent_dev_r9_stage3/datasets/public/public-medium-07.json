@@ -1,0 +1,310 @@
+{
+  "pid": "public-medium-07",
+  "source": "public",
+  "difficulty": "medium",
+  "title": "Office HVAC Multi-mode Energy-Saving Control",
+  "requirements": "Control an office-building supply fan and generate a temperature-setpoint adjustment from occupancy, operating mode and the energy-saving selection.\n\n1. Valid HVAC_MODE_SELECTOR values are 0 (Auto), 1 (Comfort), 2 (Economy) and 3 (Night).\n2. Start a 30-second delay only when occupancy is detected and Night mode is not selected. SUPPLY_FAN_RUN becomes TRUE only after these conditions remain satisfied for 30 seconds. Immediately stop the fan and reset timing if occupancy is lost or Night mode is selected. Wait the full 30 seconds again when the conditions recover.\n3. Auto mode: use a 0°C adjustment when occupied. When unoccupied, use +3°C in energy-saving mode or +2°C in standard mode.\n4. Comfort mode: use 0°C when occupied or +1°C when unoccupied. Economy mode: use 0°C when occupied or +4°C when unoccupied.\n5. Night mode: use +4°C regardless of occupancy. The energy-saving selection affects only Auto mode.\n6. Keep TEMP_SETPOINT_ADJUST within ±4°C. Initialize outputs to OFF and zero at power-up; update them from current inputs when normal calculation begins.\n7. The start delay controls only the BOOL fan enable; no continuous speed ramp is required.",
+  "variables": [
+    {
+      "name": "OCCUPANCY_DETECTED",
+      "data_type": "BOOL",
+      "description": "Occupancy-detection result derived from the CO₂ sensor.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "ENERGY_SAVING_MODE",
+      "data_type": "BOOL",
+      "description": "TRUE selects energy saving; FALSE selects standard operation; affects Auto mode only.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "HVAC_MODE_SELECTOR",
+      "data_type": "INT",
+      "description": "0 Auto, 1 Comfort, 2 Economy, 3 Night; callers supply a valid value.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "SUPPLY_FAN_RUN",
+      "data_type": "BOOL",
+      "description": "Supply-fan run enable.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "TEMP_SETPOINT_ADJUST",
+      "data_type": "INT",
+      "description": "Temperature-setpoint adjustment in °C.",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "当送风机运行时，HVAC_MODE_SELECTOR 必须不是 Night(3)",
+      "ltl": "G(SUPPLY_FAN_RUN = TRUE -> HVAC_MODE_SELECTOR <> 3)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S2",
+      "text": "当送风机运行时，必须处于占用状态",
+      "ltl": "G(SUPPLY_FAN_RUN = TRUE -> OCCUPANCY_DETECTED = TRUE)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S3",
+      "text": "温度设定值修正必须始终落在 ±4 ℃ 之内",
+      "ltl": "G(TEMP_SETPOINT_ADJUST >= -4 AND TEMP_SETPOINT_ADJUST <= 4)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S4",
+      "text": "当选择 Night(3) 时，温度设定值修正必须为 +4 ℃",
+      "ltl": "G(HVAC_MODE_SELECTOR = 3 -> TEMP_SETPOINT_ADJUST = 4)",
+      "kind": "sequencing",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S5",
+      "text": "当选择 Auto(0) 且检测到占用时，温度设定值修正必须为 0",
+      "ltl": "G(HVAC_MODE_SELECTOR = 0 AND OCCUPANCY_DETECTED = TRUE -> TEMP_SETPOINT_ADJUST = 0)",
+      "kind": "sequencing",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S6",
+      "text": "模式/占用/节能组合到温度修正的完整映射表（含非法型号按安全侧 0）：由用例验证的数据性质",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "M07-01",
+      "inputs": {
+        "OCCUPANCY_DETECTED": true,
+        "ENERGY_SAVING_MODE": false,
+        "HVAC_MODE_SELECTOR": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "SUPPLY_FAN_RUN": true,
+        "TEMP_SETPOINT_ADJUST": 0
+      },
+      "note": "占用 + Auto：连续满足 30 拍后风扇启动（以周期数代替 30 s，契约 §7）；占用时修正 0",
+      "init": {},
+      "mode": "single",
+      "cycles": 30,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M07-02",
+      "inputs": {
+        "OCCUPANCY_DETECTED": true,
+        "ENERGY_SAVING_MODE": false,
+        "HVAC_MODE_SELECTOR": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "SUPPLY_FAN_RUN": false,
+        "TEMP_SETPOINT_ADJUST": 0
+      },
+      "note": "负例：只等 29 拍（不足 30 拍）风扇不得启动，修正仍为 0",
+      "init": {},
+      "mode": "single",
+      "cycles": 29,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M07-03",
+      "inputs": {
+        "OCCUPANCY_DETECTED": false,
+        "ENERGY_SAVING_MODE": false,
+        "HVAC_MODE_SELECTOR": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "SUPPLY_FAN_RUN": false,
+        "TEMP_SETPOINT_ADJUST": 2
+      },
+      "note": "Auto 未占用 + 标准 → +2 ℃；未占用跑 40 拍也不起风扇",
+      "init": {},
+      "mode": "single",
+      "cycles": 40,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M07-04",
+      "inputs": {
+        "OCCUPANCY_DETECTED": false,
+        "ENERGY_SAVING_MODE": true,
+        "HVAC_MODE_SELECTOR": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "SUPPLY_FAN_RUN": false,
+        "TEMP_SETPOINT_ADJUST": 3
+      },
+      "note": "Auto 未占用 + 节能 → +3 ℃（节能只影响 Auto）",
+      "init": {},
+      "mode": "single",
+      "cycles": 40,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M07-05",
+      "inputs": {
+        "OCCUPANCY_DETECTED": false,
+        "ENERGY_SAVING_MODE": false,
+        "HVAC_MODE_SELECTOR": 1
+      },
+      "const_inputs": {},
+      "expected": {
+        "SUPPLY_FAN_RUN": false,
+        "TEMP_SETPOINT_ADJUST": 1
+      },
+      "note": "Comfort 未占用 → +1 ℃",
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M07-06",
+      "inputs": {
+        "OCCUPANCY_DETECTED": false,
+        "ENERGY_SAVING_MODE": false,
+        "HVAC_MODE_SELECTOR": 2
+      },
+      "const_inputs": {},
+      "expected": {
+        "SUPPLY_FAN_RUN": false,
+        "TEMP_SETPOINT_ADJUST": 4
+      },
+      "note": "Economy 未占用 → +4 ℃（等于上限，验证限幅不截断）",
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M07-07",
+      "inputs": {
+        "OCCUPANCY_DETECTED": false,
+        "ENERGY_SAVING_MODE": true,
+        "HVAC_MODE_SELECTOR": 2
+      },
+      "const_inputs": {},
+      "expected": {
+        "SUPPLY_FAN_RUN": false,
+        "TEMP_SETPOINT_ADJUST": 4
+      },
+      "note": "Economy 未占用 + 节能仍 +4 ℃（节能不影响 Economy）",
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M07-08",
+      "inputs": {
+        "OCCUPANCY_DETECTED": true,
+        "ENERGY_SAVING_MODE": false,
+        "HVAC_MODE_SELECTOR": 3
+      },
+      "const_inputs": {},
+      "expected": {
+        "SUPPLY_FAN_RUN": false,
+        "TEMP_SETPOINT_ADJUST": 4
+      },
+      "note": "负例：Night + 占用跑 60 拍也不允许启动风扇；修正恒 +4 ℃",
+      "init": {},
+      "mode": "single",
+      "cycles": 60,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M07-09",
+      "inputs": {
+        "OCCUPANCY_DETECTED": false,
+        "ENERGY_SAVING_MODE": true,
+        "HVAC_MODE_SELECTOR": 3
+      },
+      "const_inputs": {},
+      "expected": {
+        "SUPPLY_FAN_RUN": false,
+        "TEMP_SETPOINT_ADJUST": 4
+      },
+      "note": "Night + 未占用 + 节能 → +4 ℃（与占用、节能均无关）",
+      "init": {},
+      "mode": "single",
+      "cycles": 10,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M07-10",
+      "inputs": {
+        "OCCUPANCY_DETECTED": true,
+        "ENERGY_SAVING_MODE": false,
+        "HVAC_MODE_SELECTOR": 4
+      },
+      "const_inputs": {},
+      "expected": {
+        "SUPPLY_FAN_RUN": false,
+        "TEMP_SETPOINT_ADJUST": 0
+      },
+      "note": "负例：非法型号 4（合法集合 {0,1,2,3} 之外，上边界）→ 安全侧：风扇停、修正 0",
+      "init": {},
+      "mode": "single",
+      "cycles": 40,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M07-11",
+      "inputs": {
+        "OCCUPANCY_DETECTED": true,
+        "ENERGY_SAVING_MODE": true,
+        "HVAC_MODE_SELECTOR": -1
+      },
+      "const_inputs": {},
+      "expected": {
+        "SUPPLY_FAN_RUN": false,
+        "TEMP_SETPOINT_ADJUST": 0
+      },
+      "note": "负例：非法型号 -1（下边界外）→ 风扇停、修正 0",
+      "init": {},
+      "mode": "single",
+      "cycles": 40,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M07-12",
+      "inputs": {
+        "OCCUPANCY_DETECTED": true,
+        "ENERGY_SAVING_MODE": true,
+        "HVAC_MODE_SELECTOR": 1
+      },
+      "const_inputs": {},
+      "expected": {
+        "SUPPLY_FAN_RUN": true,
+        "TEMP_SETPOINT_ADJUST": 0
+      },
+      "note": "Comfort + 占用 + 节能：延时满 30 拍后风扇启动，修正 0（节能不影响 Comfort）",
+      "init": {},
+      "mode": "single",
+      "cycles": 30,
+      "expect_full": true
+    }
+  ],
+  "provenance": {},
+  "language": "en",
+  "raw_text": "# Office HVAC Multi-mode Energy-Saving Control\n\n- **Difficulty:** Medium (medium)\n\n## Requirements\n\nControl an office-building supply fan and generate a temperature-setpoint adjustment from occupancy, operating mode and the energy-saving selection.\n\n1. Valid HVAC_MODE_SELECTOR values are 0 (Auto), 1 (Comfort), 2 (Economy) and 3 (Night).\n2. Start a 30-second delay only when occupancy is detected and Night mode is not selected. SUPPLY_FAN_RUN becomes TRUE only after these conditions remain satisfied for 30 seconds. Immediately stop the fan and reset timing if occupancy is lost or Night mode is selected. Wait the full 30 seconds again when the conditions recover.\n3. Auto mode: use a 0°C adjustment when occupied. When unoccupied, use +3°C in energy-saving mode or +2°C in standard mode.\n4. Comfort mode: use 0°C when occupied or +1°C when unoccupied. Economy mode: use 0°C when occupied or +4°C when unoccupied.\n5. Night mode: use +4°C regardless of occupancy. The energy-saving selection affects only Auto mode.\n6. Keep TEMP_SETPOINT_ADJUST within ±4°C. Initialize outputs to OFF and zero at power-up; update them from current inputs when normal calculation begins.\n7. The start delay controls only the BOOL fan enable; no continuous speed ramp is required.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `OCCUPANCY_DETECTED` | `BOOL` | Occupancy-detection result derived from the CO₂ sensor. |\n| Input | `ENERGY_SAVING_MODE` | `BOOL` | TRUE selects energy saving; FALSE selects standard operation; affects Auto mode only. |\n| Input | `HVAC_MODE_SELECTOR` | `INT` | 0 Auto, 1 Comfort, 2 Economy, 3 Night; callers supply a valid value. |\n| Output | `SUPPLY_FAN_RUN` | `BOOL` | Supply-fan run enable. |\n| Output | `TEMP_SETPOINT_ADJUST` | `INT` | Temperature-setpoint adjustment in °C. |"
+}

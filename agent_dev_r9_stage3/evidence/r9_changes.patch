@@ -1,0 +1,1038 @@
+--- r8/stbench/evaluation.py
++++ r9/stbench/evaluation.py
+@@ -130,10 +130,12 @@
+ 
+ def evaluate(src: str, problem: Problem, *, model_check: bool = True,
+              cache_dir: Path | None = None, timeout_s: float = 60.0,
+-             backends: tuple = (), task_remaining_s: float | None = None) -> StageResult:
++             backends: tuple = (), task_remaining_s: float | None = None,
++             verification_after_tests: bool = False) -> StageResult:
+     """Hard process timeout includes parsing, initial input enumeration and judging."""
+     task_deadline=time.monotonic()+task_remaining_s if task_remaining_s is not None else None
+-    payload = {"code": src, "problem": problem.to_dict(), "model_check": model_check}
++    payload = {"code": src, "problem": problem.to_dict(), "model_check": model_check,
++               "verification_after_tests": verification_after_tests}
+     judge_hash = hashlib.sha256()
+     for f in sorted((ROOT / "stbench").rglob("*.py")):
+         if "__pycache__" not in str(f):
+--- r8/stbench/harness/engine.py
++++ r9/stbench/harness/engine.py
+@@ -98,13 +98,15 @@
+ class Solver:
+     def __init__(self, provider, max_iters=5, system_prompt=None, *, include_ltl=True,
+                  model_check=True, task_seconds=600, mc_seconds=60, cache_dir=None,
+-                 backends=(), evaluator=None, defer_budget_repairs=False, request_window_seconds=0.):
++                 backends=(), evaluator=None, defer_budget_repairs=False, request_window_seconds=0.,
++                 verification_after_tests=False):
+         if (isinstance(request_window_seconds, bool) or not isinstance(request_window_seconds, (int, float))
+                 or not math.isfinite(request_window_seconds) or request_window_seconds < 0):
+             raise ValueError('Request window must be a finite nonnegative number of seconds')
+         self.provider=provider
+         self.request_window_seconds=request_window_seconds
+         self.request_timeout_seconds=provider.timeout
++        self.verification_after_tests=verification_after_tests
+         if request_window_seconds and request_window_seconds < self.request_timeout_seconds:
+             raise ValueError('Request window must cover the configured provider timeout')
+         self.max_iters=max(1,max_iters)
+@@ -137,6 +139,7 @@
+         task_seconds=solver.task_seconds,mc_seconds=solver.mc_seconds,
+         defer_budget_repairs=solver.defer_budget_repairs,
+         request_window_seconds=solver.request_window_seconds,request_timeout_seconds=solver.request_timeout_seconds,
++        verification_after_tests=solver.verification_after_tests,
+         code_version=solver.code_version,
+         offline_fixture=hashlib.sha256(str(getattr(solver.provider,"reference",
+             getattr(getattr(solver.provider,"gateway",None),"mock_text",""))).encode()).hexdigest(),
+@@ -203,7 +206,8 @@
+                     actual_model=response.model))
+                 break
+             r=(solver.evaluator(problem,code) if solver.evaluator else evaluate(code,problem,
+-                model_check=solver.model_check,timeout_s=min(remaining,solver.mc_seconds),
++                model_check=solver.model_check,verification_after_tests=solver.verification_after_tests,
++                timeout_s=min(remaining,solver.mc_seconds),
+                 cache_dir=solver.cache_dir,backends=solver.backends,task_remaining_s=remaining))
+             rec.add(Attempt(i,code,r.compiles,r.tests_passed,len(problem.test_cases),
+                 feedback=_feedback_from(r),prompt_tokens=usage.get("prompt_tokens",0),
+--- r8/stbench/harness/prompts.py
++++ r9/stbench/harness/prompts.py
+@@ -18,7 +18,7 @@
+ 
+ from ..schema import Problem
+ 
+-PROMPT_VERSION = "v2.3-portable-st"
++PROMPT_VERSION = "v2.4-observable-st"
+ 
+ SYSTEM_PROMPT = """你是一名精通 IEC 61131-3 结构化文本（ST）的 PLC 工程师，正在为工业自动化控制场景编写功能块。
+ 
+@@ -66,6 +66,8 @@
+ 
+     if include_ltl and problem.specs:
+         lines.append("## 必须满足的形式化性质")
++        if problem.provenance.get('r9_spec_policy',{}).get('observer'):
++            lines.append('以 __spec_ 开头的量是验证器从公开输入历史计算的观察量，无须在功能块中声明或引用；只实现接口与自然语言需求。')
+         for s in problem.specs:
+             lines.append(f"- [{s.sid}] {s.text}")
+             if s.ltl:
+--- r8/stbench/judge_worker.py
++++ r9/stbench/judge_worker.py
+@@ -26,7 +26,8 @@
+         return
+     r = local_tests(job["code"], p)
+     emit(r)
+-    if r.compiles and job["model_check"]:
++    if r.compiles and job["model_check"] and (not job.get('verification_after_tests') or
++            r.tests_total > 0 and r.tests_passed == r.tests_total):
+         _attach_model_check(job["code"], p, r)
+         emit(r)
+ 
+--- r8/stbench/modelcheck.py
++++ r9/stbench/modelcheck.py
+@@ -398,6 +398,8 @@
+     max_traces: int = 20000,
+     max_seconds: float | None = 60.0,
+     program_name: str = "program",
++    observer_name: str | None = None,
++    observable_names: set[str] | None = None,
+ ) -> CheckReport:
+     """对有界轨迹集合做模型检查。
+ 
+@@ -424,10 +426,25 @@
+         rep.error = "静态检查未通过：" + "; ".join(str(d) for d in errs[:3])
+         return rep
+ 
++    from .spec_observers import observer_for, PREFIX
++    observer = observer_for(observer_name)
++    if observer and any(d.name.lower().startswith(PREFIX) for d in res.pou.decls):
++        rep.error = 'Unsupported modeling: candidate declares reserved verification observer names'
++        return rep
++    def observed(snap, previous=None, initial=False):
++        return snap | observer(snap, previous, initial) if observer else snap
++    observer_names = set(observer({}, None, True)) if observer else set()
+     # ---- 解析规约（解析失败说明数据集有缺陷，要显式报出来）----
+     parsed: list[tuple[str, str, LtlNode]] = []
+     for sid, text in specs:
+         try:
++            if observable_names is not None:
++                from .spec_policy import formula_names
++                missing = formula_names(text) - {n.lower() for n in observable_names} - observer_names
++                if missing:
++                    rep.specs.append(SpecResult(spec_id=sid, formula=text, holds=False,
++                        inconclusive=True, reason='Unsupported binding: private names ' + ', '.join(sorted(missing))))
++                    continue
+             parsed.append((sid, text, parse(text)))
+         except ValueError as e:
+             rep.specs.append(
+@@ -483,15 +500,16 @@
+         values={n.lower():v for n,v in combo.items()}
+         return tuple(_freeze(values[n]) for n in fixed_names)
+ 
+-    def state_key(it):
++    def state_key(it, snap):
+         # Equal PLC memory under different bindings can have different future transitions.
+-        return (_state_key(it),tuple(_freeze(it.get_var(n)) for n in fixed_names))
++        return (_state_key(it),tuple(_freeze(it.get_var(n)) for n in fixed_names),
++                tuple((n, _freeze(snap[n])) for n in sorted(observer_names)))
+ 
+     starts: list[tuple[tuple, list[tuple[dict, dict]]]] = []
+     # 首拍之前的快照 = 各变量的声明初值（PLC 上电瞬间的存储区）。它充当
+     # 第 1 拍的 prev()，否则 "本拍没改变状态" 这类性质会被无意义地判假。
+     _init_it = Interpreter(res.pou, res.structs)
+-    init_snap = snapshot(_init_it)
++    init_snap = observed(snapshot(_init_it), initial=True)
+     scan_fail = 0
+     for combo in combos:
+         if deadline is not None and time.monotonic() >= deadline:
+@@ -505,8 +523,8 @@
+         except (SimError, SimulationTimeout):
+             scan_fail += 1
+             continue
+-        snap = snapshot(it)
+-        key = state_key(it)
++        snap = observed(snapshot(it), init_snap)
++        key = state_key(it, snap)
+         starts.append((key, [(combo, snap)]))
+ 
+     if not starts:
+@@ -671,8 +689,8 @@
+                         # 运行期错误是仿真层该报的东西，这里跳过继续找别的路径
+                         memo[ck] = None
+                         continue
+-                    snap = snapshot(it)
+-                    key = state_key(it)
++                    snap = observed(snapshot(it), trace[-1][1])
++                    key = state_key(it, snap)
+                     memo[ck] = (key, snap)
+                 elif hit is None:
+                     continue
+--- r8/stbench/portability.py
++++ r9/stbench/portability.py
+@@ -5,7 +5,7 @@
+ import re
+ from .schema import VarDef, Direction
+ 
+-PROFILE="portable-frame-v4"
++PROFILE="portable-frame-v5"
+ 
+ def adapt(problem,src,platform):
+     p=copy.deepcopy(problem)
+@@ -87,6 +87,9 @@
+         rules.append("VARIANT -> bounded DINT FIFO, logical capacity input; not a proof for arbitrary element types")
+         rules.append("FIFO LTL cap -> explicit capacity input; independent of reference-local variable names")
+         rules.append("Capacity binding is fixed within each trace; enumerate both original capacities across traces, no dynamic-resize claim")
++    from .spec_policy import apply
++    apply(p)
++    rules.append('R9 observable formula policy; private candidate state is not a verification binding')
+     p.provenance["platform_adaptation"]={"profile":PROFILE,"platform":platform,"rules":rules,
+                                         "original_pid":problem.pid}
+     return p,src,dict(profile=PROFILE,platform=platform,pid=p.pid,rules=rules,
+--- r8/stbench/spec_observers.py
++++ r9/stbench/spec_observers.py
+@@ -0,0 +1,59 @@
++"""Verification-only observers driven by public inputs, never candidate internals."""
++import re
++
++PREFIX = '__spec_'
++
++
++def ipv4(current, previous=None, initial=False):
++    text = str(current.get('iptext', ''))
++    parts = text.split('.')
++    valid = len(parts) == 4 and all(re.fullmatch(r'[0-9]+', p) and int(p) <= 255
++                                  and (len(p) == 1 or p[0] != '0') for p in parts)
++    value = 0
++    if valid:
++        for part in parts:
++            value = value * 256 + int(part)
++    return dict(__spec_ip_valid=bool(valid), __spec_ip_value=value,
++                __spec_ip_segments=len(parts))
++
++
++def process(current, previous=None, initial=False):
++    """Observable conveyor contract; phase and sequence position belong to the checker."""
++    before = previous or {}
++    phase = int(before.get('__spec_phase', 0))
++    index = int(before.get('__spec_index', 0))
++    station = int(before.get('__spec_station', 1))
++    target = int(before.get('__spec_target', 0))
++    length = int(current.get('processlength', 0))
++    sequence = current.get('processsequence', [])
++    values = getattr(sequence, 'items', sequence)
++    valid = (1 <= length <= 8 and isinstance(values, (list, tuple)) and len(values) >= length
++             and values[length - 1] == 5 and all(2 <= v <= 4 for v in values[:length - 1]))
++    prefix_valid = True if initial else bool(valid and before.get('__spec_prefix_valid', True))
++    complete_name = 'station' + str(station) + 'complete'
++    complete = phase == 2 and bool(current.get(complete_name)) and not bool(before.get(complete_name))
++    if not initial and prefix_valid:
++        if phase == 0 and current.get('sensor1') and current.get('station1start') and not before.get('station1start'):
++            index, station, target, phase = 1, 1, int(values[0]), 1
++        if phase == 2 and complete:
++            index += 1
++            if index > length:
++                phase = 0
++            else:
++                target, phase = int(values[index - 1]), 1
++        if phase == 1 and current.get('sensor' + str(target)):
++            station, phase = target, 0 if target == 5 else 2
++    return dict(__spec_contract=bool(valid and prefix_valid), __spec_prefix_valid=prefix_valid,
++                __spec_phase=phase, __spec_index=index,
++                __spec_station=station, __spec_target=target, __spec_complete=bool(complete),
++                __spec_idle=phase == 0, __spec_wait=phase == 2,
++                __spec_right=phase == 1 and target > station,
++                __spec_left=phase == 1 and target < station)
++
++
++def observer_for(name):
++    if name is None:
++        return None
++    if name not in ('ipv4', 'process'):
++        raise ValueError('Unknown verification observer')
++    return {'ipv4': ipv4, 'process': process}[name]
+--- r8/stbench/spec_policy.py
++++ r9/stbench/spec_policy.py
+@@ -0,0 +1,92 @@
++"""R9 formula overlays; original datasets and expected outputs remain intact."""
++from .ltl import parse
++from .st.frontend import Parser, tokenize
++
++
++def formula_names(formula):
++    result = set()
++    def expression(node):
++        if node.kind == 'name':
++            result.add(node.tok.value.lower())
++        for child in node.args:
++            expression(child)
++    def visit(node):
++        if node.kind == 'atom':
++            tokens, errors = tokenize(node.text)
++            if errors:
++                raise ValueError('Invalid formula atom')
++            expression(Parser(tokens).parse_expression())
++        for child in node.args:
++            visit(child)
++    visit(parse(formula))
++    return result
++
++
++def apply(problem):
++    if problem.pid in {'self-hard-05','self-hard-06','self-hard-07','self-medium-05','self-medium-06'}:
++        problem.provenance['upstream_review_claim'] = problem.provenance.get('review','')
++        problem.provenance['review'] = '自动工程复核；人工工艺审核待确认，不将上游审核字样视为签署证据'
++        problem.provenance['human_process_review'] = dict(status='pending',reviewer=None,date=None)
++    observer = None
++    changes = []
++    if problem.pid == 'public-medium-08':
++        observer = 'ipv4'
++        problem.requirements += ('\nR9 明确原有用例采用的文本约定：每段允许单个 0，'
++                                 '其他段须以 1..9 开头；多位前导零非法。原用例期望不变。')
++        replacements = {
++            'S1': ('非法 IPv4 输入必须输出 0，合法性由公开输入计算。', 'G(NOT __spec_ip_valid -> ipValue = 0)'),
++            'S2': ('合法四段 IPv4 按网络字节序输出；不约束候选内部计数器。',
++                   'G(__spec_ip_valid -> ipValue = __spec_ip_value)'),
++            'S3': ('只有四段全 255 的合法输入才允许输出最大地址。',
++                   'G(ipValue = 4294967295 -> __spec_ip_valid AND __spec_ip_value = 4294967295)'),
++            'S4': ('对输入文本的合法/非法映射逐扫描比较；观察量来自公开输入。',
++                   'G(ipValue = __spec_ip_value)'),
++        }
++    elif problem.pid == 'public-hard-02':
++        observer = 'process'
++        replacements = {
++            'S2': ('输入契约内，观察器判定空闲时输送带静止。',
++                   'G(__spec_contract AND __spec_idle -> NOT conveyorLeft AND NOT conveyorRight)'),
++            'S3': ('输入契约内，等待加工完成时输送带静止。',
++                   'G(__spec_contract AND __spec_wait -> NOT conveyorLeft AND NOT conveyorRight)'),
++            'S4': ('输入契约内，下一目标在右侧且未到位时正转。',
++                   'G(__spec_contract AND __spec_right -> conveyorRight AND NOT conveyorLeft)'),
++            'S5': ('输入契约内，下一目标在左侧且未到位时反转。',
++                   'G(__spec_contract AND __spec_left -> conveyorLeft AND NOT conveyorRight)'),
++            'S6': ('当前工位完成信号上升沿推进一工序后，输送输出须符合下一目标。只检验可观察效果，不断言私有 idx。',
++                   'G(__spec_contract AND __spec_complete -> conveyorLeft = __spec_left AND conveyorRight = __spec_right)'),
++            'S7': ('输入契约内，有未到达的不同目标时必须输出一个输送方向。',
++                   'G(__spec_contract AND (__spec_left OR __spec_right) -> conveyorLeft OR conveyorRight)'),
++        }
++    else:
++        replacements = {}
++    if problem.pid == 'self-easy-01':
++        clauses = []
++        for n in range(1, 9):
++            total = '+'.join(f'INT_TO_DINT(values[{i}])' for i in range(1, n + 1))
++            condition = f'count = {n}' if n < 8 else 'count >= 8'
++            clauses.append(f'(enable AND avgEnable AND {condition} -> ABS(avgOut - DINT_TO_REAL({total}) / {n}.0) <= 0.000001)')
++        replacements['S4'] = ('投入且样本数为正时输出有效前缀平均值；超过八个按八个计算，浮点比较容差 1e-6。',
++                              'G(' + ' AND '.join(clauses) + ')')
++    if problem.pid == 'self-medium-05':
++        reset = '(resetBtn AND NOT prev(resetBtn))'
++        active = f'(enable AND NOT dataFault AND NOT {reset})'
++        formula = ('G(ABS(revenue - qualifiedTon * 280.0) <= 0.000001 AND '
++                   'ABS(cost - fuelTon * 1500.0) <= 0.000001 AND '
++                   'ABS(netProfit - (revenue - cost)) <= 0.000001 AND '
++                   f'({active} AND qualified -> ABS(qualifiedTon - (prev(qualifiedTon) + steamFlow * scanSeconds / 1000.0)) <= 0.000001) AND '
++                   f'({active} -> ABS(fuelTon - (prev(fuelTon) + fuelFlow * scanSeconds / 1000.0)) <= 0.000001))')
++        replacements['S8'] = ('公开输入和累计输出的增量及收入成本关系；复位拍不累计，浮点容差 1e-6。', formula)
++    if problem.pid == 'self-medium-06':
++        inactive = '(NOT enable OR fault OR (resetBtn AND NOT prev(resetBtn)))'
++        replacements['S6'] = ('有效工作拍功率为 bias 加修正后的 0..100 钳位；停用、故障或复位拍为零。',
++            f'G(({inactive} -> power = 0.0) AND (NOT {inactive} -> ABS(power - LIMIT(0.0, bias + correction, 100.0)) <= 0.000001))')
++    for spec in problem.specs:
++        if spec.sid in replacements:
++            changes.append(dict(sid=spec.sid, original_ltl=spec.ltl, original_text=spec.text,
++                                original_verified_by=spec.verified_by))
++            spec.text, spec.ltl = replacements[spec.sid]
++        if spec.ltl:
++            spec.verified_by = 'bounded_checker'
++    problem.provenance['r9_spec_policy'] = dict(observer=observer, changes=changes,
++        note='Observer names are verification-only; candidate must implement only its public interface')
+--- r8/stbench/st/driver.py
++++ r9/stbench/st/driver.py
+@@ -346,6 +346,9 @@
+             max_traces=problem.mc_max_traces,
+             max_seconds=problem.mc_max_seconds,
+             program_name=problem.pid,
++            observer_name=problem.provenance.get('r9_spec_policy',{}).get('observer'),
++            observable_names={v.name for v in problem.variables}
++                if 'r9_spec_policy' in problem.provenance else None,
+         )
+     except Exception as e:  # 检查器自身出错不能污染"程序对不对"的结论
+         out.mc_error = f"模型检查器异常：{type(e).__name__}: {e}"
+--- r8/stbench/transport.py
++++ r9/stbench/transport.py
+@@ -95,6 +95,7 @@
+         self.max_tokens,self.protocol,self.timeout=max_tokens,protocol,timeout
+         self.sender=sender or post;self.offline=offline;self.last_receipt={}
+         self.last_charge=0.;self.before_send=None
++        self.response_observer=None
+         self.probe_rejection_allowed=False
+         if offline:self.name="mock"
+     def upper(self,messages):
+@@ -129,6 +130,8 @@
+             # Preserve known usage even if settlement discovers a violated reservation.
+             self.last_charge=cost;self.last_receipt=receipt
+             self.budget.settle(index,cost,metadata=receipt)
++            if self.response_observer is not None:
++                self.response_observer(data,self.protocol)
+             if v['completion_tokens']>self.max_tokens:
+                 self.budget.halt('Output token limit exceeded',details=dict(category='output_limit',
+                     model=self.model,protocol=self.protocol,event_index=index))
+--- r8/scripts/analyze_campaign.py
++++ r9/scripts/analyze_campaign.py
+@@ -13,6 +13,12 @@
+ from stbench.harness.engine import RunRecord
+ from pilot_provenance import load_sources
+ from request_accounting import accounting_record
++from stbench.portability import adapt,PROFILE
++
++
++def analysis_problems(profile):
++    selected=problems()
++    return [adapt(p,'','codesys')[0] for p in selected] if profile==PROFILE else selected
+ 
+ 
+ def main():
+@@ -20,7 +26,7 @@
+     ap.add_argument('--stage',default='final');ap.add_argument('--out',type=Path,required=True);args=ap.parse_args()
+     cfg=configuration('');root=args.campaign or Path(cfg['campaign_root']);folder=root/args.stage
+     freeze=json.loads((folder/'freeze.json').read_text(encoding='utf-8'))
+-    cfg=freeze['config'];selected=problems()
++    cfg=freeze['config'];selected=analysis_problems(freeze['profile'])
+     accepted_sources={freeze['judge_sha256']}
+     if args.stage=='pilot':accepted_sources=load_sources(root,freeze)
+     if args.stage!='final':selected=[p for p in selected if p.pid in PILOT]
+--- r8/scripts/audit_r9_materials.py
++++ r9/scripts/audit_r9_materials.py
+@@ -0,0 +1,75 @@
++"""Audit original properties, observable bindings and pending process reviews without model calls."""
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import sys
++ROOT=Path(__file__).resolve().parents[1]
++sys.path.insert(0,str(ROOT))
++from stbench.cli import problems,reference
++from stbench.portability import adapt
++from stbench.spec_policy import formula_names
++from stbench.spec_observers import observer_for
++from stbench.evaluation import atomic_json,local_tests
++
++
++def main():
++    ap=argparse.ArgumentParser();ap.add_argument('--out',type=Path,required=True)
++    ap.add_argument('--reviewer',default='');args=ap.parse_args()
++    args.out.mkdir(parents=True,exist_ok=False)
++    origin=json.loads((ROOT/'ORIGIN_R8.json').read_text(encoding='utf-8'))
++    for name,expected in origin['files'].items():
++        if hashlib.sha256((Path(origin['source_root'])/name).read_bytes()).hexdigest()!=expected:
++            raise RuntimeError('R8 source or dataset changed: '+name)
++        if name.startswith('datasets/') and hashlib.sha256((ROOT/name).read_bytes()).hexdigest()!=expected:
++            raise RuntimeError('Original R9 dataset was edited: '+name)
++    missing=[];bindings=[];refs=[];reviews=[]
++    new_ids={'self-hard-05','self-hard-06','self-hard-07','self-medium-05','self-medium-06'}
++    for original in problems():
++        p,code,_=adapt(original,reference(original),'codesys')
++        judged=local_tests(code,p)
++        refs.append(dict(pid=p.pid,passed=judged.tests_passed,total=judged.tests_total,compiles=judged.compiles,error=judged.failure_summary))
++        replacements={s.sid:s for s in p.specs}
++        for spec in original.specs:
++            if not spec.ltl:
++                updated=replacements[spec.sid]
++                missing.append(dict(pid=p.pid,sid=spec.sid,text=spec.text,r9_formula=updated.ltl,
++                    status='formalized' if updated.ltl else 'simulation_only_pending',
++                    next_step='reference and mutation checks' if updated.ltl else 'Define an input-history observer or retain the explicit simulation boundary'))
++        observer=observer_for(p.provenance['r9_spec_policy']['observer'])
++        allowed={v.name.lower() for v in p.variables}|(set(observer({},None,True)) if observer else set())
++        for spec in p.specs:
++            if spec.ltl:
++                private=sorted(formula_names(spec.ltl)-allowed)
++                if private:bindings.append(dict(pid=p.pid,sid=spec.sid,unbound_private_names=private,
++                                               result='inconclusive, never counted as passed'))
++        if p.pid in new_ids:
++            reviews.append(dict(pid=p.pid,title=p.title,source=original.provenance,
++                automatic_reference_cases=f'{judged.tests_passed}/{judged.tests_total}',
++                human_process_review='pending',assigned_reviewer=args.reviewer or None,
++                reviewer=None,review_date=None,signoff=None,
++                required_review=['工艺边界与安全侧行为','输入单位、量程与采样周期','复位/故障/正常动作优先级',
++                                 '公式和阈值的适用条件','原有用例及未覆盖工况']))
++    if any(not r['compiles'] or r['passed']!=r['total'] for r in refs):
++        raise RuntimeError('Adapted reference tests failed; inspect audit records')
++    result=dict(r8_files_unchanged=True,original_cases_unchanged=True,reference_passed=sum(r['passed'] for r in refs),
++        reference_total=sum(r['total'] for r in refs),original_simulation_only=len(missing),
++        newly_formalized=sum(bool(r['r9_formula']) for r in missing),remaining_simulation_only=sum(not r['r9_formula'] for r in missing),
++        unbound_specs=len(bindings),human_reviews_pending=len(reviews),generation_requests=0)
++    atomic_json(args.out/'summary.json',result);atomic_json(args.out/'property_audit.json',missing)
++    atomic_json(args.out/'binding_audit.json',bindings);atomic_json(args.out/'reference_tests.json',refs)
++    atomic_json(args.out/'human_review.json',reviews)
++    lines=['# R9 规约与工艺审核清单','','自动工程复核不替代人工工艺确认。上游 provenance 中的人工审核措辞只是来源声明，未视为已经签署的审核证据。','',
++           f"原有 28 条仅测试覆盖性质中，{result['newly_formalized']} 条增加了公式，{result['remaining_simulation_only']} 条继续明确列为测试覆盖。适配参考用例 {result['reference_passed']}/{result['reference_total']}。",'',
++           '|题号|性质|处理|','|---|---|---|']
++    for row in missing:lines.append(f"|{row['pid']}|{row['sid']}|{'新增公式，待有界检查' if row['r9_formula'] else '保留测试覆盖，待观察器建模'}|")
++    lines+=['','## 五道新增工业题的人工复核','','|题号|主题|自动用例|审核人|结论|','|---|---|---|---|---|']
++    for row in reviews:lines.append(f"|{row['pid']}|{row['title']}|{row['automatic_reference_cases']}|{row['assigned_reviewer'] or '待填写'}|待工艺复核|")
++    lines+=['','逐题核对单位、阈值、失效安全侧、复位和故障优先级及未覆盖工况；审核人确认后再记录日期和结论。',
++            '',f"另有 {len(bindings)} 条公式仍引用未绑定的候选内部名称，运行时单列为无法判定，不能算作通过；详见 binding_audit.json。",'']
++    (args.out/'审核清单.md').write_text('\n'.join(lines),encoding='utf-8')
++    print(json.dumps(result,ensure_ascii=False))
++    return 0
++
++
++if __name__=='__main__':raise SystemExit(main())
+--- r8/scripts/monitor_r9_diagnostics.py
++++ r9/scripts/monitor_r9_diagnostics.py
+@@ -0,0 +1,66 @@
++"""Read-only progress and final diagnostic interpretation; zero model calls."""
++import json
++from pathlib import Path
++import re
++import sys
++import time
++ROOT=Path(__file__).resolve().parents[1]
++sys.path.insert(0,str(ROOT))
++from stbench.campaign import configuration,tasks,group_order,first_candidate_bound,digest
++from stbench.evaluation import atomic_json
++from r9_diagnostics import status,summarize
++from campaign_status import load
++
++
++def finish(cfg):
++    root=Path(cfg['campaign_root']);plan=load(root/'diagnostic_plan.json')
++    summarize(cfg,plan);summary=load(root/'diagnostic_summary.json');responses=[]
++    for p in sorted((root/'jobs').glob('*/*.response.json')):
++        data=load(p);message=data.get('message',{});content=message.get('content') or ''
++        thoughts=message.get('reasoning_content') or ''
++        tags=re.findall(r'<think>(.*?)</think>',content,re.S)
++        responses.append(dict(condition=p.parent.name,pid=p.name[:-len('.response.json')],
++            finish_reason=data.get('finish_reason'),content_characters=len(content),reasoning_characters=len(thoughts),
++            tagged_thinking_characters=sum(map(len,tags)),unclosed_think=content.lstrip().startswith('<think>') and '</think>' not in content,
++            contains_end_function_block='END_FUNCTION_BLOCK' in content.upper()))
++    rows=summary['rows'];delta={}
++    for fw in ('custom','codex'):
++        own={r['variant']:r for r in rows if r['framework']==fw}
++        delta[fw]=dict(generated=own['concise']['generated']-own['baseline']['generated'],
++                       solved=own['concise']['solved']-own['baseline']['solved'])
++    complete=all(r['attempted']==6 for r in rows)
++    benefit=complete and all(v['generated']>=0 and v['solved']>=0 for v in delta.values()) and any(v['generated']>0 or v['solved']>0 for v in delta.values())
++    specs={m['id']:m for m in cfg['models']}
++    upper=sum(first_candidate_bound(specs[mid],p,cfg,fw) for _,p,_ in tasks() for fw,mid in group_order(cfg))
++    ledger=load(cfg['budget_ledger_path']);remaining=75-ledger['spent_cny']
++    gate=dict(diagnostic_complete=complete,prompt_benefit_observed=benefit,changes=delta,
++        source_sha256=digest(),remaining_total_cny=remaining,full_first_candidate_upper_cny=upper,
++        full_formal_run_started=False,ready_for_full_formal_run=False,
++        reasons=['This is a single-candidate MiniMax prompt diagnosis, not a real repair-policy comparison',
++                 'New full four-condition evaluation needs its own frozen protocol and budget feasibility check'],
++        next_step='Review saved response structure and paired results before changing transport or generation limits',
++        automatic_paid_requests=0)
++    atomic_json(root/'response_structure_analysis.json',responses);atomic_json(root/'r9_gate.json',gate)
++    lines=['# 小规模诊断结果','', '固定六题、MiniMax、实际 Codex CLI 与自研两框架；两种提示各一个候选。不能替代四组全量实验。','',
++           '|框架|提示|已尝试/6|取得代码|整题功能通过|截断/空回复|','|---|---|---|---|---|']
++    for r in rows:lines.append(f"|{r['framework']}|{r['variant']}|{r['attempted']}|{r['generated']}|{r['solved']}|{r['incomplete']}|")
++    lines+=['',f"本轮累计计入增量 {summary['additional_accounted_cny']:.4f}/10 元（含预留口径），共享账本 {ledger['spent_cny']:.4f}/75 元。",'',
++            f"提示改进在本样本是否观察到无退步的正收益：{benefit}。单次小样本不证明稳定优势。",'',
++            f"当前全量首候选的保守预留约 {upper:.2f} 元，总剩余额度约 {remaining:.2f} 元；未自动开启全量 R9。",'',
++            '响应结构明细见 response_structure_analysis.json；下一阶段门槛见 r9_gate.json。', '']
++    (root/'诊断结果.md').write_text('\n'.join(lines),encoding='utf-8')
++
++
++def main():
++    cfg=configuration(str(ROOT/'config.r9_diagnostic.json'));root=Path(cfg['campaign_root'])
++    while True:
++        alive,terminal=status(cfg)
++        if terminal:
++            finish(cfg);return 0
++        if not alive and load(root/'active_run.json'):
++            atomic_json(root/'diagnostic_state.json',dict(state='stopped',error='Registered runner disappeared; retained reservations need diagnosis'))
++            finish(cfg);status(cfg);return 2
++        time.sleep(15)
++
++
++if __name__=='__main__':raise SystemExit(main())
+--- r8/scripts/package_continuation.py
++++ r9/scripts/package_continuation.py
+@@ -47,6 +47,8 @@
+                 payload['agent_dev/'+p.relative_to(ROOT).as_posix()]=p.read_bytes()
+     for name in ['README.md','requirements.txt','config.example.json','config.dmxapi.json','.gitignore','requirements-analysis.txt']:
+         payload['agent_dev/'+name]=(ROOT/name).read_bytes()
++    for name in ['ORIGIN_R8.json','config.r9_diagnostic.json','config.r8_frozen.json']:
++        if (ROOT/name).exists():payload['agent_dev/'+name]=(ROOT/name).read_bytes()
+     for name in ['original_input_manifest.json','upstream_v1.2_cases.json']:
+         payload['agent_dev/evidence/'+name]=(ROOT/'evidence'/name).read_bytes()
+     for evidence in [args.validation.resolve().parent]+[p.resolve() for p in args.include_evidence]:
+--- r8/scripts/r9_diagnostics.py
++++ r9/scripts/r9_diagnostics.py
+@@ -0,0 +1,192 @@
++"""Six-task MiniMax prompt diagnosis; fixed additional cap, no automatic full R9 run."""
++import argparse
++from contextlib import ExitStack
++import ctypes
++from datetime import datetime,timezone
++import hashlib
++import html
++import json
++from pathlib import Path
++import re
++import shutil
++import sys
++import time
++ROOT=Path(__file__).resolve().parents[1]
++sys.path.insert(0,str(ROOT))
++from stbench.campaign import configuration,credentials,credential_check,digest,PILOT,native_preflight,tasks,first_candidate_bound
++from stbench.billing import CampaignBudget,canonical_ledger,ledger_lock
++from stbench.codex_baseline import ResponsesGateway,CodexProvider
++from stbench.transport import MeteredProvider
++from stbench.providers.base import ProviderError
++from stbench.harness.engine import Solver,solve_problem
++from stbench.harness.prompts import build_system_prompt
++from stbench.platforms import CodesysBackend
++from stbench.evaluation import atomic_json
++from campaign_status import load,registered_process_alive
++from resume_user_paused_campaign import current_process_marker
++
++CONCISE='返回一个最简完整 FUNCTION_BLOCK FB，不附讲解、测试程序、备选实现或大段注释。先确保接口、声明和所有控制块闭合；只使用 IEC 基本语法。'
++
++
++def scoped_budget(cfg,plan):
++    if plan.get('incremental_cap_cny')!=10 or plan.get('total_authorized_cny')!=75:
++        raise RuntimeError('Diagnostic authorization must retain 10 CNY additional / 75 CNY total')
++    ceiling=plan['baseline_spent_cny']+10
++    if plan.get('cumulative_ceiling_cny')!=ceiling:
++        raise RuntimeError('Diagnostic cumulative ceiling changed')
++    budget=CampaignBudget(canonical_ledger(cfg),'final',phase_caps=cfg['phase_limits'])
++    budget.ceiling_override=min(ceiling,65)
++    return budget
++
++
++def response_capture(path):
++    def capture(data,protocol):
++        message=(data.get('choices') or [{}])[0].get('message',{}) if protocol=='chat' else {}
++        safe=dict(model=data.get('model'),usage=data.get('usage'),protocol=protocol,
++                  finish_reason=(data.get('choices') or [{}])[0].get('finish_reason'),
++                  message={k:message[k] for k in ('content','reasoning_content','reasoning_details') if k in message})
++        text=json.dumps(safe,ensure_ascii=False)
++        text=re.sub(r'\bsk-[A-Za-z0-9_-]{16,}','[redacted]',text)
++        atomic_json(path,json.loads(text))
++    return capture
++
++
++def status(cfg):
++    root=Path(cfg['campaign_root']);state=load(root/'diagnostic_state.json');plan=load(root/'diagnostic_plan.json')
++    ledger=load(cfg['budget_ledger_path']);records=[p for p in (root/'jobs').glob('*/*.json') if not p.name.endswith('.response.json')]
++    alive=registered_process_alive(load(root/'active_run.json'))
++    lines=[{'running':'小规模诊断正在运行','completed':'小规模诊断已结束','stopped':'小规模诊断已停止，需要检查'}.get(state.get('state'),'诊断准备中'),'',
++           '更新时间：'+datetime.now().astimezone().strftime('%Y-%m-%d %H:%M:%S'),
++           f'已保存诊断题次：{len(records)}/24（六题 × 两框架 × 两提示）',
++           f"本轮累计计入增量：{max(0,ledger.get('spent_cny',0)-plan.get('baseline_spent_cny',0)):.4f}/10 元（含在途及历史预留口径）",
++           f"共享账本累计：{ledger.get('spent_cny',0):.4f}/75 元",'',
++           '这些是 MiniMax 小样本诊断，不能替代新的四组全量实验。']
++    if alive:lines.append('电脑需保持开机联网，避免合盖、睡眠或关机。')
++    if state.get('error'):lines.append('停止原因：'+state['error'])
++    if state.get('state')=='completed':lines.append('结果见 diagnostic_summary.json；未自动启动全量 R9。')
++    text='\n'.join(lines)+'\n';(root/'诊断状态.txt').write_text(text,encoding='utf-8')
++    (root/'诊断状态.html').write_text('<meta charset="utf-8"><meta http-equiv="refresh" content="15"><style>body{font:18px/1.8 system-ui;margin:40px}pre{white-space:pre-wrap}</style><pre>'+html.escape(text)+'</pre>',encoding='utf-8')
++    return alive,state.get('state') in ('completed','stopped')
++
++
++def summarize(cfg,plan):
++    root=Path(cfg['campaign_root']);rows=[]
++    for fw in ('custom','codex'):
++        for variant in ('baseline','concise'):
++            records=[load(p) for p in (root/'jobs'/(fw+'_'+variant)).glob('*.json') if not p.name.endswith('.response.json')]
++            rows.append(dict(framework=fw,variant=variant,n=6,attempted=sum(bool(r.get('attempts')) for r in records),
++                generated=sum(any(a.get('code') for a in r.get('attempts',[])) for r in records),solved=sum(bool(r.get('solved')) for r in records),
++                incomplete=sum(a.get('provider_error','').startswith('Generation incomplete/empty:') for r in records for a in r.get('attempts',[]))))
++    atomic_json(root/'diagnostic_summary.json',dict(rows=rows,source_sha256=digest(),
++        baseline_spent_cny=plan['baseline_spent_cny'],additional_accounted_cny=load(cfg['budget_ledger_path'])['spent_cny']-plan['baseline_spent_cny'],
++        automatic_full_run=False,notice='Single-candidate MiniMax prompt diagnosis; not a four-condition formal benchmark'))
++
++
++def main():
++    ap=argparse.ArgumentParser();ap.add_argument('--prepare',action='store_true');ap.add_argument('--watch',action='store_true')
++    ap.add_argument('--live',action='store_true');ap.add_argument('--validation',type=Path);args=ap.parse_args()
++    cfg=configuration(str(ROOT/'config.r9_diagnostic.json'));root=Path(cfg['campaign_root']);origin=load(ROOT/'ORIGIN_R8.json')
++    if args.watch:
++        while True:
++            alive,terminal=status(cfg)
++            if terminal:return 0
++            if not alive and load(root/'active_run.json'):
++                atomic_json(root/'diagnostic_state.json',dict(state='stopped',error='Registered diagnostic runner disappeared; inspect reservations before restarting'))
++                status(cfg);return 2
++            time.sleep(15)
++    if not args.validation:raise RuntimeError('Current validation is required')
++    limits=cfg['limits']
++    if tuple(limits.get(k) for k in ('task_seconds','request_seconds','max_candidates','mc_seconds','max_output_tokens'))!=(1200,420,1,30,16384):
++        raise RuntimeError('Controlled diagnostic limits changed')
++    proof=load(args.validation)
++    if proof.get('passed') is not True or proof.get('source_sha256')!=digest():raise RuntimeError('Current source validation mismatch')
++    jobs=[dict(pid=pid,framework=fw,variant=variant) for i,pid in enumerate(PILOT)
++          for fw,variant in ([('custom','baseline'),('codex','baseline'),('custom','concise'),('codex','concise')][i%4:]+
++                            [('custom','baseline'),('codex','baseline'),('custom','concise'),('codex','concise')][:i%4])]
++    selected={p.pid:p for _,p,_ in tasks()};spec=cfg['models'][1]
++    first_pool=sum(first_candidate_bound(spec,selected[j['pid']],cfg,j['framework']) for j in jobs)
++    if first_pool>10:raise RuntimeError('Worst-case first-request reservations exceed this diagnostic allocation')
++    plan=dict(source_sha256=digest(),incremental_cap_cny=10,total_authorized_cny=75,
++              config_sha256=hashlib.sha256(json.dumps(cfg,sort_keys=True).encode()).hexdigest(),
++              runner_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
++              baseline_spent_cny=origin['budget_baseline_cny'],baseline_event_count=origin['baseline_event_count'],
++              cumulative_ceiling_cny=origin['diagnostic_cumulative_ceiling_cny'],jobs=jobs,
++              protocol='chat',output_cap=16384,max_candidates=1,task_seconds=1200,request_seconds=420,
++              mc_seconds=30,verification_after_tests=True,
++              validation=str(args.validation.resolve()),comparison='prompt only; common tests-first judgement')
++    plan['first_request_upper_bound_cny']=first_pool
++    planfile=root/'diagnostic_plan.json'
++    if args.prepare:
++        if planfile.exists():
++            if (root/'active_run.json').exists() or (root/'diagnostic_state.json').exists():
++                raise RuntimeError('A diagnostic has started; prepare cannot change it')
++            old=load(planfile)
++            if old==plan:print('Already prepared; no model request sent',flush=True);return 0
++            history=root/'preparation_history'/old['source_sha256']
++            history.mkdir(parents=True,exist_ok=False)
++            for name in ('diagnostic_plan.json','prepared.json','native_preflight.json'):
++                if (root/name).exists():shutil.copy2(root/name,history/name)
++        atomic_json(planfile,plan);native_preflight(cfg,root)
++        atomic_json(root/'prepared.json',dict(source_sha256=digest(),native_controls='passed',generation_requests=0))
++        print('Prepared 24 diagnostic jobs; native controls passed; no model request sent',flush=True);return 0
++    if not args.live:raise RuntimeError('Explicit live diagnostic action required')
++    if load(planfile)!=plan or load(root/'prepared.json').get('source_sha256')!=digest():raise RuntimeError('Prepared plan changed')
++    marker=load(root/'active_run.json')
++    if marker or load(root/'diagnostic_state.json'):raise RuntimeError('Diagnostic run already started; no automatic resume')
++    catalog=credential_check(cfg);atomic_json(root/'credential_check.json',catalog)
++    if not all(catalog['selected_models'].values()):raise RuntimeError('Selected models absent from catalog')
++    import zipfile
++    with zipfile.ZipFile(root/'frozen_source_before_diagnostics.zip','x',zipfile.ZIP_DEFLATED) as archive:
++        for folder in ('stbench','scripts','datasets'):
++            for path in sorted((ROOT/folder).rglob('*')):
++                if path.is_file() and '__pycache__' not in path.parts:archive.write(path,path.relative_to(ROOT).as_posix())
++        archive.write(ROOT/'config.r9_diagnostic.json','config.r9_diagnostic.json')
++    budget=scoped_budget(cfg,plan)
++    with ledger_lock(canonical_ledger(cfg)):
++        initial=budget.read()
++        if initial['spent_cny']!=plan['baseline_spent_cny'] or len(initial['events'])!=plan['baseline_event_count']:
++            raise RuntimeError('Shared ledger changed before diagnostic start; review the fixed plan')
++        atomic_json(root/'active_run.json',dict(**current_process_marker(),state='running',source_sha256=digest(),entry='r9_diagnostics.py'))
++    awake=bool(ctypes.windll.kernel32.SetThreadExecutionState(0x80000001))
++    atomic_json(root/'diagnostic_state.json',dict(state='running',source_sha256=digest(),system_awake_requested=awake))
++    try:
++        for job in jobs:
++            budget.snapshot();status(cfg);p=selected[job['pid']];folder=root/'jobs'/(job['framework']+'_'+job['variant'])
++            folder.mkdir(parents=True,exist_ok=True)
++            with ExitStack() as stack:
++                transport=MeteredProvider(spec,budget,max_tokens=16384,protocol='chat',timeout=420)
++                transport.response_observer=response_capture(folder/(p.pid+'.response.json'))
++                sent=[0]
++                def one_request(messages):
++                    if sent[0]:raise ProviderError('Diagnostic single-request limit reached; no request sent')
++                    sent[0]+=1
++                    public=dict(model=spec['model'],protocol='chat',max_tokens=16384,timeout_seconds=420,
++                                messages=[{k:m[k] for k in ('role','content') if k in m} for m in messages])
++                    safe=re.sub(r'\bsk-[A-Za-z0-9_-]{16,}','[redacted]',json.dumps(public,ensure_ascii=False,indent=2))
++                    (folder/(p.pid+'.request.txt')).write_text(safe,encoding='utf-8')
++                transport.before_send=one_request
++                if job['framework']=='codex':
++                    gateway=stack.enter_context(ResponsesGateway(provider=transport,model=spec['model']))
++                    provider=CodexProvider(gateway,model=spec['model'],work_root=Path(cfg['platform_root'])/'builds/codex_r9_diagnostics',timeout=450)
++                else:provider=transport
++                system=build_system_prompt()+('\n'+cfg['strategy'].get('extra_instruction','') if job['framework']=='custom' else '')
++                if job['variant']=='concise':system+='\n'+CONCISE
++                solver=Solver(provider,max_iters=1,system_prompt=system,include_ltl=True,model_check=True,
++                    verification_after_tests=True,task_seconds=1200,mc_seconds=30,request_window_seconds=450,
++                    backends=(CodesysBackend(cfg),),cache_dir=root/'cache'/(job['framework']+'_'+job['variant']))
++                record=solve_problem(p,solver,log_dir=folder)
++                print(job['pid'],job['framework'],job['variant'],record.solved,record.stop_reason,flush=True)
++            budget.snapshot()
++        summarize(cfg,plan)
++    except BaseException as error:
++        atomic_json(root/'diagnostic_state.json',dict(state='stopped',error=str(error),source_sha256=digest(),at=datetime.now(timezone.utc).isoformat()))
++        status(cfg);raise
++    else:
++        atomic_json(root/'diagnostic_state.json',dict(state='completed',source_sha256=digest(),at=datetime.now(timezone.utc).isoformat()))
++        status(cfg)
++    finally:
++        if awake:ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
++    return 0
++
++
++if __name__=='__main__':raise SystemExit(main())
+--- r8/scripts/record_environment.py
++++ r9/scripts/record_environment.py
+@@ -14,15 +14,17 @@
+ from stbench.cli import doctor
+ from stbench.evaluation import atomic_json
+ from stbench.platforms import CodesysBackend, OpenPLCBackend
++from stbench.portability import PROFILE
+ 
+ 
+ def main():
+     ap = argparse.ArgumentParser()
+     ap.add_argument('--out', type=Path, required=True)
++    ap.add_argument('--config', default='')
+     args = ap.parse_args()
+     if args.out.exists():
+         raise RuntimeError('Use a new environment evidence file')
+-    cfg = configuration('')
++    cfg = configuration(args.config)
+     codex = shutil.which('codex')
+     version = subprocess.run([codex, '--version'], capture_output=True, text=True, timeout=15, check=True).stdout.strip()
+     result = dict(recorded_utc=datetime.now(timezone.utc).isoformat(), source_sha256=digest(),
+@@ -30,7 +32,7 @@
+                   sha256=hashlib.sha256(Path(codex).read_bytes()).hexdigest()),
+                   platforms={p.name: p.identity() for p in (CodesysBackend(cfg), OpenPLCBackend(cfg))},
+                   models=[{k: s[k] for k in ('id', 'model', 'base_url', 'generation_protocol', 'parameters')}
+-                          for s in cfg['models']], limits=cfg['limits'], profile='portable-frame-v4',
++                          for s in cfg['models']], limits=cfg['limits'], profile=PROFILE,
+                   note='Installed executable identities and configured limits; actual compilation is evidenced separately')
+     atomic_json(args.out, result)
+     print(json.dumps(dict(out=str(args.out.resolve()), codex_version=version, source_sha256=digest())))
+--- r8/scripts/reevaluate_r8_candidates.py
++++ r9/scripts/reevaluate_r8_candidates.py
+@@ -0,0 +1,54 @@
++"""Recheck fixed paid R8 candidates; no model calls and no rewrite of R8 evidence."""
++import argparse
++import hashlib
++import json
++from pathlib import Path
++import sys
++ROOT=Path(__file__).resolve().parents[1]
++sys.path.insert(0,str(ROOT))
++from stbench.campaign import digest,tasks,group_order,configuration
++from stbench.harness.engine import RunRecord
++from stbench.evaluation import local_tests,evaluate,atomic_json,verification_status
++from request_accounting import accounting_record
++
++
++def main():
++    ap=argparse.ArgumentParser();ap.add_argument('--out',type=Path,required=True);args=ap.parse_args()
++    args.out.mkdir(parents=True,exist_ok=False)
++    source=digest();origin=json.loads((ROOT/'ORIGIN_R8.json').read_text(encoding='utf-8'))
++    old=Path(origin['r8_campaign_root']);cfg=configuration('');rows=[];hashes={}
++    changed={'public-hard-02','public-medium-08','self-easy-01','self-medium-05','self-medium-06'}
++    for _,p,_ in tasks():
++        for fw,mid in group_order(cfg):
++            path=old/'final'/(fw+'_'+mid)/(p.pid+'.json');raw=path.read_bytes()
++            hashes[str(path)]=hashlib.sha256(raw).hexdigest()
++            record,_=accounting_record(RunRecord.load(path));candidate=record.best
++            result=None
++            if candidate and candidate.code:
++                result=(evaluate(candidate.code,p,model_check=True,timeout_s=8)
++                        if p.pid in changed else local_tests(candidate.code,p))
++            row=dict(pid=p.pid,framework=fw,model_id=mid,r8_record_sha256=hashes[str(path)],
++                candidate_sha256=candidate.code_hash if candidate else '',tests_total=len(p.test_cases),
++                tests_passed=result.tests_passed if result else 0,local_compiles=result.compiles if result else False,
++                formal_scope='changed-properties-target' if p.pid in changed else 'not_rechecked',
++                formal_status=verification_status(result) if result and p.pid in changed else 'not_rechecked',
++                r9_judge_sha256=source,native_compilation='R8 historical evidence; not rerun',
++                result=result.to_dict() if result else None)
++            atomic_json(args.out/(fw+'_'+mid)/(p.pid+'.json'),row);rows.append(row)
++            if len(rows)%20==0:print('Fixed-code recheck',len(rows),'/ 140',flush=True)
++    for path,expected in hashes.items():
++        if hashlib.sha256(Path(path).read_bytes()).hexdigest()!=expected:raise RuntimeError('R8 candidate file changed')
++    if digest()!=source:raise RuntimeError('R9 judge changed during fixed-code recheck')
++    totals=[]
++    for fw,mid in group_order(cfg):
++        group=[r for r in rows if r['framework']==fw and r['model_id']==mid]
++        totals.append(dict(framework=fw,model_id=mid,n=35,cases_total=sum(r['tests_total'] for r in group),
++            cases_passed=sum(r['tests_passed'] for r in group),formal_targets=sum(r['pid'] in changed for r in group)))
++    atomic_json(args.out/'summary.json',dict(source_sha256=source,r8_unchanged=True,rows=totals,
++        generation_requests=0,scope='140 fixed candidates functional recheck; only 5 changed tasks x 4 conditions targeted formal recheck; 8s per target',
++        note='Not newly generated R9 results, not a new full formal comparison'))
++    print(json.dumps(totals,ensure_ascii=False),flush=True)
++    return 0
++
++
++if __name__=='__main__':raise SystemExit(main())
+--- r8/tests/test_v2_fixed_bindings.py
++++ r9/tests/test_v2_fixed_bindings.py
+@@ -62,7 +62,7 @@
+         self.assertEqual(q.mc_fixed_inputs,['capacity'])
+         self.assertEqual(q.mc_inputs['capacity'],[2,4])
+         self.assertEqual([c.expected for c in q.test_cases],[c.expected for c in p.test_cases])
+-        self.assertEqual(mapping['profile'],'portable-frame-v4')
++        self.assertEqual(mapping['profile'],'portable-frame-v5')
+ 
+ 
+ if __name__=='__main__':unittest.main()
+--- r8/tests/test_v2_judge_repairs.py
++++ r9/tests/test_v2_judge_repairs.py
+@@ -45,7 +45,7 @@
+         q,src,mapping=adapt(p,reference(p),'codesys')
+         self.assertEqual(p.to_dict(),before)
+         self.assertEqual([c.expected for c in q.test_cases],[c.expected for c in p.test_cases])
+-        self.assertEqual(PROFILE,'portable-frame-v4')
++        self.assertEqual(PROFILE,'portable-frame-v5')
+         self.assertTrue(any('capacity' in s.ltl for s in q.specs if s.ltl))
+         self.assertFalse(any(__import__('re').search(r'\bcap\b',s.ltl) for s in q.specs if s.ltl))
+     def test_fifo_ltl_can_check_a_candidate_without_the_reference_local_cap(self):
+--- r8/tests/test_v2_r9_policy.py
++++ r9/tests/test_v2_r9_policy.py
+@@ -0,0 +1,175 @@
++"""Observable specs must survive renaming and still reject behavioral defects."""
++import copy
++import json
++from pathlib import Path
++import re
++import tempfile
++import unittest
++import sys
++from unittest.mock import patch
++import test_v2_request_windows as windows
++from stbench.cli import problems, reference
++from stbench.portability import adapt
++from stbench.modelcheck import InputSpace, check
++from stbench.evaluation import evaluate, StageResult
++from stbench.harness.engine import Solver, solve_problem
++from stbench.providers.base import ProviderError
++sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'scripts'))
++from r9_diagnostics import scoped_budget
++
++
++class R9Policy(unittest.TestCase):
++    def task(self, pid):
++        p = next(p for p in problems() if p.pid == pid)
++        return adapt(p, reference(p), 'codesys')[:2]
++
++    def ipv4_check(self, source):
++        p, _ = self.task('public-medium-08')
++        return check(source, [(s.sid,s.ltl) for s in p.specs if s.ltl],
++            InputSpace({'ipText':['0.0.0.0','1.2.3.4','255.255.255.255','1.2.3','1.2.3.256','01.2.3.4']}),
++            observer_name='ipv4', observable_names={v.name for v in p.variables},
++            max_depth=2, max_traces=1000, max_seconds=5)
++
++    def test_ipv4_private_variable_renaming_keeps_the_same_verdict(self):
++        _, source = self.task('public-medium-08')
++        renamed = re.sub(r'\bsegCount\b','renamedSegments',source)
++        renamed = re.sub(r'\bok\b','renamedValidFlag',renamed)
++        first, second = self.ipv4_check(source), self.ipv4_check(renamed)
++        self.assertFalse(first.error)
++        self.assertTrue(first.all_hold)
++        self.assertTrue(second.all_hold)
++        self.assertEqual([(s.spec_id,s.holds) for s in first.specs],[(s.spec_id,s.holds) for s in second.specs])
++
++    def test_ipv4_wrong_byte_order_or_constant_output_is_not_accepted(self):
++        _, source = self.task('public-medium-08')
++        source = source.replace('END_FUNCTION_BLOCK', 'ipValue := UDINT#0; END_FUNCTION_BLOCK')
++        self.assertTrue(self.ipv4_check(source).contradictions)
++
++    def test_private_spec_is_inconclusive_even_if_candidate_uses_the_reference_name(self):
++        for variable in ('hidden','renamed'):
++            src = f'FUNCTION_BLOCK FB VAR_INPUT a:BOOL; END_VAR VAR_OUTPUT b:BOOL; END_VAR VAR {variable}:BOOL; END_VAR b:=a; END_FUNCTION_BLOCK'
++            report = check(src, {'public':'G(b = a)','private':'G(hidden = FALSE)'},
++                InputSpace({'a':[False,True]}),observable_names={'a','b'},max_depth=2,max_traces=30)
++            self.assertFalse(report.error)
++            results={s.spec_id:s for s in report.specs}
++            self.assertTrue(results['public'].holds)
++            self.assertTrue(results['private'].inconclusive)
++            self.assertFalse(report.all_hold)
++
++    def test_reserved_observer_names_cannot_be_supplied_by_candidate(self):
++        _, source = self.task('public-medium-08')
++        source=source.replace('VAR_OUTPUT','VAR __spec_ip_valid:BOOL; END_VAR VAR_OUTPUT')
++        self.assertIn('reserved',self.ipv4_check(source).error)
++
++    def test_process_observer_survives_arbitrary_candidate_state_names(self):
++        p,source=self.task('public-hard-02')
++        for name in ['phase','idx','curStation','dstStation','compEdge']:
++            source=re.sub(r'\b'+name+r'\b','candidate_'+name,source)
++        report=check(source,[(s.sid,s.ltl) for s in p.specs],
++            InputSpace({'processLength':[2],'processSequence':[[2,5,0,0,0,0,0,0]],'sensor1':[True],
++                        'station1Start':[False,True],'sensor2':[False,True],'sensor5':[False,True],
++                        'station2Complete':[False,True]}),observer_name='process',
++            observable_names={v.name for v in p.variables},max_depth=4,max_traces=500,max_seconds=3)
++        self.assertFalse(report.error)
++        self.assertFalse(report.contradictions)
++        self.assertEqual(len(report.specs),7)
++
++    def test_process_wrong_direction_is_detected(self):
++        p,source=self.task('public-hard-02')
++        source=source.replace('END_FUNCTION_BLOCK','conveyorRight := FALSE; END_FUNCTION_BLOCK')
++        report=check(source,[(s.sid,s.ltl) for s in p.specs],
++            InputSpace({'processLength':[1],'processSequence':[[5,0,0,0,0,0,0,0]],'sensor1':[True],
++                        'station1Start':[True],'sensor5':[False]}),observer_name='process',
++            observable_names={v.name for v in p.variables},max_depth=2,max_traces=20)
++        self.assertTrue(report.contradictions)
++
++    def test_invalid_caller_history_cannot_later_be_counted_as_in_contract(self):
++        from stbench.spec_observers import process
++        initial=process({},initial=True)
++        invalid=process(dict(processlength=1,processsequence=[0]*8),initial)
++        valid_input=dict(processlength=1,processsequence=[5,0,0,0,0,0,0,0],sensor1=True,station1start=True)
++        self.assertFalse(process(valid_input,invalid)['__spec_contract'])
++        self.assertTrue(process(valid_input,initial)['__spec_contract'])
++
++    def test_original_dataset_and_case_assertions_are_not_edited_by_overlay(self):
++        for p in problems():
++            original=copy.deepcopy(p.to_dict())
++            adapted,_=self.task(p.pid)
++            self.assertEqual(p.to_dict(),original)
++            self.assertEqual([c.expected for c in adapted.test_cases],[c.expected for c in p.test_cases])
++        specs=[s for p in problems() for s in self.task(p.pid)[0].specs]
++        self.assertEqual(sum(bool(s.ltl) for s in specs),179)
++        self.assertEqual(sum(not s.ltl for s in specs),24)
++
++    def test_failed_functional_tests_skip_expensive_model_check(self):
++        p=windows.problem()
++        source='FUNCTION_BLOCK FB VAR_OUTPUT out:BOOL; END_VAR out:=FALSE; END_FUNCTION_BLOCK'
++        result=evaluate(source,p,model_check=True,verification_after_tests=True,timeout_s=3)
++        self.assertTrue(result.compiles)
++        self.assertEqual(result.tests_passed,0)
++        self.assertFalse(result.mc_executed)
++
++    def test_1200_seconds_allows_a_second_full_request_without_shortening_timeout(self):
++        with tempfile.TemporaryDirectory() as directory:
++            helper=windows.RequestWindows();clock=windows.Clock()
++            provider,_,calls=helper.provider(directory,clock,[290,10])
++            def judge(*args):
++                return StageResult(compiles=True,tests_total=1,tests_passed=int(len(calls)==2),
++                    mc_executed=len(calls)==2,mc_specs_total=int(len(calls)==2),mc_specs_hold=int(len(calls)==2))
++            solver=Solver(provider,max_iters=5,task_seconds=1200,request_window_seconds=450,
++                          verification_after_tests=True,evaluator=judge)
++            with patch('stbench.harness.engine.time.monotonic',clock.monotonic):
++                record=solve_problem(windows.problem(),solver)
++            self.assertEqual(calls,[420,420])
++            self.assertTrue(record.solved)
++
++    def test_incomplete_body_is_recorded_without_refunding_or_accepting_it(self):
++        with tempfile.TemporaryDirectory() as directory:
++            helper=windows.RequestWindows();provider,budget,_=helper.provider(directory,windows.Clock(),[])
++            body=dict(model='window-fixture',usage=dict(prompt_tokens=10,completion_tokens=20),
++                choices=[dict(finish_reason='length',message=dict(content='<think>unfinished'))])
++            provider.sender=lambda *args:body
++            observed=[];provider.response_observer=lambda data,protocol:observed.append((data,protocol))
++            with self.assertRaises(ProviderError):provider.generate([dict(role='user',content='task')])
++            self.assertEqual(observed,[(body,'chat')])
++            self.assertEqual(budget.snapshot()['events'][0]['status'],'settled')
++            self.assertFalse(budget.snapshot()['halted'])
++
++    def test_new_arithmetic_formulas_reject_mutations_and_accept_references(self):
++        cases=[('self-easy-01','S4',{'enable':[True],'avgEnable':[True],'count':[1,2,8,9],
++                 'values':[[1,2,3,4,5,6,7,8]]},'avgOut := -99.0;'),
++               ('self-medium-05','S8',{'enable':[True],'resetBtn':[False,True],'scanSeconds':[1.0],
++                 'steamFlow':[1.0],'fuelFlow':[1.0],'steamTemp':[450.0],'steamPressure':[3800.0]},'revenue := -99.0;'),
++               ('self-medium-06','S6',{'enable':[True],'resetBtn':[False],'sensorValid':[True],
++                 'setpoint':[50.0],'temperature':[50.0],'scanSeconds':[1.0],'bias':[20.0]},'power := 101.0;')]
++        for pid,sid,domains,mutation in cases:
++            p,source=self.task(pid);formula=next(s.ltl for s in p.specs if s.sid==sid)
++            with self.subTest(pid=pid):
++                report=check(source,{sid:formula},InputSpace(domains),max_depth=2,max_traces=300,max_seconds=3,
++                             observable_names={v.name for v in p.variables})
++                self.assertTrue(report.all_hold,report.to_dict())
++                changed=source.replace('END_FUNCTION_BLOCK',mutation+' END_FUNCTION_BLOCK')
++                report=check(changed,{sid:formula},InputSpace(domains),max_depth=2,max_traces=300,max_seconds=3,
++                             observable_names={v.name for v in p.variables})
++                self.assertTrue(report.contradictions)
++
++    def test_diagnostic_cap_preserves_history_and_blocks_an_over_cap_request(self):
++        from stbench.campaign import configuration
++        from stbench.evaluation import atomic_json
++        with tempfile.TemporaryDirectory() as directory:
++            cfg=configuration('');root=Path(directory);ledger=root/'evidence/dmxapi_budget_75.json'
++            cfg.update(platform_root=directory,budget_ledger_path=str(ledger))
++            state=dict(version=3,limit_cny=75,spent_cny=34.0,halted='',events=[
++                dict(request_id='unknown',status='reserved',reserved_cny=.4)])
++            atomic_json(ledger,state)
++            plan=dict(incremental_cap_cny=10,total_authorized_cny=75,baseline_spent_cny=34.,cumulative_ceiling_cny=44.)
++            budget=scoped_budget(cfg,plan)
++            index=budget.reserve(9.9);before=ledger.read_bytes()
++            with self.assertRaises(ProviderError):budget.reserve(.11)
++            self.assertEqual(ledger.read_bytes(),before)
++            self.assertEqual(budget.snapshot()['events'][0],state['events'][0])
++            self.assertEqual(budget.snapshot()['spent_cny'],43.9)
++            with self.assertRaises(RuntimeError):scoped_budget(cfg,plan|dict(cumulative_ceiling_cny=75))
++
++
++if __name__=='__main__':unittest.main()
