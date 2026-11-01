@@ -1,0 +1,324 @@
+{
+  "pid": "public-medium-04",
+  "source": "public",
+  "difficulty": "medium",
+  "title": "Temperature Logic Control",
+  "requirements": "Write a function block FB to implement a temperature control logic. The program should include the following functions:\n1. Read the value of the temperature sensor through an analog input module.\n2. Compare the read temperature value TemperatureSensorInput with the set temperature value SetTemperature.\n3. If the actual temperature is lower than the set temperature, start the heater HeaterOutput.\n4. If the actual temperature is higher than the set temperature, turn off the heater HeaterOutput.\n5. If the heater works continuously for more than a certain period (for convenience, using 5s), it should trigger an overheating protection, automatically turn off the heater, and must wait for a certain period (for convenience, using 3s) before the overheating protection can be lifted.\n6. Provide status indication, displaying the current temperature, set temperature, heater status, and whether overheating protection is triggered.\n7. Provide temperature sensor fault judgment, if the read temperature value TemperatureSensorInput is less than 0 or greater than 100, it is considered a sensor fault, and the heater should be turned off.",
+  "variables": [
+    {
+      "name": "TemperatureSensorInput",
+      "data_type": "REAL",
+      "description": "The input value of the temperature sensor, i.e., the actual temperature",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "SetTemperature",
+      "data_type": "REAL",
+      "description": "The set temperature value",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "CurrentTemperature",
+      "data_type": "REAL",
+      "description": "Display of the current temperature",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "SetTempDisplay",
+      "data_type": "REAL",
+      "description": "Display of the set temperature",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "HeaterStatus",
+      "data_type": "BOOL",
+      "description": "Display of the heater status",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "OverheatProtection",
+      "data_type": "BOOL",
+      "description": "Display of the overheating protection status",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "HeaterOutput",
+      "data_type": "BOOL",
+      "description": "The control output of the heater",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "传感器读数低于 0 或高于 100 时，加热输出必须为 FALSE。",
+      "ltl": "G((TemperatureSensorInput < 0.0 | TemperatureSensorInput > 100.0) -> !HeaterOutput)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S2",
+      "text": "过热保护有效期间，加热输出必须被强制关断。",
+      "ltl": "G(OverheatProtection -> !HeaterOutput)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S3",
+      "text": "读数高于设定温度时，加热输出必须为 FALSE。",
+      "ltl": "G((TemperatureSensorInput > SetTemperature & TemperatureSensorInput <= 100.0) -> !HeaterOutput)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S4",
+      "text": "无故障、无过热保护且读数低于设定温度时，加热输出必须为 TRUE（过载触发保护的当拍除外）。",
+      "ltl": "G((TemperatureSensorInput < SetTemperature & TemperatureSensorInput >= 0.0 & TemperatureSensorInput <= 100.0 & !OverheatProtection) -> HeaterOutput)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S5",
+      "text": "过热保护连续 3 个周期后必须解除。",
+      "ltl": "G((OverheatProtection & X(OverheatProtection) & X(X(OverheatProtection))) -> X(X(X(!OverheatProtection))))",
+      "kind": "liveness",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S6",
+      "text": "CurrentTemperature 等于传感器读数、SetTempDisplay 等于设定温度、HeaterStatus 跟随 HeaterOutput；连续加热 5 个扫描周期触发过热保护（1 个扫描周期代表 1s，平台无 TIME 类型）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "s1",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false,
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0
+      },
+      "note": "实际温度 20 低于设定 50 → 开加热，HeaterStatus 跟随，状态指示直通显示",
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s2",
+      "inputs": {
+        "TemperatureSensorInput": 45.0,
+        "SetTemperature": 50.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "HeaterOutput": true,
+        "OverheatProtection": false
+      },
+      "note": "仍低于设定（连续加热第 2 拍）→ 继续加热，未到 5 拍不触发保护",
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s3",
+      "inputs": {
+        "TemperatureSensorInput": 55.0,
+        "SetTemperature": 50.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": false
+      },
+      "note": "实际温度 55 高于设定 50 → 关加热，连续计时清零",
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s4",
+      "inputs": {
+        "TemperatureSensorInput": 50.0,
+        "SetTemperature": 50.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "HeaterOutput": false
+      },
+      "note": "边界：实际温度等于设定 50 → 不属于低于设定，不加热",
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s5",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "连续加热第 5 拍（5s）→ 触发过热保护并立即强制关加热（边界：不为 \"超过 5s\" 留第 6 拍）",
+      "init": {},
+      "mode": "",
+      "cycles": 5,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s6",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "HeaterOutput": false,
+        "OverheatProtection": true
+      },
+      "note": "保护期间温度仍低于设定：不得恢复加热，继续冷却（已冷却 2 拍，3 拍未满）",
+      "init": {},
+      "mode": "",
+      "cycles": 2,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s7",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false,
+        "CurrentTemperature": 20.0
+      },
+      "note": "第 3 拍冷却结束 → 过热保护解除，本拍即恢复正常加热（温度仍低于设定）",
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s8",
+      "inputs": {
+        "TemperatureSensorInput": 0.0,
+        "SetTemperature": 50.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "HeaterOutput": true,
+        "CurrentTemperature": 0.0,
+        "OverheatProtection": false
+      },
+      "note": "边界：读数 0 不属于小于 0，不算故障 → 低于设定 50，继续加热",
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s9",
+      "inputs": {
+        "TemperatureSensorInput": -5.0,
+        "SetTemperature": 50.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": false,
+        "CurrentTemperature": -5.0
+      },
+      "note": "传感器读数 -5 低于 0 → 判故障，禁止加热，故障优先于低温开加热",
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s10",
+      "inputs": {
+        "TemperatureSensorInput": 120.0,
+        "SetTemperature": 50.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false
+      },
+      "note": "传感器读数 120 高于 100 → 判故障，禁止加热",
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s11",
+      "inputs": {
+        "TemperatureSensorInput": 100.0,
+        "SetTemperature": 50.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "HeaterOutput": false,
+        "CurrentTemperature": 100.0,
+        "SetTempDisplay": 50.0
+      },
+      "note": "边界：读数 100 不算故障，但高于设定 50 → 关加热",
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s12",
+      "inputs": {
+        "TemperatureSensorInput": 30.0,
+        "SetTemperature": 50.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "故障恢复后温度 30 低于设定 → 重新开加热，保护标志保持 FALSE（复位恢复路径）",
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {},
+  "language": "en",
+  "raw_text": "# Temperature Logic Control\n\n- **Difficulty:** Medium (medium)\n\n## Requirements\n\nWrite a function block FB to implement a temperature control logic. The program should include the following functions:\n1. Read the value of the temperature sensor through an analog input module.\n2. Compare the read temperature value TemperatureSensorInput with the set temperature value SetTemperature.\n3. If the actual temperature is lower than the set temperature, start the heater HeaterOutput.\n4. If the actual temperature is higher than the set temperature, turn off the heater HeaterOutput.\n5. If the heater works continuously for more than a certain period (for convenience, using 5s), it should trigger an overheating protection, automatically turn off the heater, and must wait for a certain period (for convenience, using 3s) before the overheating protection can be lifted.\n6. Provide status indication, displaying the current temperature, set temperature, heater status, and whether overheating protection is triggered.\n7. Provide temperature sensor fault judgment, if the read temperature value TemperatureSensorInput is less than 0 or greater than 100, it is considered a sensor fault, and the heater should be turned off.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `TemperatureSensorInput` | `REAL` | The input value of the temperature sensor, i.e., the actual temperature |\n| Input | `SetTemperature` | `REAL` | The set temperature value |\n| Output | `CurrentTemperature` | `REAL` | Display of the current temperature |\n| Output | `SetTempDisplay` | `REAL` | Display of the set temperature |\n| Output | `HeaterStatus` | `BOOL` | Display of the heater status |\n| Output | `OverheatProtection` | `BOOL` | Display of the overheating protection status |\n| Output | `HeaterOutput` | `BOOL` | The control output of the heater |",
+  "case_mode": "sequence"
+}

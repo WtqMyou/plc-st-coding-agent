@@ -1,0 +1,39 @@
+# final 实验分析
+
+每组固定分母：35 题、435 条用例；未生成、编译失败及调用失败均不从分母删除。
+当前为未完成快照，组间覆盖不同，不能据此比较模型或框架优劣。
+
+|框架|模型|实际尝试|CODESYS 首次→最终|用例首次→最终|整题通过|OpenPLC|双平台且用例全过|
+|---|---|---:|---|---|---:|---:|---:|
+|custom|deepseek-v4pro|26/35|21/35 → 25/35|250/435 → 305/435|15/35|26/35|15/35|
+|codex|deepseek-v4pro|26/35|19/35 → 22/35|210/435 → 249/435|12/35|24/35|12/35|
+|custom|minimax-m27|26/35|12/35 → 13/35|94/435 → 110/435|5/35|16/35|5/35|
+|codex|minimax-m27|26/35|15/35 → 21/35|133/435 → 188/435|7/35|23/35|7/35|
+
+## 时间、用量和费用
+
+|框架/模型|候选数|分钟|已返回输入/输出 token|已返回费用估计|费用未知尝试|
+|---|---:|---:|---:|---:|---:|
+|custom/deepseek-v4pro|40|75.77|59609 / 213921|4.9868|1|
+|codex/deepseek-v4pro|35|79.67|296381 / 220399|6.8084|0|
+|custom/minimax-m27|34|104.40|46143 / 306861|2.1129|0|
+|codex/minimax-m27|61|86.04|473603 / 148893|1.7738|1|
+
+整题通过列采用 CODESYS 编译与功能用例口径；OpenPLC 单列。功能行为由扫描解释器执行，未主张物理 PLC 运行。
+
+## LTL 状态
+
+- CODESYS custom/deepseek-v4pro：{'passed': 25, 'not_run': 10}。not_run 表示未进入真实编译，不等于编译器报错，但仍保留在题目分母内。
+- CODESYS codex/deepseek-v4pro：{'passed': 22, 'not_run': 12, 'failed': 1}。not_run 表示未进入真实编译，不等于编译器报错，但仍保留在题目分母内。
+- CODESYS custom/minimax-m27：{'not_run': 20, 'passed': 13, 'failed': 2}。not_run 表示未进入真实编译，不等于编译器报错，但仍保留在题目分母内。
+- CODESYS codex/minimax-m27：{'passed': 21, 'not_run': 12, 'failed': 2}。not_run 表示未进入真实编译，不等于编译器报错，但仍保留在题目分母内。
+- custom/deepseek-v4pro：{'timeout': 4, 'bounded_pass': 11, 'truncated': 9, 'tool_error': 1, 'not_run': 10}；规约固定分母 175，界内通过 42、确认违反 0、环境外反例 0、未完成或未判定 133。
+- codex/deepseek-v4pro：{'truncated': 9, 'bounded_pass': 8, 'timeout': 4, 'not_run': 13, 'tool_error': 1}；规约固定分母 175，界内通过 31、确认违反 0、环境外反例 0、未完成或未判定 144。
+- custom/minimax-m27：{'not_run': 22, 'bounded_pass': 4, 'timeout': 4, 'truncated': 4, 'tool_error': 1}；规约固定分母 175，界内通过 16、确认违反 0、环境外反例 0、未完成或未判定 159。
+- codex/minimax-m27：{'violated': 6, 'not_run': 14, 'timeout': 4, 'bounded_pass': 6, 'tool_error': 1, 'truncated': 4}；规约固定分母 175，界内通过 22、确认违反 10、环境外反例 0、未完成或未判定 143。
+
+FIFO 原题禁止同时请求入队和出队。仅由此类轨迹产生的反例单列，不能据此断言原题范围内程序错误；该类也不计为通过。
+
+bounded_pass 为有限输入域、固定绑定、给定深度内结论；截断、超时、无法判定和工具错误均不算规约通过。
+
+共享账本累计计入 28.805046 元，含未知预留 0.659229 元；不是上游实际账单。

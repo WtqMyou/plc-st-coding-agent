@@ -1,0 +1,487 @@
+{
+  "pid": "public-hard-04",
+  "model": "fixture-A",
+  "provider": "codex-mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "(*\n  FIFO Circular Queue with VARIANT Storage — 参考解（public-hard-04）\n\n  容量与元素类型都来自调用方数组 buffer（VARIANT 里的真实数组，容量 = 数组长度），\n  内部只维护 head（队头下标，1 起）与 count（有效元素个数）；tail 由二者算出，\n  head/tail/count 都不出现在接口上（R6）。\n\n  需求编号：\n    R1  入队请求上升沿 -> 队列未满时把当前 item 追加到队尾\n    R2  出队请求上升沿 -> 队列非空时移除队首并把该值写回 item\n    R3  reset=TRUE 清空队列、elementCount=0，且优先于入队/出队\n    R4  elementCount 输出当前有效元素个数（0 空、等于容量为满）\n    R5  空队出队/满队入队要拒绝：队列与 item 保持不变，status 说明原因\n    R6  首次调用时队列为空；head/tail 等内部状态不出现在接口上\n*)\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n capacity : DINT;\n  enqueue : BOOL;                (* R1 入队请求，一个上升沿执行一次 *)\n  dequeue : BOOL;                (* R2 出队请求，一个上升沿执行一次 *)\n  reset : BOOL;                  (* R3 复位，优先于入队/出队 *)\nEND_VAR\nVAR_OUTPUT\n  elementCount : DINT;           (* R4 当前有效元素个数 *)\n  status : WORD;                 (* R5 16#0000 / 16#8001 / 16#8002 *)\nEND_VAR\nVAR_IN_OUT\n  item : DINT;                (* 入队时读取；出队成功时写回被移除的队首值 *)\n  buffer : ARRAY[1..4] OF DINT;              (* 队列存储，容量 = 数组实际长度 *)\nEND_VAR\nVAR\n  cap : DINT;                    (* 本拍看到的容量 *)\n  count : DINT;                  (* 有效元素个数，不放接口（R6） *)\n  head : DINT;                   (* 队头下标（1 起） *)\n  tail : DINT;                   (* 队尾插入位置（由 head+count 算出） *)\n  enEdge : BOOL;  enPrev : BOOL; (* R1 上升沿 *)\n  deEdge : BOOL;  dePrev : BOOL; (* R2 上升沿 *)\nEND_VAR\n\n(* 容量每拍从调用方数组重新取：数组换长度时行为随之改变 *)\ncap := capacity;\n\n(* 内部下标兜底：首次调用 / 复位后 head 一定落在 1..cap *)\nIF count < 0 THEN\n  count := 0;\nEND_IF\nIF head < 1 THEN\n  head := 1;\nEND_IF\n\n(* 上升沿：一次请求只执行一次，按住不放不会重复入队/出队 *)\nenEdge := enqueue AND NOT enPrev;\nenPrev := enqueue;\ndeEdge := dequeue AND NOT dePrev;\ndePrev := dequeue;\n\n(* 状态码是\"拍\"语义：每拍先回到 16#0000，只有被拒绝的那一拍才置错误码 *)\nstatus := 16#0000;\n\nIF reset THEN\n  (* R3 复位优先：同时到来的入队/出队请求被丢弃，只清空队列 *)\n  count := 0;\n  head := 1;\nELSIF enEdge THEN\n  (* R1 入队 *)\n  IF (cap <= 0) OR (count >= cap) THEN\n    status := 16#8002;         (* R5 满队（容量为 0 的数组也按\"装不下\"拒绝） *)\n  ELSE\n    tail := head + count;\n    IF tail > cap THEN\n      tail := tail - cap;      (* 环形回绕，等价于 (head-1+count) MOD cap + 1 *)\n    END_IF\n    buffer[tail] := item;      (* VARIANT 元素写入：类型由数组元素决定 *)\n    count := count + 1;\n  END_IF\nELSIF deEdge THEN\n  (* R2 出队 *)\n  IF count <= 0 THEN\n    status := 16#8001;         (* R5 空队，item 保持原值 *)\n  ELSE\n    item := buffer[head];      (* 被移除的队首值写回 item *)\n    head := head + 1;\n    IF head > cap THEN\n      head := 1;\n    END_IF\n    count := count - 1;\n  END_IF\nEND_IF\n\n(* R4 *)\nelementCount := count;\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 27,
+      "tests_total": 27,
+      "feedback": "自动测试：27/27。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 9.702999999979511,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "79822af5fb4ca80223f09abb55a1f31eb77b49f04978fbdf93270e58897336b8",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 27,
+        "tests_passed": 27,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "h04-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 2
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 2
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 3
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 3
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 3
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 3
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 4
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 4
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 32770,
+              "elementCount": 4
+            },
+            "actual": {
+              "status": 32770,
+              "elementCount": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 3,
+              "item": 10
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 3,
+              "item": 10
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 4
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 3,
+              "item": 21
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 3,
+              "item": 21
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 4
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 3,
+              "item": 32
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 3,
+              "item": 32
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 32769,
+              "elementCount": 0
+            },
+            "actual": {
+              "status": 32769,
+              "elementCount": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-20",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-21",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-22",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 32769,
+              "elementCount": 0
+            },
+            "actual": {
+              "status": 32769,
+              "elementCount": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-23",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-24",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-25",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 2
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-26",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 2
+            },
+            "actual": {
+              "status": 0,
+              "elementCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-27",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 32770,
+              "elementCount": 2
+            },
+            "actual": {
+              "status": 32770,
+              "elementCount": 2
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "judge_version": "judge-v2.0",
+          "judge_source_sha256": "dfb8510ccf77fe67460302f0553658df9ae461fe6e25052ea5e83807166c4e85",
+          "source_sha256": "79822af5fb4ca80223f09abb55a1f31eb77b49f04978fbdf93270e58897336b8",
+          "problem_sha256": "5e13e9c5ab575d26d56a5b594e06d39833416c752bc5a5bb3dc16fac7b115bbf",
+          "mc_timeout_seconds": 60,
+          "model_check_requested": false,
+          "cache_hit": false
+        }
+      },
+      "cost_cny": 0.0,
+      "actual_model": "fixture-A",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793019653.1481504,
+  "finished_at": 1793019662.866247,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "0c68d7457a5a1fc5260f83575f9ca90d93e5f6a181e0f5dd166a02774d482b4d",
+  "experiment_kind": "offline_simulation",
+  "tests_total": 27,
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 9.702999999979511,
+  "n_attempts": 1
+}

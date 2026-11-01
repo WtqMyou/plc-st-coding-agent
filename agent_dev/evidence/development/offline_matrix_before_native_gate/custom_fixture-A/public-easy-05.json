@@ -1,0 +1,180 @@
+{
+  "pid": "public-easy-05",
+  "model": "fixture-A",
+  "provider": "mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "(* 公开题 public-easy-05：Weld Gap Alarm and Startup Inhibition\n   平台偏差（契约 §7，2026-10-24 实测）：TIME 字面量恒为 0、TIME 加减恒为 0，\n   DebounceTime 没有数值信息量。本题改用**扫描周期计数**：\n     * 5 秒上电抑制期 → 5 个扫描周期（1 拍 = 1 s）；\n     * 去抖 DebounceTime → 连续 3 个扫描周期（1 拍 = 1 个单位）。\n   用例按周期数断言，偏差在用例 note 与回报里写明。\n   解释口径（需求未逐字规定，这里显式写清）：抑制期从\"上电首拍\"起按拍数计满\n   5 拍，急停**不重置**这 5 拍（急停的后果按 R4 只要求报警立即 FALSE 与去抖清零，\n   见 R4 代码位置），因此 Weld_Soft_Start_Active 严格只表示上电抑制期（R5）。 *)\nFUNCTION_BLOCK FB_WeldGapAlarm\nVAR_INPUT\n    Gap_Exceeded : BOOL;\n    Weld_E_Stop_NC : BOOL;\n    DebounceTime : TIME;   (* 平台恒为 0，见文件头偏差说明 *)\nEND_VAR\nVAR_OUTPUT\n    Operator_Alert : BOOL;\n    Weld_Soft_Start_Active : BOOL;\nEND_VAR\nVAR\n    initCount : INT;      (* 上电后已过的拍数，5 拍为抑制期 *)\n    debounceCount : INT;  (* 间隙超差连续有效拍数 *)\n    initialized : BOOL;   (* 上电首拍标志 *)\nEND_VAR\n\n(* R2/R5: 上电首拍显式初始化：报警灭、抑制期指示 ON、去抖清零 *)\nIF NOT initialized THEN\n    initialized := TRUE;\n    Operator_Alert := FALSE;\n    Weld_Soft_Start_Active := TRUE;\n    initCount := 0;\n    debounceCount := 0;\nEND_IF\n\n(* R4: 急停优先于初始化与正常监视——放在最前面，\n   即使上一拍已经报警，本拍也要立刻熄灭，并清掉不完整的去抖计数。 *)\nIF NOT Weld_E_Stop_NC THEN\n    Operator_Alert := FALSE;\n    debounceCount := 0;\nEND_IF\n\nIF initCount < 5 THEN\n    (* R2: 上电抑制期（5 拍）：报警屏蔽、软启动指示 ON、去抖**不累计**。\n       注意这里不是在\"计时\"，而是数拍；每拍自增一次。 *)\n    initCount := initCount + 1;\n    Weld_Soft_Start_Active := TRUE;\n    debounceCount := 0;\n    Operator_Alert := FALSE;\nELSE\n    (* R3: 抑制期结束，恢复间隙监视 *)\n    Weld_Soft_Start_Active := FALSE;\n    IF Weld_E_Stop_NC THEN\n        IF Gap_Exceeded THEN\n            (* R3: 连续 3 拍超差才报警（代替 DebounceTime） *)\n            IF debounceCount < 3 THEN\n                debounceCount := debounceCount + 1;\n            END_IF\n            IF debounceCount >= 3 THEN\n                Operator_Alert := TRUE;\n            END_IF\n        ELSE\n            (* R3: 信号一 FALSE 就熄报警并清去抖 *)\n            debounceCount := 0;\n            Operator_Alert := FALSE;\n        END_IF\n    END_IF\nEND_IF\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 7,
+      "tests_total": 7,
+      "feedback": "自动测试：7/7。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 0.31299999996554106,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "7b57446176b2a33c816ba1f47133e6f2c240d1a3d47282be337430a46a714ad5",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 7,
+        "tests_passed": 7,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "e05-1",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "Operator_Alert": false,
+              "Weld_Soft_Start_Active": true
+            },
+            "actual": {
+              "Operator_Alert": false,
+              "Weld_Soft_Start_Active": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "e05-2",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "Operator_Alert": false,
+              "Weld_Soft_Start_Active": false
+            },
+            "actual": {
+              "Operator_Alert": false,
+              "Weld_Soft_Start_Active": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "e05-3",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "Operator_Alert": true,
+              "Weld_Soft_Start_Active": false
+            },
+            "actual": {
+              "Operator_Alert": true,
+              "Weld_Soft_Start_Active": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "e05-4",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "Operator_Alert": false,
+              "Weld_Soft_Start_Active": false
+            },
+            "actual": {
+              "Operator_Alert": false,
+              "Weld_Soft_Start_Active": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "e05-5",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "Operator_Alert": false,
+              "Weld_Soft_Start_Active": false
+            },
+            "actual": {
+              "Operator_Alert": false,
+              "Weld_Soft_Start_Active": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "e05-6",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "Operator_Alert": false,
+              "Weld_Soft_Start_Active": false
+            },
+            "actual": {
+              "Operator_Alert": false,
+              "Weld_Soft_Start_Active": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "e05-7",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "Operator_Alert": false,
+              "Weld_Soft_Start_Active": true
+            },
+            "actual": {
+              "Operator_Alert": false,
+              "Weld_Soft_Start_Active": true
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "judge_version": "judge-v2.0",
+          "judge_source_sha256": "7693d96405d487cdbd421271433b1f8339074d75e2f98587f9cf50a71f8cddeb",
+          "source_sha256": "7b57446176b2a33c816ba1f47133e6f2c240d1a3d47282be337430a46a714ad5",
+          "problem_sha256": "87aa5d81bc54dafbcd15ea3a25d620a80bf5203afa2f0347a60f9d350fedb23b",
+          "mc_timeout_seconds": 60,
+          "model_check_requested": false
+        }
+      },
+      "cost_cny": 0.0,
+      "actual_model": "mock",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793016352.3754306,
+  "finished_at": 1793016352.6985457,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "ead23f6a3c148e3fa1688b4358c16e70c2e23d5dd770571512d912789afd9d08",
+  "experiment_kind": "offline_simulation",
+  "tests_total": 7,
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 0.31299999996554106,
+  "n_attempts": 1
+}

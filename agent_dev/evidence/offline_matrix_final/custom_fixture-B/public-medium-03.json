@@ -1,0 +1,266 @@
+{
+  "pid": "public-medium-03",
+  "model": "fixture-B",
+  "provider": "mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger : BOOL;\n    value : LREAL;\n    windowSize : INT;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    average : LREAL;\n    windowSizeReached : BOOL;\n    error : BOOL;\n    status : WORD;\nEND_VAR\nVAR\n    buf : ARRAY[1..100] OF LREAL;\n    cnt : INT;\n    head : INT;\n    prevTrigger : BOOL;\n    trigEdge : BOOL;\n    n : INT;\n    i : INT;\n    idx : INT;\n    sum : LREAL;\n    take : BOOL;\nEND_VAR\n\n(* R2: 外部触发只取上升沿；周期模式与触发模式共用同一个采样标志 *)\ntrigEdge := trigger AND NOT prevTrigger;\nprevTrigger := trigger;\n\n(* R3: 窗口尺寸校验，16#0000 正常 / 16#8200 窗口长度错误。\n   校验不受 reset 影响：尺寸非法时报错优先，避免复位把错误状态掩盖掉 *)\nIF windowSize < 1 OR windowSize > 100 THEN\n    error := TRUE;\n    status := 16#8200;\nELSE\n    error := FALSE;\n    status := 16#0000;\nEND_IF\n\n(* R3: 复位清空窗口统计；复位当拍不再采样，避免\"清零后立刻又加一个值\" *)\nIF reset THEN\n    cnt := 0;\n    average := 0.0;\n    windowSizeReached := FALSE;\nELSE\n    IF NOT error THEN\n        (* R1: 周期模式每扫描周期采样一次，且此模式下 trigger 无效 *)\n        take := cyclicExecution OR trigEdge;\n        IF take THEN\n            head := head + 1;\n            IF head > 100 THEN\n                head := 1;\n            END_IF\n            buf[head] := value;\n            IF cnt < 100 THEN\n                cnt := cnt + 1;\n            END_IF\n        END_IF\n\n        (* 窗口长度运行时可变：只对最近 n 个样本求均值，FIFO 淘汰最旧样本 *)\n        n := cnt;\n        IF n > windowSize THEN\n            n := windowSize;\n        END_IF\n        windowSizeReached := cnt >= windowSize;\n        IF n > 0 THEN\n            sum := 0.0;\n            FOR i := 0 TO n - 1 DO\n                idx := head - i;\n                IF idx < 1 THEN\n                    idx := idx + 100;\n                END_IF\n                sum := sum + buf[idx];\n            END_FOR\n            average := sum / n;\n        END_IF\n    END_IF\nEND_IF\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 12,
+      "tests_total": 12,
+      "feedback": "自动测试：12/12。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 0.3279999999795109,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "68ac9ba1f32e29c6c847aec5966b63cd7a64b1f6cd16059d443afa1f37cc52ef",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 12,
+        "tests_passed": 12,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "s1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 10.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 10.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 15.0,
+              "windowSizeReached": true
+            },
+            "actual": {
+              "average": 15.0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 25.0
+            },
+            "actual": {
+              "average": 25.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 30.0
+            },
+            "actual": {
+              "average": 30.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 35.0
+            },
+            "actual": {
+              "average": 35.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 35.0
+            },
+            "actual": {
+              "average": 35.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 50.0
+            },
+            "actual": {
+              "average": 50.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 57.5,
+              "windowSizeReached": true
+            },
+            "actual": {
+              "average": 57.5,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 57.5,
+              "windowSizeReached": true,
+              "error": true,
+              "status": 33280
+            },
+            "actual": {
+              "average": 57.5,
+              "windowSizeReached": true,
+              "error": true,
+              "status": 33280
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 57.5,
+              "windowSizeReached": true,
+              "error": true,
+              "status": 33280
+            },
+            "actual": {
+              "average": 57.5,
+              "windowSizeReached": true,
+              "error": true,
+              "status": 33280
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 0.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 0.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 8.0,
+              "windowSizeReached": true,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 8.0,
+              "windowSizeReached": true,
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "judge_version": "judge-v2.0",
+          "judge_source_sha256": "851e5eebf4672493a42651c9744c7621aaeea22b63af5a39b1d425414beee8fe",
+          "source_sha256": "68ac9ba1f32e29c6c847aec5966b63cd7a64b1f6cd16059d443afa1f37cc52ef",
+          "problem_sha256": "448bee32ae2755ee6488cb8387151d61950bfb7e04aa36dcf926fe3ff71abddf",
+          "mc_timeout_seconds": 60,
+          "model_check_requested": false,
+          "cache_hit": false
+        }
+      },
+      "cost_cny": 0.0,
+      "actual_model": "mock",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793033308.1264396,
+  "finished_at": 1793033308.4633052,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "7b33ca0ca1ab95e748186df7ab2bac662dd5b11222fb1d3feff122c20d997208",
+  "experiment_kind": "offline_simulation",
+  "tests_total": 12,
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 0.3279999999795109,
+  "n_attempts": 1
+}

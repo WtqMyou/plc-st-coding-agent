@@ -1,0 +1,214 @@
+{
+  "pid": "self-hard-03",
+  "model": "fixture-B",
+  "provider": "mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    pushEn : BOOL;\n    pushItem : INT;\n    popEn : BOOL;\nEND_VAR\n(* fifo 由调用方分配、FB 内部读写，必须是 VAR_IN_OUT；写成 VAR_INPUT 就成了\n   只读形参，往里面写会被静态检查直接拒掉（E_WRITE_INPUT）。 *)\nVAR_IN_OUT\n    fifo : ARRAY[1..8] OF INT;\nEND_VAR\nVAR_OUTPUT\n    count : INT;\n    full : BOOL;\n    empty : BOOL;\n    head : INT;\nEND_VAR\nVAR\n    pushPrev : BOOL;\n    popPrev : BOOL;\n    pushEdge : BOOL;\n    popEdge : BOOL;\n    wr : INT := 1;\n    rd : INT := 1;\nEND_VAR\n\n(* 边沿 = 本周期电平 且 上次周期不是这个电平。\n   把\"上次电平\"和\"本周期边沿\"分两个变量存，别把边沿算回同一个变量：\n   pushEdge := pushEn AND NOT pushEdge 这种写法把边沿覆盖掉上次电平，\n   一旦电平连续两个周期为真（如 q7 同周期出队+入队），第二周期算不出边沿，\n   入队被静默丢弃。 *)\npushEdge := pushEn AND NOT pushPrev;\npopEdge := popEn AND NOT popPrev;\npushPrev := pushEn;\npopPrev := popEn;\n\n(* 出队：空队列忽略。先把\"这一笔算数\"的判断用局部变量兜住，\n   因为下面 count := count - 1 已经改变了判断依据。 *)\nIF popEdge AND count > 0 THEN\n    count := count - 1;\n    rd := rd + 1;\n    IF rd > 8 THEN\n        rd := 1;\n    END_IF\nEND_IF\n\n(* 入队：满队列丢弃。入队判定用**出队之后**的 count，\n   所以同一周期既有出队又有入队时，这一格是真的能腾出来用的。 *)\nIF pushEdge AND count < 8 THEN\n    fifo[wr] := pushItem;\n    count := count + 1;\n    wr := wr + 1;\n    IF wr > 8 THEN\n        wr := 1;\n    END_IF\nEND_IF\n\n(* 队列空了指针才归位。必须放在出入队之后，而且要精确到\"本周期结束时\n   真正空了\"；写在这个位置、用 count = 0 判定即可：上面的入队已经执行完，\n   同一周期出队腾空又入队时 count 不会是 0，不会被误清零。 *)\nIF count <= 0 THEN\n    rd := 1;\n    wr := 1;\nEND_IF\n\nfull := count >= 8;\nempty := count <= 0;\nIF empty THEN\n    head := 0;\nELSE\n    head := fifo[rd];\nEND_IF\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 9,
+      "tests_total": 9,
+      "feedback": "自动测试：9/9。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 0.0,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "ebef34e42b9d053624209352f1e5db1bed153ff0254d1fecc25f4ccbcd52a207",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 9,
+        "tests_passed": 9,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "q1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 0,
+              "empty": true,
+              "full": false,
+              "head": 0
+            },
+            "actual": {
+              "count": 0,
+              "empty": true,
+              "full": false,
+              "head": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 1,
+              "empty": false,
+              "head": 11
+            },
+            "actual": {
+              "count": 1,
+              "empty": false,
+              "head": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 1,
+              "head": 11
+            },
+            "actual": {
+              "count": 1,
+              "head": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 2,
+              "head": 11
+            },
+            "actual": {
+              "count": 2,
+              "head": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 2
+            },
+            "actual": {
+              "count": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 3,
+              "head": 11
+            },
+            "actual": {
+              "count": 3,
+              "head": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 3,
+              "head": 11
+            },
+            "actual": {
+              "count": 3,
+              "head": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 3,
+              "head": 22
+            },
+            "actual": {
+              "count": 3,
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 3,
+              "head": 22
+            },
+            "actual": {
+              "count": 3,
+              "head": 22
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "judge_version": "judge-v2.0",
+          "judge_source_sha256": "a240c21b6368aa74069bde1faca7833266d2936416208ee75297fc69325133c3",
+          "source_sha256": "ebef34e42b9d053624209352f1e5db1bed153ff0254d1fecc25f4ccbcd52a207",
+          "problem_sha256": "a8a6a07a3d792b37ea464a73ca0d922e627eef6ad3e8cd112b9d4099c6520668",
+          "mc_timeout_seconds": 60,
+          "model_check_requested": false
+        }
+      },
+      "cost_cny": 0.0,
+      "actual_model": "mock",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793017186.727902,
+  "finished_at": 1793017186.7418113,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "cf574fabacc0ba53ab7920a07862f29be58ab8ddd8d5e516a7f10ca848e1bced",
+  "experiment_kind": "offline_simulation",
+  "tests_total": 9,
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 0.0,
+  "n_attempts": 1
+}

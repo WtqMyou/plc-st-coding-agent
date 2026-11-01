@@ -1,0 +1,195 @@
+{
+  "pid": "public-easy-04",
+  "model": "fixture-A",
+  "provider": "mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "(* 公开题 public-easy-04：Jam Pump Debouncing and Runtime Maintenance\n   平台偏差（契约 §7，2026-10-24 实测）：TIME 字面量恒为 0、TIME 加减恒为 0，\n   所以 DebounceTime / CycleTime 在数值上没有信息量。本题改用**扫描周期计数**：\n     * 去抖：连续 3 个扫描周期 VISCOSITY_OK=TRUE 视为\"持续了 DebounceTime\"；\n     * 累计：VFD_RUN=TRUE 的每个扫描周期记为 1 小时（1 拍 = 1 h），\n       于是\"500 小时\"= 500 个运行拍，维护阈值仍是需求里的 500。\n   用例按周期数断言，偏差在每条用例的 note 与回报里写明。 *)\nFUNCTION_BLOCK FB_JamPump\nVAR_INPUT\n    VISCOSITY_OK : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceTime : TIME;   (* 平台恒为 0，见文件头偏差说明 *)\n    CycleTime : TIME;      (* 平台恒为 0，见文件头偏差说明 *)\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN : BOOL;\n    PUMP_MAINT_DUE : BOOL;\n    PUMP_RUNTIME_ACC : LINT;\nEND_VAR\nVAR\n    debounceCount : INT;     (* 连续有效拍数（代替 DebounceTime） *)\n    viscosityValid : BOOL;   (* 去抖后的粘度条件 *)\n    runHours : INT;          (* 已累计的运行拍数（= 小时数），用于阈值比较 *)\n    initialized : BOOL;      (* 上电首拍标志 *)\nEND_VAR\n\n(* R5: 上电初始化——首拍把三个输出显式清零，避免实例带保留存储时\n   残留上一台泵的运行累计值。 *)\nIF NOT initialized THEN\n    initialized := TRUE;\n    VFD_RUN := FALSE;\n    PUMP_MAINT_DUE := FALSE;\n    (* LINT 不能直接吃整数常量 0（类型检查会报 INT → LINT 不匹配），\n       用\"自己减自己\"清零，语义等价且类型一致 *)\n    PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC - PUMP_RUNTIME_ACC;\n    debounceCount := 0;\n    viscosityValid := FALSE;\n    runHours := 0;\nEND_IF\n\n(* R2: 急停优先于一切——先清去抖计数与粘度有效位，再判启动。\n   顺序不能反：任何\"先判粘度\"的写法都会让急停那一拍还带着上一拍的\n   粘度有效位，VFD_RUN 会晚一拍断开。 *)\nIF NOT PASTE_E_STOP_NC THEN\n    debounceCount := 0;          (* R2: 清掉不完整的去抖计时 *)\n    viscosityValid := FALSE;\nELSIF VISCOSITY_OK THEN\n    IF debounceCount < 3 THEN    (* 3 拍 = DebounceTime 的周期化替代 *)\n        debounceCount := debounceCount + 1;\n    END_IF\n    (* R1: 连续 3 拍为 TRUE 才认可粘度条件 *)\n    IF debounceCount >= 3 THEN\n        viscosityValid := TRUE;\n    END_IF\nELSE\n    (* R1: 输入一 FALSE 立即失效，不等计数下滑 *)\n    debounceCount := 0;\n    viscosityValid := FALSE;\nEND_IF\n\n(* R2: 只有在急停回路正常且粘度条件有效时才允许驱动 *)\nVFD_RUN := PASTE_E_STOP_NC AND viscosityValid;\n\n(* R3: 只在 VFD_RUN 为 TRUE 的拍累计；停机时保持（不写就是保持）。 *)\nIF VFD_RUN THEN\n    runHours := runHours + 1;\n    PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + 1;\nEND_IF\n\n(* R4: 达到 500 小时置维护提示；它只是指示，不参与 R2 的允许条件。 *)\nIF runHours >= 500 THEN\n    PUMP_MAINT_DUE := TRUE;\nEND_IF\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 7,
+      "tests_total": 7,
+      "feedback": "自动测试：7/7。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 0.31200000003445894,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "fc897212f2dc4d9d96cfeaa1663541f624eda17640f4e5cbbb3a6bf97d3ed679",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 7,
+        "tests_passed": 7,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "e04-1",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 0
+            },
+            "actual": {
+              "VFD_RUN": false,
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "e04-2",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "VFD_RUN": true,
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 1
+            },
+            "actual": {
+              "VFD_RUN": true,
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "e04-3",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 0
+            },
+            "actual": {
+              "VFD_RUN": false,
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "e04-4",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 0
+            },
+            "actual": {
+              "VFD_RUN": false,
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "e04-5",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "VFD_RUN": true,
+              "PUMP_MAINT_DUE": true,
+              "PUMP_RUNTIME_ACC": 500
+            },
+            "actual": {
+              "VFD_RUN": true,
+              "PUMP_MAINT_DUE": true,
+              "PUMP_RUNTIME_ACC": 500
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "e04-6",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "VFD_RUN": true,
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 499
+            },
+            "actual": {
+              "VFD_RUN": true,
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 499
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "e04-7",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 0
+            },
+            "actual": {
+              "VFD_RUN": false,
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 0
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "judge_version": "judge-v2.0",
+          "judge_source_sha256": "851e5eebf4672493a42651c9744c7621aaeea22b63af5a39b1d425414beee8fe",
+          "source_sha256": "fc897212f2dc4d9d96cfeaa1663541f624eda17640f4e5cbbb3a6bf97d3ed679",
+          "problem_sha256": "109649f49dc57f5c9ba195ae3b4ad135d4a646c22e60ece7610fb367e4a875a5",
+          "mc_timeout_seconds": 60,
+          "model_check_requested": false,
+          "cache_hit": false
+        }
+      },
+      "cost_cny": 0.0,
+      "actual_model": "mock",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793033293.815818,
+  "finished_at": 1793033294.132915,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "4137c88438511ad84ec89ecd510eaefbc09b328a747100fffaa97b51ca7764b9",
+  "experiment_kind": "offline_simulation",
+  "tests_total": 7,
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 0.31200000003445894,
+  "n_attempts": 1
+}

@@ -1,0 +1,437 @@
+{
+  "pid": "public-medium-06",
+  "model": "fixture-B",
+  "provider": "codex-mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "(* =====================================================================\n   public-medium-06  Slab Thickness Alarm and Fault History\n   ---------------------------------------------------------------------\n   平台边界（《公共题制作约定》§7）：\n   * TIME 字面量恒为 0、TIME 加减恒为 0，所以\"最小保持 500 ms\"不能写成\n     `x >= T#500ms`（在平台上恒 TRUE）。本解用**扫描周期计数**实现：\n     1 拍 = 20 ms → 500 ms = 25 拍（ALARM_HOLD_CYCLES）。\n   * 同理 `Slab_Runtime_Accumulator`（LTIME）的\"运行时间累积\"改为**合格\n     扫描周期计数**：每拍 +1 个周期，用例按拍数断言。输入 CycleTime 在\n     本平台上恒为 0，不参与运算（需求 3 的计时语义由周期计数等价替代）。\n   * 故障历史是 ARRAY[0..4] OF DINT 输出，引用解按 0..4 的自然顺序整表断言。\n   ===================================================================== *)\nFUNCTION_BLOCK FB_SlabThicknessMonitor\nVAR_INPUT\n  THICKNESS_FAULT : BOOL;          (* 厚度偏差超出允许公差 *)\n  THICKNESS_SIGNAL_VALID : BOOL;   (* 厚度信号有效；FALSE 表示信号丢失 *)\n  CUTTING_RUN : BOOL;              (* 切割设备实际运行状态 *)\n  FaultTimestamp : DINT;           (* 当前时间戳（秒），作为故障记录标识 *)\n  CycleTime : TIME;                (* 本次调用的实际间隔；平台上恒为 0 *)\nEND_VAR\nVAR_OUTPUT\n  THICKNESS_ALARM : BOOL;                           (* 带最小保持的厚度报警 *)\n  Slab_Fault_Counter : UINT;                        (* 有效厚度故障次数 *)\n  Slab_Runtime_Accumulator : LTIME;                 (* 正常切割运行时间累积 *)\n  Slab_Fault_History : ARRAY[0..4] OF DINT;         (* 最近 5 次故障时间戳，index 0 最新 *)\nEND_VAR\nVAR\n  faultActive : BOOL;      (* 有效故障 = 信号有效 AND 故障位 *)\n  faultPrev : BOOL;        (* 上一拍的有效故障，用于上升沿检测 *)\n  holdCycles : INT;        (* R1: 已保持的扫描拍数，25 拍 = 500 ms *)\n  i : INT;\nEND_VAR\n\n(* R5: 上电清零 —— 平台新实例的输出默认是 FALSE / 0，故障历史 5 个元素\n   也由声明初值建为 0；计数、累积、历史在本程序里只会被加/被写，\n   不会被\"外部写入\"，调用方也无法修改历史（VAR_OUTPUT 只读语义）。 *)\n\nfaultActive := THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT;\n\n(* R1 / R4: 有效故障立即报警；故障持续期间保持；信号无效立即熄灭并清保持态 *)\nIF NOT THICKNESS_SIGNAL_VALID THEN\n  THICKNESS_ALARM := FALSE;\n  holdCycles := 0;\nELSIF THICKNESS_FAULT THEN\n  THICKNESS_ALARM := TRUE;\n  holdCycles := 0;\nELSIF THICKNESS_ALARM THEN\n  (* 故障已消失：至少再保持 25 拍（25 × 20 ms = 500 ms）才允许熄灭 *)\n  IF holdCycles < 25 THEN\n    holdCycles := holdCycles + 1;\n  ELSE\n    THICKNESS_ALARM := FALSE;\n    holdCycles := 0;\n  END_IF;\nEND_IF;\n\n(* R2: 有效故障的 FALSE→TRUE 上升沿 → 计数 +1，时间戳写入 index 0，\n   旧值向高下标移位，只保留最近 5 条。 *)\nIF faultActive AND NOT faultPrev THEN\n  IF Slab_Fault_Counter < 65535 THEN\n    Slab_Fault_Counter := Slab_Fault_Counter + 1;\n  END_IF;\n  FOR i := 4 TO 1 BY -1 DO\n    Slab_Fault_History[i] := Slab_Fault_History[i - 1];\n  END_FOR;\n  Slab_Fault_History[0] := FaultTimestamp;\nEND_IF;\nfaultPrev := faultActive;\n\n(* R3 / R4: 只有\"切割运行 + 信号有效 + 无故障\"的拍才累积；否则原值保持。\n   平台 TIME 不可用 → 累积的是合格扫描周期数（1 拍 = 1 个单位）。 *)\nIF CUTTING_RUN AND THICKNESS_SIGNAL_VALID AND NOT THICKNESS_FAULT THEN\n  Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + 1;\nEND_IF;\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 12,
+      "tests_total": 12,
+      "feedback": "自动测试：12/12。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 16.094000000040978,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "2c62e7c65c7f6615218e2d3fd185f7e29db2afb7e7a078dc9a644da3cfacb779",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 12,
+        "tests_passed": 12,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "M06-01",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 0,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 0,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-02",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                100,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-03",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 1,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                100,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 1,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-04",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 2,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                200,
+                100,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 2,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-05",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 2,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                200,
+                100,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 2,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-06",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 3,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                300,
+                200,
+                100,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 3,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-07",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 3,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                300,
+                200,
+                100,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 3,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-08",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 4,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                400,
+                300,
+                200,
+                100,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 4,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-09",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 4,
+              "Slab_Runtime_Accumulator": 28,
+              "Slab_Fault_History": [
+                400,
+                300,
+                200,
+                100,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 4,
+              "Slab_Runtime_Accumulator": 28,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 5,
+              "Slab_Runtime_Accumulator": 28,
+              "Slab_Fault_History": [
+                500,
+                400,
+                300,
+                200,
+                100
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 5,
+              "Slab_Runtime_Accumulator": 28,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 5,
+              "Slab_Runtime_Accumulator": 29,
+              "Slab_Fault_History": [
+                500,
+                400,
+                300,
+                200,
+                100
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 5,
+              "Slab_Runtime_Accumulator": 29,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 6,
+              "Slab_Runtime_Accumulator": 29,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 6,
+              "Slab_Runtime_Accumulator": 29,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {}
+      },
+      "cost_cny": 0.0,
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1792999860.7667992,
+  "finished_at": 1792999876.870233,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "adda1caf70aea678ae2c8fa9bfa4aae7557fc45ea25323f07162c4522a50e9c8",
+  "experiment_kind": "offline_simulation",
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 16.094000000040978,
+  "n_attempts": 1
+}

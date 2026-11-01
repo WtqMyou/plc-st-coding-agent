@@ -1,0 +1,626 @@
+{
+  "pid": "public-medium-01",
+  "model": "fixture-B",
+  "provider": "mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "(* 结构体必须显式定义：题目给的是 IN_OUT ARRAY[1..5] OF ST_Pump，\n   没有 TYPE 块就读不到字段名，pumpGroup[i].xxx 会被判错。 *)\nTYPE ST_Pump :\nSTRUCT\n    priority : INT;    (* 优先级，越大越优先；本 FB 只读 *)\n    selection : BOOL;  (* 手动选中状态；本 FB 只读 *)\n    RunComd : BOOL;    (* 本 FB 唯一写的字段 *)\nEND_STRUCT\nEND_TYPE\n\nFUNCTION_BLOCK FB_MultiPump\nVAR_INPUT\n    mode : BOOL;   (* FALSE: 手动；TRUE: 自动 *)\n    start : BOOL;  (* 启动按钮 *)\n    stop : BOOL;   (* 停止按钮：停全部泵 *)\nEND_VAR\nVAR_IN_OUT\n    pumpGroup : ARRAY[1..5] OF ST_Pump;\nEND_VAR\nVAR\n    i : INT;\n    j : INT;\n    rank : INT;      (* 第 i 台泵在 5 台里的优先级名次（0 最高） *)\n    prioI : INT;\n    prioJ : INT;\n    inTop3 : BOOL;\nEND_VAR\n\n(* R4: 停止按钮优先于一切——先无条件把 5 台泵的命令都置 FALSE，\n   再进入模式分支；这样 stop 与 start 同时按下时表现为停止。 *)\nIF stop THEN\n    FOR i := 1 TO 5 DO\n        pumpGroup[i].RunComd := FALSE;\n    END_FOR\n\n(* R1: 依据 mode 切换运行方式。 *)\nELSIF mode THEN\n    (* R3: 自动方式——按 priority 选 3 台（三用两备）。\n       不排序、不搬结构体：名次 = 优先级比我高（或同级但下标更小）的台数，\n       名次 < 3 即为前三。优先级相同按下标小者优先，保证结果唯一。 *)\n    FOR i := 1 TO 5 DO\n        rank := 0;\n        prioI := pumpGroup[i].priority;\n        FOR j := 1 TO 5 DO\n            IF j <> i THEN\n                prioJ := pumpGroup[j].priority;\n                IF (prioJ > prioI) OR ((prioJ = prioI) AND (j < i)) THEN\n                    rank := rank + 1;\n                END_IF\n            END_IF\n        END_FOR\n        inTop3 := rank < 3;\n        (* R2': 自动方式下 start 启动被选中的前 3 台，备用的 2 台必须停机命令 *)\n        pumpGroup[i].RunComd := start AND inTop3;\n    END_FOR\n\nELSE\n    (* R2: 手动方式——按 selection 逐台控制：选中的泵由 start 启动，\n       未选中的泵给停机命令（互斥，不允许两台互相抢）。 *)\n    FOR i := 1 TO 5 DO\n        pumpGroup[i].RunComd := start AND pumpGroup[i].selection;\n    END_FOR\nEND_IF\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 10,
+      "tests_total": 10,
+      "feedback": "自动测试：10/10。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 0.25,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "a19cfb60dfe629c8fc0515a36a345ef63b51a8b619b24aea201e8e51e108bab6",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 10,
+        "tests_passed": 10,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "m01-1",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "pumpGroup": [
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": true
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": true
+                },
+                {
+                  "RunComd": false
+                }
+              ]
+            },
+            "actual": {
+              "pumpGroup": [
+                {
+                  "priority": 10,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 40,
+                  "selection": true,
+                  "RunComd": true
+                },
+                {
+                  "priority": 30,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 20,
+                  "selection": true,
+                  "RunComd": true
+                },
+                {
+                  "priority": 50,
+                  "selection": false,
+                  "RunComd": false
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m01-2",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "pumpGroup": [
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": true
+                },
+                {
+                  "RunComd": true
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": true
+                }
+              ]
+            },
+            "actual": {
+              "pumpGroup": [
+                {
+                  "priority": 10,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 40,
+                  "selection": true,
+                  "RunComd": true
+                },
+                {
+                  "priority": 30,
+                  "selection": false,
+                  "RunComd": true
+                },
+                {
+                  "priority": 20,
+                  "selection": true,
+                  "RunComd": false
+                },
+                {
+                  "priority": 50,
+                  "selection": false,
+                  "RunComd": true
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m01-3",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "pumpGroup": [
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                }
+              ]
+            },
+            "actual": {
+              "pumpGroup": [
+                {
+                  "priority": 10,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 40,
+                  "selection": true,
+                  "RunComd": false
+                },
+                {
+                  "priority": 30,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 20,
+                  "selection": true,
+                  "RunComd": false
+                },
+                {
+                  "priority": 50,
+                  "selection": false,
+                  "RunComd": false
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m01-4",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "pumpGroup": [
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                }
+              ]
+            },
+            "actual": {
+              "pumpGroup": [
+                {
+                  "priority": 10,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 40,
+                  "selection": true,
+                  "RunComd": false
+                },
+                {
+                  "priority": 30,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 20,
+                  "selection": true,
+                  "RunComd": false
+                },
+                {
+                  "priority": 50,
+                  "selection": false,
+                  "RunComd": false
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m01-5",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "pumpGroup": [
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                }
+              ]
+            },
+            "actual": {
+              "pumpGroup": [
+                {
+                  "priority": 10,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 40,
+                  "selection": true,
+                  "RunComd": false
+                },
+                {
+                  "priority": 30,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 20,
+                  "selection": true,
+                  "RunComd": false
+                },
+                {
+                  "priority": 50,
+                  "selection": false,
+                  "RunComd": false
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m01-6",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "pumpGroup": [
+                {
+                  "RunComd": true
+                },
+                {
+                  "RunComd": true
+                },
+                {
+                  "RunComd": true
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                }
+              ]
+            },
+            "actual": {
+              "pumpGroup": [
+                {
+                  "priority": 30,
+                  "selection": false,
+                  "RunComd": true
+                },
+                {
+                  "priority": 30,
+                  "selection": false,
+                  "RunComd": true
+                },
+                {
+                  "priority": 20,
+                  "selection": false,
+                  "RunComd": true
+                },
+                {
+                  "priority": 10,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 5,
+                  "selection": false,
+                  "RunComd": false
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m01-7",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "pumpGroup": [
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                }
+              ]
+            },
+            "actual": {
+              "pumpGroup": [
+                {
+                  "priority": 10,
+                  "selection": true,
+                  "RunComd": false
+                },
+                {
+                  "priority": 40,
+                  "selection": true,
+                  "RunComd": false
+                },
+                {
+                  "priority": 30,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 20,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 50,
+                  "selection": true,
+                  "RunComd": false
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m01-8",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "pumpGroup": [
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": true
+                },
+                {
+                  "RunComd": true
+                },
+                {
+                  "RunComd": true
+                }
+              ]
+            },
+            "actual": {
+              "pumpGroup": [
+                {
+                  "priority": 5,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 15,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 25,
+                  "selection": false,
+                  "RunComd": true
+                },
+                {
+                  "priority": 35,
+                  "selection": false,
+                  "RunComd": true
+                },
+                {
+                  "priority": 45,
+                  "selection": false,
+                  "RunComd": true
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m01-9",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "pumpGroup": [
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                }
+              ]
+            },
+            "actual": {
+              "pumpGroup": [
+                {
+                  "priority": 10,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 20,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 30,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 40,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 50,
+                  "selection": false,
+                  "RunComd": false
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m01-10",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "pumpGroup": [
+                {
+                  "RunComd": true
+                },
+                {
+                  "RunComd": true
+                },
+                {
+                  "RunComd": true
+                },
+                {
+                  "RunComd": false
+                },
+                {
+                  "RunComd": false
+                }
+              ]
+            },
+            "actual": {
+              "pumpGroup": [
+                {
+                  "priority": 10,
+                  "selection": false,
+                  "RunComd": true
+                },
+                {
+                  "priority": 10,
+                  "selection": false,
+                  "RunComd": true
+                },
+                {
+                  "priority": 10,
+                  "selection": false,
+                  "RunComd": true
+                },
+                {
+                  "priority": 10,
+                  "selection": false,
+                  "RunComd": false
+                },
+                {
+                  "priority": 10,
+                  "selection": false,
+                  "RunComd": false
+                }
+              ]
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "judge_version": "judge-v2.0",
+          "judge_source_sha256": "dfb8510ccf77fe67460302f0553658df9ae461fe6e25052ea5e83807166c4e85",
+          "source_sha256": "a19cfb60dfe629c8fc0515a36a345ef63b51a8b619b24aea201e8e51e108bab6",
+          "problem_sha256": "1bf2d49dba8c62461a7567f830d647ac0a5044fb7ec3491a041a3f62011c2dbc",
+          "mc_timeout_seconds": 60,
+          "model_check_requested": false,
+          "cache_hit": false
+        }
+      },
+      "cost_cny": 0.0,
+      "actual_model": "mock",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793019521.3630154,
+  "finished_at": 1793019521.6179852,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "6c02b323b2ba6c280bc78d7c2915285632fcd5e6e83763e5691c11534d87abb3",
+  "experiment_kind": "offline_simulation",
+  "tests_total": 10,
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 0.25,
+  "n_attempts": 1
+}

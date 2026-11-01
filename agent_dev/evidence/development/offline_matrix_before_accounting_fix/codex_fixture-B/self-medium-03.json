@@ -1,0 +1,229 @@
+{
+  "pid": "self-medium-03",
+  "model": "fixture-B",
+  "provider": "codex-mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    openBtn : BOOL;\n    closeBtn : BOOL;\n    openLimit : BOOL;\n    closeLimit : BOOL;\n    obstacle : BOOL;\nEND_VAR\nVAR_OUTPUT\n    motorUp : BOOL;\n    motorDown : BOOL;\n    errorFlag : BOOL;\nEND_VAR\nVAR\n    state : INT;\n    openPrev : BOOL;\n    closePrev : BOOL;\n    openEdge : BOOL;\n    closeEdge : BOOL;\nEND_VAR\n\n(* 状态编码：0=IDLE 1=OPENING 2=CLOSING 3=FAULT *)\nopenEdge := openBtn AND NOT openPrev;\nopenPrev := openBtn;\ncloseEdge := closeBtn AND NOT closePrev;\nclosePrev := closeBtn;\n\n(* 障碍优先于一切：无论哪个方向，立即停机 *)\nIF obstacle THEN\n    motorUp := FALSE;\n    motorDown := FALSE;\n    IF state <> 3 THEN\n        IF state = 2 THEN\n            state := 1;\n        ELSE\n            state := 3;\n            errorFlag := TRUE;\n        END_IF\n    END_IF\nELSE\n    (* 障碍解除后必须能重新启动：FAULT 只是\"停着等\"，不是永久锁死。\n       这一段必须写在 ELSE 里——写进 IF obstacle 里面就成了\"只有还挡着\n       的时候才放行\"，语义完全反了。\n       但**不能在这里清 errorFlag**：清锁存和\"允许动作\"必须是同一件事，\n       否则会出现\"errorFlag 还亮着电机已经转起来\"的中间状态，\n       直接违反 S4（G(errorFlag -> !motorUp & !motorDown)）。\n       所以锁存只在真正接受指令、状态从 IDLE 迁出时清除。 *)\n    CASE state OF\n        0:\n            IF openEdge AND NOT openLimit THEN\n                state := 1;\n                errorFlag := FALSE;\n            ELSIF closeEdge AND NOT closeLimit THEN\n                state := 2;\n                errorFlag := FALSE;\n            END_IF\n        1:\n            IF openLimit THEN\n                state := 0;\n            END_IF\n        2:\n            IF closeLimit THEN\n                state := 0;\n            END_IF\n        3:\n            (* 故障锁存：按第 8 条，只有两键同按才算人工复位。\n               障碍消失只是\"可以复位了\"，不是\"已经复位\"——\n               否则障碍消失的那一拍就会允许起机，违反第 7 条。 *)\n            IF openBtn AND closeBtn THEN\n                state := 0;\n                errorFlag := FALSE;\n            END_IF\n    END_CASE\n\n    (* 电机输出由状态唯一决定，互锁保证不会同时两个方向 *)\n    motorUp := (state = 1);\n    motorDown := (state = 2);\nEND_IF\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 10,
+      "tests_total": 10,
+      "feedback": "自动测试：10/10。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 5.030999999959022,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "a3c7ca2153bcbb6398fe44341f531e5f72ea065fa868430c6e62d84c9d67a738",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 10,
+        "tests_passed": 10,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "m1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": true,
+              "motorDown": false,
+              "errorFlag": false
+            },
+            "actual": {
+              "motorUp": true,
+              "motorDown": false,
+              "errorFlag": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": true
+            },
+            "actual": {
+              "motorUp": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorDown": true,
+              "motorUp": false
+            },
+            "actual": {
+              "motorDown": true,
+              "motorUp": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorDown": false,
+              "motorUp": false,
+              "errorFlag": false
+            },
+            "actual": {
+              "motorDown": false,
+              "motorUp": false,
+              "errorFlag": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false,
+              "errorFlag": true
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false,
+              "errorFlag": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false,
+              "errorFlag": false
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false,
+              "errorFlag": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": true
+            },
+            "actual": {
+              "motorUp": true
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "judge_version": "judge-v2.0",
+          "judge_source_sha256": "2eb6d735e3bc5dbf835fe878a608784dc5e5d551a1b81a391bee3a63c2f7cad3",
+          "source_sha256": "a3c7ca2153bcbb6398fe44341f531e5f72ea065fa868430c6e62d84c9d67a738",
+          "problem_sha256": "b9c0717dbbe4d7543b563764a52cd5c538023fb4575858928cd5b5ddf3515fcb",
+          "mc_timeout_seconds": 60,
+          "model_check_requested": false
+        }
+      },
+      "cost_cny": 0.0,
+      "actual_model": "fixture-B",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793016043.9108176,
+  "finished_at": 1793016048.9430947,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "d694d72afc33b5ac963e7c71d9c00c439bad863025a9ad3af48775ca0377e8c6",
+  "experiment_kind": "offline_simulation",
+  "tests_total": 10,
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 5.030999999959022,
+  "n_attempts": 1
+}

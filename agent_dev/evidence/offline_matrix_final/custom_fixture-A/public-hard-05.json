@@ -1,0 +1,950 @@
+{
+  "pid": "public-hard-05",
+  "model": "fixture-A",
+  "provider": "mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "(*\n  Mechanical Arm Control — 参考解（public-hard-05）\n\n  六动作：下/上/左/右/抓/放；四模式：手动/单步/单循环/连续（调用方保证互斥）。\n  EmergencyStop 为反逻辑：FALSE = 急停触发，TRUE = 无急停。\n\n  需求编号：\n    R1  手动模式：按住按钮且未到位才动作，到位即停，松手即停\n    R2  单步模式：按一次 Start 执行预置程序的\"下一个\"动作，动作完成即停等下一次确认\n        预置程序：①下 ②抓 ③上 ④右 ⑤下 ⑥放 ⑦上 ⑧左，第 8 步之后回到第 1 步\n    R3  单循环模式：按 Start 自动完成一整套搬运循环，最后一动（回左）到位后停在左上\n    R4  连续模式：按 Start 后反复执行 R3 的搬运循环，不停\n    R5  急停：任何模式任何时刻都能立刻停掉所有动作（FALSE 有效）；解除后从冻结的位置继续\n        模式切换也立刻停掉自动动作，程序步回到起点\n    R6  抓/放的完成反馈分别是 GripLimitSwitch / ReleaseLimitSwitch\n*)\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n  (* 四模式，调用方保证同一时刻只有一个为 TRUE（本实现对同时为 TRUE 的容错 = 取高者） *)\n  ManualMode : BOOL;             (* R1 *)\n  SingleStepMode : BOOL;         (* R2 *)\n  SingleCycleMode : BOOL;        (* R3 *)\n  ContinuousMode : BOOL;         (* R4 *)\n  EmergencyStop : BOOL;          (* R5 FALSE = 急停 *)\n  Start : BOOL;                  (* R2/R3/R4 每按一次算一条指令 *)\n  DownButton : BOOL;             (* R1 *)\n  UpButton : BOOL;               (* R1 *)\n  LeftButton : BOOL;             (* R1 *)\n  RightButton : BOOL;            (* R1 *)\n  GripButton : BOOL;             (* R1 *)\n  ReleaseButton : BOOL;          (* R1 *)\n  DownLimitSwitch : BOOL;        (* 到位反馈 *)\n  UpLimitSwitch : BOOL;\n  LeftLimitSwitch : BOOL;\n  RightLimitSwitch : BOOL;\n  GripLimitSwitch : BOOL;        (* R6 抓完成 *)\n  ReleaseLimitSwitch : BOOL;     (* R6 放完成 *)\nEND_VAR\nVAR_OUTPUT\n  MoveDown : BOOL;\n  MoveUp : BOOL;\n  MoveLeft : BOOL;\n  MoveRight : BOOL;\n  ActivateGrip : BOOL;\n  ActivateRelease : BOOL;\nEND_VAR\nVAR\n  startEdge : BOOL;              (* Start 上升沿 *)\n  startPrev : BOOL;\n  modeNow : INT;                 (* 本拍模式号 0 无 / 1 手动 / 2 单步 / 3 单循环 / 4 连续 *)\n  modePrev : INT;\n  fsStep : INT;                  (* 预置程序的当前步 1..8；0 = 未开始或本轮已结束 *)\n  fsActive : BOOL;               (* 自动程序是否正在执行某个动作 *)\n  fsDone : BOOL;                 (* 当前步的到位条件是否已满足 *)\n  guard : INT;                   (* 每拍最多推进 8 步，防止一拍扫完多圈 *)\nEND_VAR\n\n(* 每拍先把六个动作输出清零，后面按模式/状态逐位置位：急停或无模式时自然全 0（R5） *)\nMoveDown := FALSE;\nMoveUp := FALSE;\nMoveLeft := FALSE;\nMoveRight := FALSE;\nActivateGrip := FALSE;\nActivateRelease := FALSE;\n\n(* 上升沿：按一次 Start 只发一条指令，按住不放不会连发 *)\nstartEdge := Start AND NOT startPrev;\nstartPrev := Start;\n\n(* 模式号：四模式互斥由调用方保证；若同时为 TRUE 按 手动 > 单步 > 单循环 > 连续 取高者 *)\nmodeNow := 0;\nIF ContinuousMode THEN\n  modeNow := 4;\nEND_IF\nIF SingleCycleMode THEN\n  modeNow := 3;\nEND_IF\nIF SingleStepMode THEN\n  modeNow := 2;\nEND_IF\nIF ManualMode THEN\n  modeNow := 1;\nEND_IF\n\n(* R5 模式切换：立刻停掉自动动作并把程序步清回起点，等新模式的指令 *)\nIF modeNow <> modePrev THEN\n  fsActive := FALSE;\n  fsStep := 0;\n  fsDone := FALSE;\nEND_IF\nmodePrev := modeNow;\n\nIF NOT EmergencyStop THEN\n  (* R5 急停压过一切：六个动作全部保持 0，程序步冻结（解除急停后从冻结点继续） *)\n  fsDone := FALSE;\nELSIF modeNow = 1 THEN\n  (* R1 手动模式：按住按钮且未到位才动作；一对互补按钮同按视为无效（不许同时动作） *)\n  IF DownButton AND (NOT DownLimitSwitch) AND (NOT UpButton) THEN\n    MoveDown := TRUE;\n  END_IF\n  IF UpButton AND (NOT UpLimitSwitch) AND (NOT DownButton) THEN\n    MoveUp := TRUE;\n  END_IF\n  IF LeftButton AND (NOT LeftLimitSwitch) AND (NOT RightButton) THEN\n    MoveLeft := TRUE;\n  END_IF\n  IF RightButton AND (NOT RightLimitSwitch) AND (NOT LeftButton) THEN\n    MoveRight := TRUE;\n  END_IF\n  IF GripButton AND (NOT GripLimitSwitch) AND (NOT ReleaseButton) THEN\n    ActivateGrip := TRUE;\n  END_IF\n  IF ReleaseButton AND (NOT ReleaseLimitSwitch) AND (NOT GripButton) THEN\n    ActivateRelease := TRUE;\n  END_IF\nELSIF (modeNow = 2) OR (modeNow = 3) OR (modeNow = 4) THEN\n  (* R2/R3/R4 自动程序 *)\n  IF startEdge AND (NOT fsActive) THEN\n    IF modeNow = 2 THEN\n      (* 单步：接着上次停下的位置继续；还没开始过就从第 1 步起 *)\n      IF fsStep < 1 THEN\n        fsStep := 1;\n      END_IF\n    ELSE\n      (* 单循环 / 连续：每次启动都从第 1 步（下）重新开始一整轮 *)\n      fsStep := 1;\n    END_IF\n    fsActive := TRUE;\n  END_IF\n\n  guard := 0;\n  WHILE fsActive AND (guard < 8) DO\n    guard := guard + 1;\n    fsDone := FALSE;\n    (* 预置程序：①下 ②抓 ③上 ④右 ⑤下 ⑥放 ⑦上 ⑧左 *)\n    IF fsStep = 1 THEN\n      IF DownLimitSwitch THEN fsDone := TRUE; ELSE MoveDown := TRUE; END_IF\n    ELSIF fsStep = 2 THEN\n      IF GripLimitSwitch THEN fsDone := TRUE; ELSE ActivateGrip := TRUE; END_IF\n    ELSIF fsStep = 3 THEN\n      IF UpLimitSwitch THEN fsDone := TRUE; ELSE MoveUp := TRUE; END_IF\n    ELSIF fsStep = 4 THEN\n      IF RightLimitSwitch THEN fsDone := TRUE; ELSE MoveRight := TRUE; END_IF\n    ELSIF fsStep = 5 THEN\n      IF DownLimitSwitch THEN fsDone := TRUE; ELSE MoveDown := TRUE; END_IF\n    ELSIF fsStep = 6 THEN\n      IF ReleaseLimitSwitch THEN fsDone := TRUE; ELSE ActivateRelease := TRUE; END_IF\n    ELSIF fsStep = 7 THEN\n      IF UpLimitSwitch THEN fsDone := TRUE; ELSE MoveUp := TRUE; END_IF\n    ELSE\n      IF LeftLimitSwitch THEN fsDone := TRUE; ELSE MoveLeft := TRUE; END_IF\n    END_IF\n\n    IF NOT fsDone THEN\n      (* 本拍动作还没走完：停在当前步，本拍只输出这一个动作 *)\n      guard := 8;\n    ELSIF modeNow = 4 THEN\n      (* R4 连续：本步一完成当拍就进入下一步，第 8 步之后回到第 1 步 *)\n      fsStep := fsStep + 1;\n      IF fsStep > 8 THEN\n        fsStep := 1;\n      END_IF\n    ELSIF modeNow = 3 THEN\n      (* R3 单循环：第 8 步（回左）完成即整轮结束，停在左上等下一次启动 *)\n      IF fsStep >= 8 THEN\n        fsActive := FALSE;\n        fsStep := 0;\n      ELSE\n        fsStep := fsStep + 1;\n      END_IF\n    ELSE\n      (* R2 单步：一个动作做完就停，等下一次 Start 确认 *)\n      fsActive := FALSE;\n      fsStep := fsStep + 1;\n      IF fsStep > 8 THEN\n        fsStep := 1;\n      END_IF\n    END_IF\n  END_WHILE\nEND_IF\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 38,
+      "tests_total": 38,
+      "feedback": "自动测试：38/38。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 0.2970000000204891,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "f7bfb08dd9d545886d7562e9ecbfe3eb03ccdf00bfbe40c56d935882721cc1b3",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 38,
+        "tests_passed": 38,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "h05-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": true
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": true,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": true,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-20",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-21",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-22",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-23",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-24",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-25",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": true
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-26",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-27",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": true,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": true,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-28",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-29",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-30",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-31",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": true
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-32",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": true,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": true,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-33",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-34",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-35",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-36",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-37",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-38",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "judge_version": "judge-v2.0",
+          "judge_source_sha256": "851e5eebf4672493a42651c9744c7621aaeea22b63af5a39b1d425414beee8fe",
+          "source_sha256": "f7bfb08dd9d545886d7562e9ecbfe3eb03ccdf00bfbe40c56d935882721cc1b3",
+          "problem_sha256": "2f18b10fbc74b8abbad50285fedffc444743ab9ba7394d99e6e29e6659fe1020",
+          "mc_timeout_seconds": 60,
+          "model_check_requested": false,
+          "cache_hit": false
+        }
+      },
+      "cost_cny": 0.0,
+      "actual_model": "mock",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793033295.9160898,
+  "finished_at": 1793033296.2184196,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "807028f4e4e1aec2bd5b926146db81d1b8d02fc848568370a2957b82a0ae8314",
+  "experiment_kind": "offline_simulation",
+  "tests_total": 38,
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 0.2970000000204891,
+  "n_attempts": 1
+}

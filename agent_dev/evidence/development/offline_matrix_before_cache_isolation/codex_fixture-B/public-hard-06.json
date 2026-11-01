@@ -1,0 +1,857 @@
+{
+  "pid": "public-hard-06",
+  "model": "fixture-B",
+  "provider": "codex-mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "(*\n  Production Control — 参考解（public-hard-06）\n\n  五个工位：上料(Feed) → 清洗(Wash) → 称重(Weight) → 烧结(Firing) → 成品(Output)，\n  一台电机负责在工位间传送产品；每个工位一个到位传感器。\n\n  需求编号：\n    R1  Mode 开关：FALSE = 手动，TRUE = 自动\n    R2  手动模式：ForwardButton 控制正转、ReverseButton 控制反转；正反转必须互锁，不能同时动作\n    R3  自动模式：\n        a) SensorFeed 检测到料 → 正转送到清洗站 → SensorWash 到位即停 → washComplete 后正转送称重\n        b) SensorWeight 到位即停 → weightComplete 后按重量判定：100 ≤ weight ≤ 200 合格\n        c) 不合格 → 发出 kick 剔除指令（一拍脉冲），产品被踢出，产线回到等待上料\n        d) 合格 → 烧结温度按重量线性映射 100→500、200→550，输出 firingTemp，同时正转送烧结站\n        e) SensorFiring 到位即停 → firingComplete 后正转送成品站\n        f) SensorOutput 到位即停、CompletionLight 亮；产品被取走（SensorOutput=FALSE）灯灭，回到等待上料\n    R4  模式切换：切到手动时自动流程复位（手动接管产线）；切回自动从等待上料重新开始\n*)\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n  Mode : BOOL;                   (* R1 FALSE = 手动，TRUE = 自动 *)\n  ForwardButton : BOOL;          (* R2 *)\n  ReverseButton : BOOL;          (* R2 *)\n  SensorFeed : BOOL;             (* 上料站到位传感器 *)\n  SensorWash : BOOL;             (* 清洗站到位传感器 *)\n  SensorWeight : BOOL;           (* 称重站到位传感器 *)\n  SensorFiring : BOOL;           (* 烧结站到位传感器 *)\n  SensorOutput : BOOL;           (* 成品站到位传感器 *)\n  washComplete : BOOL;           (* 清洗完成信号 *)\n  weightComplete : BOOL;         (* 称重完成信号 *)\n  weight : REAL;                 (* 重量值（称重完成时有效） *)\n  firingComplete : BOOL;         (* 烧结完成信号 *)\nEND_VAR\nVAR_OUTPUT\n  MotorForward : BOOL;           (* 电机正转 *)\n  MotorReverse : BOOL;           (* 电机反转（仅手动可用） *)\n  kick : BOOL;                   (* 不合格剔除指令 *)\n  CompletionLight : BOOL;        (* 成品站完成灯 *)\n  firingTemp : REAL;             (* 烧结温度设定值 *)\nEND_VAR\nVAR\n  state : INT;                   (* 0 等上料 / 1 送清洗 / 2 等清洗 / 3 送称重 / 4 等称重\n                                    5 送烧结 / 6 等烧结 / 7 送成品 / 8 成品站 *)\n  modePrev : BOOL;\nEND_VAR\n\n(* 每拍先清零六个输出：手动/自动互斥由此保证，kick 是脉冲 *)\nMotorForward := FALSE;\nMotorReverse := FALSE;\nkick := FALSE;\nCompletionLight := FALSE;\n\n(* R4 模式切换那一拍：自动流程复位，切回自动从\"等待上料\"重新开始 *)\nIF Mode <> modePrev THEN\n  state := 0;\nEND_IF\nmodePrev := Mode;\n\nIF NOT Mode THEN\n  (* R2 手动：两个按钮互锁，同按视为无效（谁都不动） *)\n  IF ForwardButton AND (NOT ReverseButton) THEN\n    MotorForward := TRUE;\n  END_IF\n  IF ReverseButton AND (NOT ForwardButton) THEN\n    MotorReverse := TRUE;\n  END_IF\nELSE\n  (* R3 自动流程 *)\n  CASE state OF\n    0:\n      (* 等上料：SensorFeed 检测到料就开始正转送清洗站 *)\n      IF SensorFeed THEN\n        state := 1;\n        MotorForward := TRUE;\n      END_IF\n    1:\n      (* 送到清洗站：到位即停 *)\n      IF SensorWash THEN\n        state := 2;\n      ELSE\n        MotorForward := TRUE;\n      END_IF\n    2:\n      (* 等清洗完成 *)\n      IF washComplete THEN\n        state := 3;\n        MotorForward := TRUE;\n      END_IF\n    3:\n      (* 送到称重站：到位即停 *)\n      IF SensorWeight THEN\n        state := 4;\n      ELSE\n        MotorForward := TRUE;\n      END_IF\n    4:\n      (* 等称重完成，按 R3b 判定合格与否 *)\n      IF weightComplete THEN\n        IF (weight >= 100.0) AND (weight <= 200.0) THEN\n          (* R3d 合格：100..200 线性映射到 500..550（每 1 个单位重量 0.5 度） *)\n          firingTemp := 500.0 + (weight - 100.0) * 0.5;\n          state := 5;\n          MotorForward := TRUE;\n        ELSE\n          (* R3c 不合格：剔除，一拍脉冲后回到等待上料；温度保持上一件合格品的值 *)\n          kick := TRUE;\n          state := 0;\n        END_IF\n      END_IF\n    5:\n      (* 送到烧结站：到位即停 *)\n      IF SensorFiring THEN\n        state := 6;\n      ELSE\n        MotorForward := TRUE;\n      END_IF\n    6:\n      (* 等烧结完成 *)\n      IF firingComplete THEN\n        state := 7;\n        MotorForward := TRUE;\n      END_IF\n    7:\n      (* 送到成品站：到位即停，完成灯亮 *)\n      IF SensorOutput THEN\n        state := 8;\n        CompletionLight := TRUE;\n      ELSE\n        MotorForward := TRUE;\n      END_IF\n    8:\n      (* 成品站：产品还在则灯保持亮；被取走则灯灭并回到等待上料 *)\n      IF SensorOutput THEN\n        CompletionLight := TRUE;\n      ELSE\n        state := 0;\n      END_IF\n  ELSE\n    state := 0;\n  END_CASE\nEND_IF\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 38,
+      "tests_total": 38,
+      "feedback": "自动测试：38/38。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 12.828000000095926,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "a58a4b1af49eb1567b4c9564a91cffc6fc801510f22d15f9feb53e3e2b2e807a",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 38,
+        "tests_passed": 38,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "h06-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 0.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": true,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": true,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": true,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": true,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": true,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": true,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-20",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-21",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-22",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-23",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-24",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-25",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-26",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-27",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-28",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-29",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-30",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-31",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-32",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-33",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-34",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-35",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-36",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-37",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": true,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": true,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-38",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "judge_version": "judge-v2.0",
+          "judge_source_sha256": "a240c21b6368aa74069bde1faca7833266d2936416208ee75297fc69325133c3",
+          "source_sha256": "a58a4b1af49eb1567b4c9564a91cffc6fc801510f22d15f9feb53e3e2b2e807a",
+          "problem_sha256": "6e5e9bf573902cbc88064da93d0b4341f3848343383c12b71e06ea88542b02b4",
+          "mc_timeout_seconds": 60,
+          "model_check_requested": false
+        }
+      },
+      "cost_cny": 0.0,
+      "actual_model": "fixture-B",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793017567.6920989,
+  "finished_at": 1793017580.5179737,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "106181705907d95bffb43c02f76574239e4586d607a31dc5f308de70a24689c9",
+  "experiment_kind": "offline_simulation",
+  "tests_total": 38,
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 12.828000000095926,
+  "n_attempts": 1
+}

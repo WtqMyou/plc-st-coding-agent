@@ -1,0 +1,232 @@
+{
+  "pid": "public-medium-08",
+  "model": "fixture-A",
+  "provider": "codex-mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "(* =====================================================================\n   public-medium-08  IPv4 Parsing with Format and Range Checks\n   ---------------------------------------------------------------------\n   平台边界（《公共题制作约定》§7）：LEN / 字符串下标 / STRING_TO_INT 可用，\n   因此本解按字符扫描实现，不依赖任何 TIME 或结构体能力。\n\n   实现约定（需求原文未逐字规定、此处显式声明的解释）：\n   * 段内前导 0（\"01\"、\"00\"）按畸形处理 —— 点分十进制的规范写法里\n     多位数不允许前导 0；单独一个 \"0\" 合法。\n   * 合法点分十进制最长 15 字符（\"255.255.255.255\"），超长直接判非法。\n   * 任何判非法的情况都把 ipValue 写成 0（需求 3）。\n   ===================================================================== *)\nFUNCTION_BLOCK FB_Ipv4Parser\nVAR_INPUT\n  ipText : STRING(254);   (* 待解析的点分十进制文本 *)\nEND_VAR\nVAR_OUTPUT\n  ipValue : UDINT;        (* 网络字节序的 32 位地址；非法输入为 0 *)\nEND_VAR\nVAR\n  scanText : STRING(256);        (* ipText 末尾补一个 '.'，让\"最后一段\"和其余段共用同一收尾逻辑 *)\n  n : INT;\n  i : INT;\n  ch : STRING(1);\n  isDigit : BOOL;\n  digit : INT;\n  segLen : INT;           (* 当前段已读入的数字字符数 *)\n  segVal : INT;           (* 当前段的十进制值 *)\n  segZeroOnly : BOOL;     (* 当前段是否\"只由前导 0 开头\" *)\n  segCount : INT;         (* 已经收尾的段数 *)\n  segments : ARRAY[0..3] OF INT;\n  ok : BOOL;              (* 合法性结论（内部观察量） *)\n  run : BOOL;\nEND_VAR\n\nscanText := CONCAT(ipText, '.');\nn := LEN(scanText);\nok := TRUE;\nsegCount := 0;\nsegLen := 0;\nsegVal := 0;\nsegZeroOnly := FALSE;\n\n(* R1 / R3: 合法点分十进制最长 15 字符；超长直接判非法 *)\nIF LEN(ipText) > 15 THEN\n  ok := FALSE;\nEND_IF;\n\n(* R1: 逐字符扫描，'.' 收尾一段，其余必须是十进制数字 *)\nFOR i := 1 TO 16 DO\n  run := ok AND (i <= n);\n  IF run THEN\n    ch := MID(scanText, 1, i);\n    isDigit := (ch >= '0') AND (ch <= '9');\n    IF ch = '.' THEN\n      IF segLen = 0 THEN\n        ok := FALSE;            (* R3: 空段（空输入 / 连续点 / 以点结尾） *)\n      ELSIF segLen > 3 THEN\n        ok := FALSE;            (* R3: 段内数字超过 3 位 *)\n      ELSIF segVal > 255 THEN\n        ok := FALSE;            (* R3: 段值超出 0~255 *)\n      ELSIF segCount > 3 THEN\n        ok := FALSE;            (* R3: 段数超过 4 *)\n      ELSE\n        segments[segCount] := segVal;\n        segCount := segCount + 1;\n      END_IF;\n      segLen := 0;\n      segVal := 0;\n      segZeroOnly := FALSE;\n    ELSIF isDigit THEN\n      digit := STRING_TO_INT(ch);\n      IF (segLen = 0) AND (digit = 0) THEN\n        segZeroOnly := TRUE;    (* 段首是 0：只允许单独一个 \"0\" *)\n      ELSIF segZeroOnly THEN\n        ok := FALSE;            (* R3: 前导 0（\"01\"/\"00\"）视为畸形 *)\n      END_IF;\n      IF segLen < 3 THEN\n        segLen := segLen + 1;\n        segVal := segVal * 10 + digit;\n      ELSE\n        segLen := 4;            (* 超过 3 位，留到收尾分支判非法 *)\n      END_IF;\n    ELSE\n      ok := FALSE;              (* R3: 非数字、非点字符（空格、字母、符号…） *)\n    END_IF;\n  END_IF;\nEND_FOR;\n\n(* R1 / R3: 必须恰好四段 *)\nIF ok AND (segCount <> 4) THEN\n  ok := FALSE;\nEND_IF;\n\n(* R2: 网络字节序拼装（第一段占最高 8 位）；R3: 非法输入 → 0（0.0.0.0 也是 0） *)\nipValue := 0;\nIF ok THEN\n  FOR i := 0 TO 3 DO\n    ipValue := ipValue * INT_TO_UDINT(256) + INT_TO_UDINT(segments[i]);\n  END_FOR;\nEND_IF;\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 12,
+      "tests_total": 12,
+      "feedback": "自动测试：12/12。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 8.60999999998603,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "e754e2900a589e45ce3929805de6ad3b964b5d73cd5bcc409653a9ff6ab984a5",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 12,
+        "tests_passed": 12,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "M08-01",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 3232235786
+            },
+            "actual": {
+              "ipValue": 3232235786
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-02",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-03",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 4294967295
+            },
+            "actual": {
+              "ipValue": 4294967295
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-04",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 167772161
+            },
+            "actual": {
+              "ipValue": 167772161
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-05",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 16909060
+            },
+            "actual": {
+              "ipValue": 16909060
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-06",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 2886794753
+            },
+            "actual": {
+              "ipValue": 2886794753
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-07",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-08",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-09",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-10",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-11",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-12",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 0
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "judge_version": "judge-v2.0",
+          "judge_source_sha256": "851e5eebf4672493a42651c9744c7621aaeea22b63af5a39b1d425414beee8fe",
+          "source_sha256": "e754e2900a589e45ce3929805de6ad3b964b5d73cd5bcc409653a9ff6ab984a5",
+          "problem_sha256": "c30a39dcbbe5cf70ede680a1648f26f2838bfd335f5c41080d94c1d843aa5558",
+          "mc_timeout_seconds": 60,
+          "model_check_requested": false,
+          "cache_hit": false
+        }
+      },
+      "cost_cny": 0.0,
+      "actual_model": "fixture-A",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793033411.2017016,
+  "finished_at": 1793033419.811598,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "6e6b1480c443d236c37c66dda5d09d3dc6c4d1324d7bd394190c08bd45b873c5",
+  "experiment_kind": "offline_simulation",
+  "tests_total": 12,
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 8.60999999998603,
+  "n_attempts": 1
+}

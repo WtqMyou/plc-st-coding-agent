@@ -1,0 +1,522 @@
+--- before/docs/实验协议.md
++++ after/docs/实验协议.md
+@@ -2,13 +2,15 @@
+ 
+ ## 调用前的必填信息
+ 
+-由用户指定至少两个真实模型、API 接入方式、凭据环境变量、实际单价和总预算。当前配置故意留空，不从已有账户或本机默认设置推断模型。
++2026-10-30 用户已指定 DMXAPI 的 `deepseek-v4-pro-0813` 与 `MiniMax-M2.7`，累计预算上限 75 元，凭据环境变量为 `DMXAPI_API_KEY`。本次配置为 `config.dmxapi.json`；`config.example.json` 仍为空模板。价格按本次配置的公开峰时估计记账，不计缓存折扣，最终应与上游账单核对。
++
++阶段累计额度为接入 5 元、开发 20 元、正式实验 65 元、复测 75 元。接入阶段六类题乘四组共 24 个首候选，逐次预留最坏请求费用、返回后结算，阶段额度不足即明确停止，不能保证 5 元能覆盖任何实际 token 消耗。正式阶段启动前检查全量首候选预留，并在修复期间持续保护未覆盖题目的预算。16384 token 输出限制和单次请求费用保护不降低。
+ 
+ 正式运行要求：两模型在自研回路与 Codex CLI 中均可用；核对服务端返回的实际模型身份，避免把同一模型的不同别名当作两个基座模型。若模型不兼容 Codex Responses 协议，先记录这一限制并取得明确的接入方案。
+ 
+ ## 四组设置
+ 
+-| 框架 | 模型 A（待定） | 模型 B（待定） |
++| 框架 | deepseek-v4-pro-0813 | MiniMax-M2.7 |
+ |---|---|---|
+ | Codex CLI 受控候选生成 | 全部 35 题 | 全部 35 题 |
+ | 自研 Agent | 全部 35 题 | 全部 35 题 |
+--- before/docs/成员2技术交接.md
++++ after/docs/成员2技术交接.md
+@@ -4,7 +4,7 @@
+ 
+ 本岗位负责 Agent 调度、模型交互、上下文管理、工具组织、编译修复、运行测试、平台适配和实验工具。团队总报告、PPT、视频剪辑由其他成员完成，本包提供对应技术材料。
+ 
+-基础任务要求 20 道公共题和至少 10 道自建题；当前整合为 20 公共题与 15 自建题、两框架乘两模型四组真实实验。当前真实模型和费用上限尚未指定，前期完成状态不等于四组真实模型实验完成。
++基础任务要求 20 道公共题和至少 10 道自建题；当前整合为 20 公共题与 15 自建题，计划完成两框架乘两模型四组真实实验。用户已确定 DMXAPI 两模型及 75 元预算，详见实验协议和接续开发记录。前期完成状态不等于四组真实模型实验完成。
+ 
+ 最终状态以 evidence 中本轮验收数据及验收报告为准。成员一的旧说明文档属于 v1.1 历史资料；其中“全部 LTL hold”“已完成三道闸门”等原结论不得直接当成本版本结果。
+ 
+@@ -76,7 +76,7 @@
+ 
+ 1. 运行快速验收，核对冻结哈希及平台版本。
+ 2. 查看验收报告中的未决项与 LTL 不完整范围。
+-3. 用户指定至少两个模型、准确接入路径、价格和总预算。
++3. 核对已确定的 `config.dmxapi.json`、共享预算账本、接入证据及尚未结算的预留。
+ 4. 小规模真实接口核验通过后，冻结实验配置并完整执行四组 35 题。
+ 5. 根据失败类别改进通用策略，保留开发结果与最终评测的分隔及全部失败记录。
+ 
+--- before/docs/接续开发记录_20261030.md
++++ after/docs/接续开发记录_20261030.md
+@@ -0,0 +1,46 @@
++# 2026-10-30 接续开发记录
++
++旧 Codex 会话「agent设计」因 Remote Compact 失败中断。已恢复其最后明确的实验计划：DMXAPI 的 deepseek-v4-pro-0813 与 MiniMax-M2.7，两框架乘两模型乘 35 题，累计预算 75 元。当前阶段为接入修复与六类代表题试跑，不作为正式四组性能结果。
++
++## 源码与历史保护
++
++开发目录没有 Git 元数据，不能给出提交记录。v2.1 ZIP 及原始数据包均保留。修改前的源码和共享账本已另存至 `E:/PLC_Dev/evidence/real_experiments/campaign_75/recovery_backup_20261030_204104.zip`。新离线验收写入 `evidence/recovery_20261030/`，不覆盖旧 v2.1 验收日志。
++
++## 本轮修复
++
++- 为身份校验中断增加证据关联的恢复入口。仅允许已结算、模型名称忽略大小写后相同、含完整用量的诊断证据解除对应停止；保留旧事件、累计金额及所有未知费用预留，并单独备份恢复前账本。
++- 追加故障类别及事件关联保护：旧身份诊断不能解除其后发生的未确认请求、网络超时或其他类别故障。
++- 协议探测保存阶段结果并复用已完成的模型，避免恢复时重复付费探测。
++- 接入试跑改为逐次最坏预留、返回后结算；不再要求同时预留 24 次最大输出。累计 5 元阶段上限与单次 16384 token 上限均保留。正式实验仍在启动前及修复期间保护全量首候选预算。
++- 代表题试跑报告按实际选中的六题计算分母；正式实验保持 35 题。
++- 账本停止或阶段预算不足时先保留部分结果报告，再停止，不能将未生成记录算成功。
++- 同步 README、实验协议及技术交接中的已确定模型和预算说明；历史验收另作标注。
++
++## 验证与实时进度
++
++针对性回归 16 项通过，其中新增 5 项覆盖本次修复。完整六组离线验收全部通过：61 项 v2 回归、旧解释器/Agent 检查、参考解 435/435 用例及两类题库审计。新的 35 题参考解记录全部匹配当前源码哈希。实际 Codex CLI 离线桥接通过；CODESYS 与 OpenPLC 的正确程序均通过、故意错误程序均被拒绝。
++
++身份诊断恢复已执行，旧 5 个事件及 0.054471 元累计计入金额完全保留。MiniMax Chat 接入复核通过；其 Responses 返回 400，已记为协议不支持并保留该请求的费用预留。路由为 DeepSeek 原生 Responses、MiniMax Chat 桥接；两个框架调用同一指定模型。完整协议探测后账本计入 0.065542 元。
++
++六类代表题乘四组共计划 24 个真实首候选，本轮尝试 3 个，生成 2 个后停止。不是完整试跑，也不是正式四组结果：
++
++| FIFO 首候选 | 结果 |
++|---|---|
++| 自研 Agent / DeepSeek | CODESYS 与 OpenPLC 通过，27/27 条功能用例通过；LTL 工具错误：未定义变量 cap，不能记为规约通过 |
++| Codex / DeepSeek | 静态检查拒绝，报告缺少 POU 结束关键字；0/27 条用例计入完整分母 |
++| 自研 Agent / MiniMax | 上游请求 180 秒超时，没有返回 token 用量；费用预留保留，停止整个付费批次 |
++| Codex / MiniMax 及其他题目 | 未运行 |
++
++报告见 `evidence/recovery_20261030/pilot_results.md` 和 `pilot_summary.json`；完整候选和冻结清单仍保存在 E 盘原实验目录。共享账本累计计入 **0.612114 元**，其中已返回用量的估计约 0.426754 元、未知预留约 0.185358 元，微小差额来自保守取整；不能视为上游实际账单。没有付费批次继续运行。
++
++在真实批次停止后追加了“旧身份诊断不能解锁新超时”的保护，最新 **62 项 v2 回归通过，435/435 参考解用例通过**。日志与当前源码哈希位于 `evidence/recovery_20261030/post_timeout_hardening/`。此前六组离线验收、CLI 桥接和双平台正负控制的结果保留，不冒充本次三个真实候选全部成功。
++
++试跑冻结源码哈希为 `405caa09ab67b4ba415766518d562f0e7ad4f83a017cd199f52b95030e793c59`；追加保护后的源码哈希不同，已保存到 `recovery_status.json`。后续修改超时/接入策略后应使用新的实验输出目录，并继续使用同一预算账本；不能覆盖旧冻结清单、把这三条结果混入新版本后宣称完整复测。
++
++## 下一步
++
++先处理复杂题生成时间与 180 秒请求限制的冲突，检查 MiniMax 通道超时行为，并保留费用不明的旧预留。任何恢复都需要与这次新失败直接关联，不能复用旧身份诊断。随后在新输出版本完成两模型、两框架的代表题试跑；再根据实测 token 消耗评估完整 140 题次及修复预算。FIFO 的 Codex 静态失败和 LTL 的 cap 建模错误应分别分析，不通过改 expected 或降低检查标准修饰结果。
++
++真实实验账本为 `E:/PLC_Dev/evidence/dmxapi_budget_75.json`；各阶段累计上限为 5、20、65、75 元。恢复前计入 0.054471 元，其中包含两笔未知预留，不能视为实际账单。真实接入证据位于 `E:/PLC_Dev/evidence/real_experiments/campaign_75/`。
++
++正式四组实验尚未完成。现存 35 题参考解平台结果及 LTL 结果属于历史版本，不自动作为当前源码的全量复验。
+--- before/docs/验收报告.md
++++ after/docs/验收报告.md
+@@ -1,4 +1,6 @@
+ # 前期验收与交接状态
++
++> 本文为 v2.1 交接时的历史验收结果。之后已确定模型及预算，并新增真实接入和预算恢复开发；当前进度与新验收结果见 [接续开发记录](接续开发记录_20261030.md)。下文的“待指定”“未付费”仅描述历史交接时点。
+ 
+ 真实模型和预算待用户指定；当前未开展付费模型实验。离线 fixture 结果仅证明流水线工作。
+ 
+--- before/README.md
++++ after/README.md
+@@ -1,6 +1,6 @@
+ # 成员二：PLC Coding Agent（前期工程）
+ 
+-本工程 Agent v2.1 已整合成员一 stbench v1.2 二次更新，当前为 35 题 / 435 条用例。原始交付包保留在上级目录。当前只开展离线开发和真实平台编译；真实模型、供应商和费用上限均待用户指定。
++本工程 Agent v2.1 已整合成员一 stbench v1.2 二次更新，当前为 35 题 / 435 条用例。原始交付包保留在上级目录。用户已指定 DMXAPI 的 `deepseek-v4-pro-0813` 与 `MiniMax-M2.7`，累计预算 75 元；真实协议核验完成，代表题试跑因 MiniMax 生成超时停止，正式四组实验尚未启动。接续进度见 [接续开发记录](docs/接续开发记录_20261030.md)。
+ 
+ 二次更新的采用范围、单位修正、超压计数修复及 PI 版本选择见 [二次更新整合说明](docs/二次更新整合说明.md)。上次 v2.0 交接包完整保留。
+ 
+@@ -36,6 +36,18 @@
+ 
+ ## 真实实验开启条件
+ 
++本项目已确定的实验使用 `config.dmxapi.json` 与 `campaign` 入口，共用 `E:/PLC_Dev/evidence/dmxapi_budget_75.json`。旧 `matrix` 入口不允许绕开共享账本。凭据仅从本机 `DMXAPI_API_KEY` 读取。
++
++    python -B -X utf8 -m stbench campaign prepare
++    python -B -X utf8 -m stbench campaign probe --live
++    python -B -X utf8 -m stbench campaign pilot --live
++
++协议探测复用已完整记录的结果；未知上游结果仍停止批次并保留费用预留。仅当已结算的身份诊断证据与账本相符时，`campaign recover-identity --evidence <诊断JSON>` 才能恢复身份校验造成的停止，且不会退回旧预留。试跑逐次预留和结算，累计不得超过 5 元；正式评测保护全部未覆盖题目的首候选预算。输出上限保持 16384 token。
++
++当前账本停止源于新发生的生成超时，不能用旧身份诊断解除。源码变更后继续实验必须使用新的输出版本，不能覆盖旧 `freeze.json` 或清空共享账本。以上命令为干净实验目录的顺序说明；当前恢复限制和失败记录以接续开发记录为准。
++
++以下为另行配置实验时的字段说明；本次已确定的模型无需重新选择：
++
+ 复制 config.example.json 为 config.local.json。只有用户确定模型与预算后，才填写 models、budget_cny 并设置 live_enabled=true。至少配置两个已核验为不同模型的条目：
+ 
+     {
+--- before/stbench/billing.py
++++ after/stbench/billing.py
+@@ -1,6 +1,7 @@
+ """One locked, durable campaign ledger; reservations survive crashes and errors."""
+ from contextlib import contextmanager
+ from decimal import Decimal, ROUND_CEILING
++import hashlib
+ import json
+ import math
+ import os
+@@ -43,14 +44,52 @@
+         self.ceiling_override=None
+     def ceiling(self):
+         return min(PHASES[self.phase],self.ceiling_override) if self.ceiling_override is not None else PHASES[self.phase]
+-    def read(self):
++    def read(self, *, allow_halted=False):
+         state=json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else dict(
+             version=3,limit_cny=self.limit,spent_cny=0.,events=[],halted="")
+         if state.get("version")!=3 or state.get("limit_cny")!=self.limit:
+             raise ProviderError("Budget identity/version mismatch; refusing a reset")
+         money(state["spent_cny"])
+-        if state.get("halted"):raise ProviderError("Campaign halted: "+state["halted"])
++        if state.get("halted") and not allow_halted:raise ProviderError("Campaign halted: "+state["halted"])
+         return state
++    def recover_identity(self, evidence_path, expected_model):
++        """Resume a diagnosed case-only identity failure without refunding reservations."""
++        evidence_path=Path(evidence_path).resolve()
++        evidence_bytes=evidence_path.read_bytes()
++        evidence=json.loads(evidence_bytes)
++        usage=evidence.get('usage',{})
++        observed=evidence.get('observed_model')
++        if (evidence.get('requested_model')!=expected_model or not isinstance(observed,str)
++            or observed.casefold()!=expected_model.casefold() or evidence.get('finish_reason')!='stop'
++            or any(isinstance(usage.get(k),bool) or not isinstance(usage.get(k),int) or usage[k]<0
++                   for k in ('prompt_tokens','completion_tokens'))):
++            raise ProviderError('Identity recovery requires complete matching audit metadata')
++        with ledger_lock(self.path):
++            state=self.read(allow_halted=True)
++            if state.get('halted')!='Unconfirmed upstream result; reservation retained':
++                raise ProviderError('This halt is not eligible for identity recovery')
++            details=state.get('halt_details')
++            if details and (details.get('category')!='model_identity' or details.get('model')!=expected_model):
++                raise ProviderError('A non-identity failure cannot use identity recovery')
++            audits=[i for i,e in enumerate(state['events']) if e.get('status')=='settled'
++                    and e.get('model')==expected_model and e.get('purpose')=='one bounded identity diagnosis'
++                    and e.get('metadata')==evidence]
++            if not audits:
++                raise ProviderError('Identity audit is not linked to a settled ledger event')
++            last_unconfirmed=max((i for i,e in enumerate(state['events']) if e.get('status')=='reserved'),default=-1)
++            if max(audits)<=last_unconfirmed:
++                raise ProviderError('Identity audit predates a newer unconfirmed request')
++            backup=self.path.with_name(self.path.stem+'.before_recovery_'+uuid.uuid4().hex+'.json')
++            with backup.open('xb') as target:target.write(self.path.read_bytes())
++            recovery=dict(previous_halt=state['halted'],spent_cny_unchanged=state['spent_cny'],
++                retained_reservations=sum(e['reserved_cny'] for e in state['events'] if e['status']=='reserved'),
++                model=expected_model,evidence=str(evidence_path),evidence_sha256=hashlib.sha256(evidence_bytes).hexdigest(),
++                backup=str(backup),created_at=time.time())
++            state.setdefault('recoveries',[]).append(recovery)
++            state['halted']=''
++            state.pop('halt_details',None)
++            atomic_json(self.path,state)
++            return recovery
+     def snapshot(self):
+         with ledger_lock(self.path):return self.read()
+     def remaining(self):
+@@ -76,10 +115,12 @@
+             if actual>money(event["reserved_cny"]):state["halted"]="Charge exceeded reservation"
+             atomic_json(self.path,state)
+             if state["halted"]:raise ProviderError(state["halted"])
+-    def halt(self, reason):
++    def halt(self, reason, *, details=None):
+         # Error text is an internal classification, never an upstream body or key.
+         with ledger_lock(self.path):
+-            state=self.read();state["halted"]=reason;atomic_json(self.path,state)
++            state=self.read();state["halted"]=reason
++            if details is not None:state['halt_details']=details
++            atomic_json(self.path,state)
+ 
+ def canonical_ledger(cfg):
+     expected=(Path(cfg["platform_root"])/"evidence"/"dmxapi_budget_75.json").resolve()
+--- before/stbench/campaign.py
++++ after/stbench/campaign.py
+@@ -110,9 +110,24 @@
+     if not all(catalog['selected_models'].values()):raise ProviderError('Selected model absent from authenticated catalog; no generation request sent')
+     for spec in cfg['models']:
+         message=[dict(role='user',content='Reply exactly OK, without explanation.')]
+-        chat=MeteredProvider(spec,budget,max_tokens=512)
+-        result=chat.generate(message)
+-        row=dict(chat_model=result.model,chat_usage=result.usage)
++        path=out/(spec['id']+'_protocol.json')
++        row=json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
++        accepted={m.casefold() for m in spec.get('accepted_models',[spec['model']])}
++        def valid(prefix):
++            usage=row.get(prefix+'_usage',{})
++            return (str(row.get(prefix+'_model','')).casefold() in accepted and
++                    all(isinstance(usage.get(k),int) and not isinstance(usage[k],bool) and usage[k]>=0
++                        for k in ('prompt_tokens','completion_tokens')))
++        if row and not valid('chat'):raise ProviderError('Saved protocol probe has invalid identity/usage')
++        if not row:
++            chat=MeteredProvider(spec,budget,max_tokens=512)
++            result=chat.generate(message)
++            row=dict(chat_model=result.model,chat_usage=result.usage)
++            atomic_json(path,row)
++        if row.get('route')=='responses' and valid('responses'):
++            routes[spec['id']]='responses';continue
++        if row.get('route')=='chat' and row.get('responses_rejected_http') in (400,404,405,422):
++            routes[spec['id']]='chat';continue
+         native=MeteredProvider(spec,budget,max_tokens=512,protocol='responses');native.probe_rejection_allowed=True
+         try:
+             result=native.generate(message);route='responses'
+@@ -121,7 +136,7 @@
+             if error.status not in (400,404,405,422):raise
+             route='chat';row['responses_rejected_http']=error.status
+         routes[spec['id']]=route;row['route']=route
+-        atomic_json(out/(spec['id']+'_protocol.json'),row)
++        atomic_json(path,row)
+     atomic_json(out/'routes.json',routes)
+     return routes
+ 
+@@ -156,7 +171,7 @@
+         file=stage_out/(framework+'_'+mid)/(p.pid+'.json')
+         prior=RunRecord.load(file) if file.exists() else None
+         if not prior or not prior.attempts:remaining[(p.pid,framework,mid)]=first_candidate_bound(specs[mid],p,cfg,framework)
+-    if budget and sum(remaining.values())>budget.remaining():
++    if budget and stage=='final' and sum(remaining.values())>budget.remaining():
+         raise ProviderError('Remaining first-candidate worst-case reservations exceed stage budget; no partial final run started')
+     for (original,p,source),framework,mid in jobs:
+         folder=stage_out/(framework+'_'+mid);file=folder/(p.pid+'.json')
+@@ -173,15 +188,13 @@
+             else:
+                 transport=MeteredProvider(specs[mid],budget,max_tokens=cfg['limits']['max_output_tokens'],
+                     protocol=routes[mid] if framework=='codex' else 'chat')
+-                sent=[False]
+-                def guard(messages,key=(p.pid,framework,mid),sent=sent):
++                def guard(messages,key=(p.pid,framework,mid)):
+                     # First request claims its protected slot; repairs must preserve every unvisited task.
+-                    pool=sum(v for k,v in remaining.items() if k!=key)
++                    pool=sum(v for k,v in remaining.items() if k!=key) if stage=='final' else 0.
+                     budget.protected_cny=pool
+                     if key in remaining and transport.upper(messages)>remaining[key]:
+                         raise ProviderError('First-candidate input exceeded protected reservation; no request sent')
+                     # The transport computes the exact actual request upper bound before reserving.
+-                    sent[0]=True
+                 transport.before_send=guard
+                 if framework=='custom':provider=transport
+                 else:
+@@ -203,10 +216,17 @@
+                 if prior.get('candidate_hash')!=record.best.code_hash or prior.get('platform_identity')!=native.identity():
+                     atomic_json(checkfile,dict(candidate_hash=record.best.code_hash,**native.compile(record.best.code,p).to_dict()))
+             print(stage,framework,mid,p.pid,record.solved,record.stop_reason,flush=True)
+-            if budget:budget.snapshot() # A malformed/unknown charge halts the entire batch.
++            if budget:
++                try:
++                    budget.snapshot() # A malformed/unknown charge halts the entire batch.
++                    if 'Budget coverage guard' in record.error:
++                        raise ProviderError(record.error)
++                except ProviderError:
++                    report(cfg,stage_out,task_ids=[p.pid for _,p,_ in selected])
++                    raise
+         atomic_json(folder/(p.pid+'.timing.json'),dict(active_wall_seconds=time.monotonic()-job_started,
+             model_and_judge_seconds=record.total_latency_s))
+-    report(cfg,stage_out)
++    report(cfg,stage_out,task_ids=[p.pid for _,p,_ in selected])
+     if stage=='develop':
+         history_file=out/'optimization.json'
+         history=json.loads(history_file.read_text(encoding='utf-8')) if history_file.exists() else []
+@@ -217,15 +237,16 @@
+         history.append(dict(round=round_number,score=score,improved=score>previous,freeze_sha256=hashlib.sha256(json.dumps(current,sort_keys=True).encode()).hexdigest()))
+         atomic_json(history_file,history)
+ 
+-def report(cfg,folder):
++def report(cfg,folder,*,task_ids=None):
+     from .cli import problems,export_summary
+-    ps=problems();rows=[]
++    ps=[p for p in problems() if task_ids is None or p.pid in task_ids];rows=[]
++    specs={s['id']:s for s in cfg['models']}
+     for framework,mid in group_order(cfg):
+         records=[];reviewed=0;openplc_pass=0;active_seconds=0
+         for p in ps:
+             f=folder/(framework+'_'+mid)/(p.pid+'.json')
+             if f.exists():records.append(RunRecord.load(f))
+-            else:records.append(RunRecord(p.pid,mid,framework,'iterative',5,tests_total=len(p.test_cases),stop_reason='not_run'))
++            else:records.append(RunRecord(p.pid,specs[mid]['model'],framework,'iterative',5,tests_total=len(p.test_cases),stop_reason='not_run'))
+             native=f.with_name(p.pid+'.openplc.json')
+             if native.exists():
+                 checked=json.loads(native.read_text(encoding='utf-8'));reviewed+=1
+@@ -238,13 +259,21 @@
+             failure_classes={reason:sum(r.stop_reason==reason for r in records) for reason in sorted({r.stop_reason for r in records})})
+         rows.append(row)
+     export_summary(folder/'summary.json',rows)
+-    text=['# 四组实验结果','', '费用按公开价保守计入，包含未确认预留；功能测试为解释器执行，平台为真实编译。', '',
++    title='# 代表题试跑结果（含未运行项）' if folder.name=='pilot' else '# 四组实验结果'
++    text=[title,'', '表中费用仅为已返回用量的公开价估计；共享账本另保留未确认费用。功能测试为解释器执行，平台为真实编译。', '',
+           '|框架|模型|已尝试/题数|CODESYS 首次/最终|用例|整题|OpenPLC|token|已返回费用估计|',
+           '|---|---|---:|---|---|---|---|---:|---:|']
+     for r in rows:
+         c=r.get('native_compilation',{}).get('codesys',{})
+         text.append(f"|{r['framework']}|{r['model']}|{r['attempted']}/{r['n']}|{c.get('first_compile_rate',0):.1%}/{c.get('final_compile_rate',0):.1%}|{r['tests_passed']}/{r['tests_total']}|{r['solve_rate']:.1%}|{r['openplc_passed']}/{r['n']}|{r['total_tokens']}|{r['total_cost_cny']:.4f}|")
+     text+=['','## 验证状态','']+[f"- {r['framework']}/{r['model_id']}：{r['verification_statuses']}" for r in rows]
++    ledger=canonical_ledger(cfg)
++    if ledger.exists():
++        state=json.loads(ledger.read_text(encoding='utf-8'))
++        unknown=sum(e['reserved_cny'] for e in state['events'] if e['status']=='reserved')
++        text+=['','## 共享预算（报告生成时点）','',
++               f"累计计入 {state['spent_cny']:.6f} 元，其中未确认预留 {unknown:.6f} 元；不是上游实际账单。",
++               '账本状态：'+(state.get('halted') or '可继续；仍受阶段上限保护')]
+     (folder/'results.md').write_text('\n'.join(text)+'\n',encoding='utf-8')
+     bars=[]
+     for i,r in enumerate(rows):
+@@ -288,10 +317,18 @@
+ 
+ def main(argv=None):
+     ap=argparse.ArgumentParser(description=__doc__)
+-    ap.add_argument('stage',choices=['prepare','credential-check','probe','pilot','develop','final','retest','report','offline-check','all'])
++    ap.add_argument('stage',choices=['prepare','credential-check','recover-identity','probe','pilot','develop','final','retest','report','offline-check','all'])
++    ap.add_argument('--evidence',default='')
+     ap.add_argument('--config',default='');ap.add_argument('--round',type=int,default=1);ap.add_argument('--live',action='store_true')
+     ap.add_argument('--out',default='');args=ap.parse_args(argv)
+     cfg=configuration(args.config)
++    if args.stage=='recover-identity':
++        if not args.evidence:raise ProviderError('Identity recovery requires --evidence')
++        evidence=json.loads(Path(args.evidence).read_text(encoding='utf-8'))
++        expected=evidence.get('requested_model')
++        if expected not in EXPECTED_MODELS:raise ProviderError('Unapproved recovery model')
++        result=CampaignBudget(canonical_ledger(cfg),'preflight').recover_identity(args.evidence,expected)
++        print(json.dumps(result,ensure_ascii=False));return 0
+     if args.stage=='credential-check':print(json.dumps(credential_check(cfg),ensure_ascii=False));return 0
+     out=Path(args.out or cfg['campaign_root']);out.mkdir(parents=True,exist_ok=True)
+     if args.stage=='prepare':
+--- before/stbench/transport.py
++++ after/stbench/transport.py
+@@ -10,6 +10,9 @@
+     def __init__(self,status):
+         self.status=status
+         super().__init__("Upstream HTTP "+str(status))
++
++class IdentityFailure(ProviderError):
++    pass
+ 
+ def post(url, payload, key, timeout):
+     request=urllib.request.Request(url,data=json.dumps(payload).encode(),method="POST",
+@@ -38,7 +41,7 @@
+ def validate_response(data, protocol, accepted):
+     model=data.get("model")
+     if not isinstance(model,str) or model.casefold() not in {x.casefold() for x in accepted}:
+-        raise ProviderError("Missing/unapproved actual model identity")
++        raise IdentityFailure("Missing/unapproved actual model identity")
+     usage=data.get("usage")
+     if not isinstance(usage,dict):raise ProviderError("Missing usage")
+     keys=("input_tokens","output_tokens") if protocol=="responses" else ("prompt_tokens","completion_tokens")
+@@ -109,8 +112,11 @@
+                 self.last_receipt={"protocol_rejected":error.status,"reserved_retained":True}
+             else:self.budget.halt("HTTP failure; reservation retained")
+             raise
+-        except ProviderError:
+-            if not self.last_receipt:self.budget.halt("Unconfirmed upstream result; reservation retained")
++        except ProviderError as error:
++            if not self.last_receipt:
++                self.budget.halt("Unconfirmed upstream result; reservation retained",details=dict(
++                    category='model_identity' if isinstance(error,IdentityFailure) else 'upstream_unconfirmed',
++                    model=self.model,protocol=self.protocol,event_index=index))
+             raise
+         except Exception as error:
+             self.budget.halt("Malformed upstream result; reservation retained")
+--- before/tests/test_v2_campaign.py
++++ after/tests/test_v2_campaign.py
+@@ -1,12 +1,17 @@
+ """Money, bridge and validation invariants before any real model calls."""
+ import json
++from contextlib import nullcontext
++from types import SimpleNamespace
+ import tempfile
+ import unittest
+ from pathlib import Path
++from unittest.mock import patch
+ from stbench.billing import CampaignBudget,canonical_ledger
+-from stbench.transport import MeteredProvider,validate_response,responses_messages
++from stbench.transport import MeteredProvider,validate_response,responses_messages,HTTPFailure
+ from stbench.providers.base import ProviderError
+ from stbench.campaign import configuration,group_order,require_freeze
++from stbench import campaign
++from stbench.evaluation import StageResult
+ 
+ def response(text='code',finish='stop',model='model'):
+     return dict(model=model,choices=[dict(finish_reason=finish,message=dict(content=text))],
+@@ -79,5 +84,109 @@
+         with tempfile.TemporaryDirectory() as d:
+             p=Path(d)/'freeze.json';require_freeze(p,{'version':1});require_freeze(p,{'version':1})
+             with self.assertRaises(ProviderError):require_freeze(p,{'version':2})
++    def test_identity_case_only_is_allowed_but_other_alias_is_rejected(self):
++        valid=validate_response(response(model='minimax-m2.7'),'chat',['MiniMax-M2.7'])
++        self.assertTrue(valid['complete'])
++        with self.assertRaises(ProviderError):
++            validate_response(response(model='minimax-m2.7-other'),'chat',['MiniMax-M2.7'])
++    def test_audited_recovery_preserves_unknown_charges_and_original_events(self):
++        with tempfile.TemporaryDirectory() as d:
++            p=Path(d)/'ledger.json';b=CampaignBudget(p,'preflight')
++            b.reserve(.5);b.halt('Unconfirmed upstream result; reservation retained')
++            evidence=dict(requested_model='MiniMax-M2.7',observed_model='minimax-m2.7',
++                finish_reason='stop',usage=dict(prompt_tokens=5,completion_tokens=10))
++            state=json.loads(p.read_text());state['events'].append(dict(status='settled',
++                model='MiniMax-M2.7',purpose='one bounded identity diagnosis',metadata=evidence))
++            p.write_text(json.dumps(state));audit=Path(d)/'audit.json';audit.write_text(json.dumps(evidence))
++            recovery=b.recover_identity(audit,'MiniMax-M2.7');current=b.snapshot()
++            self.assertEqual(current['spent_cny'],state['spent_cny'])
++            self.assertEqual(current['events'],state['events'])
++            self.assertEqual(json.loads(Path(recovery['backup']).read_text()),state)
++            self.assertEqual(recovery['retained_reservations'],.5)
++            with self.assertRaises(ProviderError):b.recover_identity(audit,'MiniMax-M2.7')
++    def test_recovery_cannot_clear_other_halts_or_unlinked_evidence(self):
++        with tempfile.TemporaryDirectory() as d:
++            b=CampaignBudget(Path(d)/'ledger.json','preflight')
++            evidence=dict(requested_model='model',observed_model='MODEL',finish_reason='stop',
++                usage=dict(prompt_tokens=1,completion_tokens=1))
++            p=Path(d)/'audit.json';p.write_text(json.dumps(evidence))
++            b.halt('Charge exceeded reservation')
++            with self.assertRaises(ProviderError):b.recover_identity(p,'model')
++            s=json.loads(b.path.read_text());s['halted']='Unconfirmed upstream result; reservation retained'
++            b.path.write_text(json.dumps(s))
++            with self.assertRaises(ProviderError):b.recover_identity(p,'model')
++    def test_old_identity_audit_cannot_clear_a_later_transport_failure(self):
++        with tempfile.TemporaryDirectory() as d:
++            b=CampaignBudget(Path(d)/'ledger.json','preflight')
++            evidence=dict(requested_model='model',observed_model='MODEL',finish_reason='stop',
++                usage=dict(prompt_tokens=1,completion_tokens=1))
++            p=Path(d)/'audit.json';p.write_text(json.dumps(evidence))
++            b.reserve(.01)
++            state=b.snapshot();state['events'][0].update(status='settled',model='model',
++                purpose='one bounded identity diagnosis',metadata=evidence)
++            b.path.write_text(json.dumps(state))
++            b.reserve(.5);b.halt('Unconfirmed upstream result; reservation retained')
++            with self.assertRaisesRegex(ProviderError,'predates'):
++                b.recover_identity(p,'model')
++            state=json.loads(b.path.read_text());state['halt_details']=dict(category='upstream_unconfirmed',model='model')
++            b.path.write_text(json.dumps(state))
++            with self.assertRaisesRegex(ProviderError,'non-identity'):
++                b.recover_identity(p,'model')
++    def test_protocol_probe_resumes_without_rebilling_completed_model(self):
++        with tempfile.TemporaryDirectory() as d:
++            out=Path(d);cfg=configuration('');cfg['platform_root']=d
++            cfg['budget_ledger_path']=str(out/'evidence/dmxapi_budget_75.json')
++            first,second=cfg['models'];usage=dict(prompt_tokens=1,completion_tokens=1)
++            (out/(first['id']+'_protocol.json')).write_text(json.dumps(dict(route='responses',
++                chat_model=first['model'],chat_usage=usage,responses_model=first['model'],responses_usage=usage)))
++            sent=[]
++            def factory(spec,budget,**kw):
++                def sender(url,payload,key,timeout):
++                    sent.append((spec['id'],url))
++                    if url.endswith('/responses'):raise HTTPFailure(404)
++                    return response(model=spec['model'].lower())
++                return MeteredProvider(spec,budget,offline=True,sender=sender,**kw)
++            with patch.object(campaign,'credential_check',return_value={'selected_models':{'a':True,'b':True}}), \
++                 patch.object(campaign,'MeteredProvider',side_effect=factory):
++                routes=campaign.probe(cfg,out)
++                self.assertEqual(routes,{first['id']:'responses',second['id']:'chat'})
++                self.assertEqual(len(sent),2)
++                campaign.probe(cfg,out)
++                self.assertEqual(len(sent),2)
++    def test_pilot_settles_sequentially_and_final_still_guards_full_coverage(self):
++        with tempfile.TemporaryDirectory() as d:
++            cfg=configuration('');cfg['platform_root']=d
++            cfg['budget_ledger_path']=str(Path(d)/'evidence/dmxapi_budget_75.json')
++            selected=[t for t in campaign.tasks() if t[0].pid in campaign.PILOT]
++            total=sum(campaign.first_candidate_bound(s,p,cfg,fw) for _,p,_ in selected
++                      for s in cfg['models'] for fw in ('custom','codex'))
++            self.assertGreater(total,5)
++            sent=[]
++            def factory(spec,budget,**kw):
++                def sender(*args):
++                    sent.append(spec['id']);return response(model=spec['model'])
++                return MeteredProvider(spec,budget,offline=True,sender=sender,**kw)
++            class Backend:
++                def identity(self):return {'platform':'test'}
++                def compile(self,*args):return SimpleNamespace(to_dict=lambda:dict(status='passed',platform_identity=self.identity()))
++            def evaluate(code,problem,**kw):
++                return StageResult(compiles=True,tests_passed=len(problem.test_cases),tests_total=len(problem.test_cases))
++            routes={s['id']:'chat' for s in cfg['models']}
++            with patch.object(campaign,'MeteredProvider',side_effect=factory), \
++                 patch.object(campaign,'CodesysBackend',return_value=Backend()), \
++                 patch.object(campaign,'OpenPLCBackend',return_value=Backend()), \
++                 patch.object(campaign,'ResponsesGateway',side_effect=lambda **kw:nullcontext(SimpleNamespace(**kw))), \
++                 patch.object(campaign,'CodexProvider',side_effect=lambda gateway,**kw:gateway.provider), \
++                 patch('stbench.harness.engine.evaluate',side_effect=evaluate):
++                campaign.run_stage(cfg,Path(d),'pilot',routes)
++                self.assertEqual(len(sent),24)
++                rows=json.loads((Path(d)/'pilot/summary.json').read_text())
++                self.assertTrue(all(r['n']==6 and r['generated']==6 for r in rows))
++                self.assertLess(CampaignBudget(canonical_ledger(cfg),'preflight').snapshot()['spent_cny'],5)
++                ledger=canonical_ledger(cfg);s=json.loads(ledger.read_text());s['spent_cny']=64.99
++                ledger.write_text(json.dumps(s))
++                with self.assertRaisesRegex(ProviderError,'Remaining first-candidate'):
++                    campaign.run_stage(cfg,Path(d),'final',routes)
++                self.assertEqual(len(sent),24)
+ 
+ if __name__=='__main__':unittest.main()

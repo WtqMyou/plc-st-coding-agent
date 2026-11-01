@@ -1,0 +1,256 @@
+{
+  "pid": "public-medium-07",
+  "model": "fixture-B",
+  "provider": "codex-mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "(* =====================================================================\n   public-medium-07  Office HVAC Multi-mode Energy-Saving Control\n   ---------------------------------------------------------------------\n   平台边界（《公共题制作约定》§7）：TIME 字面量解析为 0、TIME 加减恒为 0，\n   因此需求 2 的\"30 秒起动延时\"用**扫描周期计数**实现：30 拍 = 30 s\n   （1 拍 = 1 s）。用例按拍数断言，note 里注明\"以周期数代替 30 s\"。\n   温度设定值修正是纯 INT 组合逻辑，不受平台边界影响。\n   ===================================================================== *)\nFUNCTION_BLOCK FB_HVAC_ModeControl\nVAR_INPUT\n  OCCUPANCY_DETECTED : BOOL;   (* 占用检测结果（由 CO2 传感器导出） *)\n  ENERGY_SAVING_MODE : BOOL;   (* TRUE=节能，FALSE=标准；只影响 Auto 模式 *)\n  HVAC_MODE_SELECTOR : INT;    (* 0 Auto / 1 Comfort / 2 Economy / 3 Night *)\nEND_VAR\nVAR_OUTPUT\n  SUPPLY_FAN_RUN : BOOL;       (* 送风机运行许可 *)\n  TEMP_SETPOINT_ADJUST : INT;  (* 温度设定值修正（摄氏度） *)\nEND_VAR\nVAR\n  modeValid : BOOL;            (* R1: 型号是否在合法集合 {0,1,2,3} 内 *)\n  nightMode : BOOL;\n  delayCycles : INT;           (* R2: 30 s 延时 = 30 个扫描周期 *)\n  fanPermit : BOOL;\nEND_VAR\n\n(* R1: 合法型号只有 0/1/2/3；调用方应给合法值，非法值按安全侧处理 *)\nmodeValid := (HVAC_MODE_SELECTOR >= 0) AND (HVAC_MODE_SELECTOR <= 3);\nnightMode := HVAC_MODE_SELECTOR = 3;\n\n(* R2 / R7: 只有\"占用 且 未选 Night 且 型号合法\"才计时；\n   延时只决定 BOOL 风扇许可，不涉及任何转速斜坡。\n   失去占用或选中 Night（或型号非法）时立即停风扇并把计时清零，\n   条件恢复后必须重新等满 30 拍。 *)\nfanPermit := modeValid AND OCCUPANCY_DETECTED AND NOT nightMode;\nIF fanPermit THEN\n  IF delayCycles < 30 THEN\n    delayCycles := delayCycles + 1;\n  END_IF;\nELSE\n  delayCycles := 0;\nEND_IF;\nSUPPLY_FAN_RUN := delayCycles >= 30;\n\n(* R3 / R4 / R5 / R6: 温度设定值修正表\n   - Night(3) 恒 +4，与占用无关；\n   - 占用时一律 0（Night 已在上一支处理）；\n   - Auto(0) 未占用：节能 +3 / 标准 +2（ENERGY_SAVING_MODE 只在这里生效）；\n   - Comfort(1) 未占用 +1；Economy(2) 未占用 +4；\n   - 非法型号（R1 之外）：需求未定义，按安全侧给 0。 *)\nIF NOT modeValid THEN\n  TEMP_SETPOINT_ADJUST := 0;\nELSIF nightMode THEN\n  TEMP_SETPOINT_ADJUST := 4;\nELSIF OCCUPANCY_DETECTED THEN\n  TEMP_SETPOINT_ADJUST := 0;\nELSIF HVAC_MODE_SELECTOR = 0 THEN\n  IF ENERGY_SAVING_MODE THEN\n    TEMP_SETPOINT_ADJUST := 3;\n  ELSE\n    TEMP_SETPOINT_ADJUST := 2;\n  END_IF;\nELSIF HVAC_MODE_SELECTOR = 1 THEN\n  TEMP_SETPOINT_ADJUST := 1;\nELSE\n  TEMP_SETPOINT_ADJUST := 4;   (* Economy 未占用 *)\nEND_IF;\n\n(* R6: ±4 °C 限幅；上电初值 FALSE/0 由平台默认初值保证 *)\nTEMP_SETPOINT_ADJUST := LIMIT(-4, TEMP_SETPOINT_ADJUST, 4);\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 12,
+      "tests_total": 12,
+      "feedback": "自动测试：12/12。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 3.8429999999934807,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "e2f634b5cf42f8a408ad3c1299af7027729114a4f6fd89fefc91a9dc83df93eb",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 12,
+        "tests_passed": 12,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "M07-01",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "SUPPLY_FAN_RUN": true,
+              "TEMP_SETPOINT_ADJUST": 0
+            },
+            "actual": {
+              "SUPPLY_FAN_RUN": true,
+              "TEMP_SETPOINT_ADJUST": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M07-02",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 0
+            },
+            "actual": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M07-03",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 2
+            },
+            "actual": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M07-04",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 3
+            },
+            "actual": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 3
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M07-05",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 1
+            },
+            "actual": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M07-06",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 4
+            },
+            "actual": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M07-07",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 4
+            },
+            "actual": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M07-08",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 4
+            },
+            "actual": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M07-09",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 4
+            },
+            "actual": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M07-10",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 0
+            },
+            "actual": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M07-11",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 0
+            },
+            "actual": {
+              "SUPPLY_FAN_RUN": false,
+              "TEMP_SETPOINT_ADJUST": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M07-12",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "SUPPLY_FAN_RUN": true,
+              "TEMP_SETPOINT_ADJUST": 0
+            },
+            "actual": {
+              "SUPPLY_FAN_RUN": true,
+              "TEMP_SETPOINT_ADJUST": 0
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "judge_version": "judge-v2.0",
+          "judge_source_sha256": "851e5eebf4672493a42651c9744c7621aaeea22b63af5a39b1d425414beee8fe",
+          "source_sha256": "e2f634b5cf42f8a408ad3c1299af7027729114a4f6fd89fefc91a9dc83df93eb",
+          "problem_sha256": "80c0237f638f18429ea3cba118a9581e3fad964962e091bc9b60adccf73a5d65",
+          "mc_timeout_seconds": 60,
+          "model_check_requested": false,
+          "cache_hit": false
+        }
+      },
+      "cost_cny": 0.0,
+      "actual_model": "fixture-B",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1793033558.4851732,
+  "finished_at": 1793033562.3355045,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "a94aacc7001a36766c71b07a1ef4466570934783a8c0130e59a66c12559d5435",
+  "experiment_kind": "offline_simulation",
+  "tests_total": 12,
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 3.8429999999934807,
+  "n_attempts": 1
+}

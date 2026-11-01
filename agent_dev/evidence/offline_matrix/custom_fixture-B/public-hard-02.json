@@ -1,0 +1,455 @@
+{
+  "pid": "public-hard-02",
+  "model": "fixture-B",
+  "provider": "mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "(* public-hard-02 Flexible Processing Control\n   1# 上料 / 2#~4# 加工 / 5# 出库。工序序列由 processSequence + processLength 给出，\n   processLength 从 processSequence[1] 起算，末项由 caller 保证是 5# 出库站。\n   内部状态机 phase：0=空闲/待料，1=输送中，2=等当前加工工位完成信号。 *)\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n    processLength : USINT;\n    sensor1 : BOOL;\n    sensor2 : BOOL;\n    sensor3 : BOOL;\n    sensor4 : BOOL;\n    sensor5 : BOOL;\n    station1Start : BOOL;\n    station2Complete : BOOL;\n    station3Complete : BOOL;\n    station4Complete : BOOL;\n    processSequence : ARRAY[1..8] OF USINT;\nEND_VAR\nVAR_OUTPUT\n    conveyorLeft : BOOL;\n    conveyorRight : BOOL;\nEND_VAR\nVAR\n    phase : INT;          (* 0 空闲；1 输送中；2 等加工完成 *)\n    idx : INT;            (* 当前执行到 processSequence 的第几项 *)\n    curStation : INT;     (* 产品当前所在工位 *)\n    dstStation : INT;     (* 本段输送的目标工位 *)\n    lenNow : INT;\n    dstOK : BOOL;\n    arrived : BOOL;\n    startEdge : BOOL;\n    startPrev : BOOL;\n    compEdge : BOOL;\n    comp2Prev : BOOL;\n    comp3Prev : BOOL;\n    comp4Prev : BOOL;\nEND_VAR\n\n(* R1/R2: 启动按钮上升沿 + 1# 有料才启动；序列长度必须落在 1..8 *)\nstartEdge := station1Start AND NOT startPrev;\nstartPrev := station1Start;\nlenNow := processLength;\n\n(* 加工完成信号按上升沿消费；每拍都刷新历史值，避免边沿被相位切换吃掉 *)\ncompEdge := FALSE;\nIF phase = 2 THEN\n    IF curStation = 2 THEN\n        compEdge := station2Complete AND NOT comp2Prev;\n    ELSIF curStation = 3 THEN\n        compEdge := station3Complete AND NOT comp3Prev;\n    ELSIF curStation = 4 THEN\n        compEdge := station4Complete AND NOT comp4Prev;\n    END_IF;\nEND_IF;\ncomp2Prev := station2Complete;\ncomp3Prev := station3Complete;\ncomp4Prev := station4Complete;\n\nconveyorLeft := FALSE;\nconveyorRight := FALSE;\n\n(* R1: 上料工位有料 + 按下启动 → 查第一个工序号，当拍就启动输送带 *)\nIF phase = 0 THEN\n    IF sensor1 AND startEdge THEN\n        IF (lenNow >= 1) AND (lenNow <= 8) THEN\n            dstStation := processSequence[1];\n            dstOK := (dstStation >= 2) AND (dstStation <= 5);\n            IF dstOK THEN\n                idx := 1;\n                curStation := 1;\n                phase := 1;\n            END_IF;\n        END_IF;\n    END_IF;\nEND_IF;\n\n(* R4: 收到当前工位完成信号 → 查下一个工序号，当拍转向继续输送 *)\nIF phase = 2 THEN\n    IF compEdge THEN\n        idx := idx + 1;\n        IF (idx > lenNow) OR (idx > 8) THEN\n            (* 非法序列（末项不是 5#）的保护：不再读数组下标，直接停机 *)\n            phase := 0;\n        ELSE\n            dstStation := processSequence[idx];\n            dstOK := (dstStation >= 2) AND (dstStation <= 5);\n            IF dstOK THEN\n                phase := 1;\n            ELSE\n                phase := 0;\n            END_IF;\n        END_IF;\n    END_IF;\nEND_IF;\n\n(* R3/R5: 按 \"目标工位 vs 当前工位\" 决定方向；只看目标工位传感器判到位 *)\nIF phase = 1 THEN\n    IF dstStation > curStation THEN\n        conveyorRight := TRUE;\n    ELSIF dstStation < curStation THEN\n        conveyorLeft := TRUE;\n    END_IF;\n    arrived := FALSE;\n    IF dstStation = 2 THEN\n        arrived := sensor2;\n    ELSIF dstStation = 3 THEN\n        arrived := sensor3;\n    ELSIF dstStation = 4 THEN\n        arrived := sensor4;\n    ELSIF dstStation = 5 THEN\n        arrived := sensor5;\n    END_IF;\n    IF arrived THEN\n        conveyorLeft := FALSE;\n        conveyorRight := FALSE;\n        curStation := dstStation;\n        IF dstStation = 5 THEN\n            (* R5: 送到 5# 出库站，一个产品的流程结束 *)\n            phase := 0;\n        ELSE\n            (* R4: 停在该工位，等它给出加工完成信号 *)\n            phase := 2;\n        END_IF;\n    END_IF;\nEND_IF;\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 26,
+      "tests_total": 26,
+      "feedback": "自动测试：26/26。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 0.015000000013969839,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "f51fb42cd87a5b86e39d4270627929d331214556e8b4c6416ccb3d0ef8b3c497",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 26,
+        "tests_passed": 26,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "h02-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": true,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": true,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-20",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-21",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-22",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-23",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-24",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-25",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-26",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {}
+      },
+      "cost_cny": 0.0,
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1792999010.5857465,
+  "finished_at": 1792999010.6127217,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "3c2f3747692dc509fb46a3f4261c79ac749e788643cc37fa2cf898d369a8534e",
+  "experiment_kind": "offline_simulation",
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 0.015000000013969839,
+  "n_attempts": 1
+}

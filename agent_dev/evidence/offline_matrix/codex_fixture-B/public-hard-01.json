@@ -1,0 +1,359 @@
+{
+  "pid": "public-hard-01",
+  "model": "fixture-B",
+  "provider": "codex-mock",
+  "setting": "iterative",
+  "max_iters": 5,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "(*\n    public-hard-01  Material Proportioning Process Control\n    参考解：单个 FUNCTION_BLOCK。接口名与数据类型严格照抄 variables。\n\n    平台说明（公共题制作约定 §7）：\n      * 无 TON / R_TRIG，按钮的上升沿用显式边沿\n            e := btn AND NOT prev;  prev := btn;\n        在扫描末尾统一滚动 prev，避免同拍重复触发。\n      * \"液位达到 N cm\" 用 levelSensor >= N 判断（液位单调上升的语义）。\n      * 时间类原语里没有可用的定时器，本题流程全部由 levelSensor / 完成信号推进。\n\n    本文件用 (* R1: ... *) 形式标注需求编号，逐条对应 requirements。\n*)\nFUNCTION_BLOCK FB_MaterialProportioning\nVAR_INPUT\n    estop : BOOL;             (* R1 急停：FALSE = 触发 *)\n    opeMode : BOOL;           (* R2/R4 运行方式：FALSE = 手动，TRUE = 自动 *)\n    valveAStart : BOOL;       (* 手动按钮（上升沿启停） *)\n    valveBStart : BOOL;\n    valveCStart : BOOL;\n    valveDStart : BOOL;\n    mixMotorStart : BOOL;\n    autoStart : BOOL;         (* 自动流程启动按钮（上升沿） *)\n    processMode : BOOL;       (* R5 FALSE = 直接混合；TRUE = 先进 C 到 100cm 再混合 *)\n    levelSensor : INT;        (* 液位传感器，单位 cm *)\n    mixMotorComplete : BOOL;  (* R6 混合完成信号 *)\nEND_VAR\nVAR_OUTPUT\n    valveARun : BOOL;\n    valveBRun : BOOL;\n    valveCRun : BOOL;\n    valveDRun : BOOL;\n    mixMotorRun : BOOL;\nEND_VAR\nVAR\n    (* 自动流程步序：0 空闲 / 10 进料 A / 20 进料 B / 35 进料 C / 40 混合 / 50 完成 *)\n    state : INT;\n    (* 各按钮与运行方式上一拍的值（显式边沿用） *)\n    prevAutoStart : BOOL;\n    prevValveAStart : BOOL;\n    prevValveBStart : BOOL;\n    prevValveCStart : BOOL;\n    prevValveDStart : BOOL;\n    prevMixMotorStart : BOOL;\n    prevOpeMode : BOOL;\n    (* 手动模式下五个设备的启停记忆 *)\n    manA : BOOL;\n    manB : BOOL;\n    manC : BOOL;\n    manD : BOOL;\n    manMix : BOOL;\nEND_VAR\n\n(* R1: 急停最高优先级——estop=FALSE 时所有设备立即停机，\n   并复位自动流程与手动记忆；急停解除后不会自动续跑，必须重新启动。 *)\nIF NOT estop THEN\n    state := 0;\n    manA := FALSE;\n    manB := FALSE;\n    manC := FALSE;\n    manD := FALSE;\n    manMix := FALSE;\n    valveARun := FALSE;\n    valveBRun := FALSE;\n    valveCRun := FALSE;\n    valveDRun := FALSE;\n    mixMotorRun := FALSE;\n\n(* R2: 手动模式——五个设备各自由对应按钮的上升沿翻转（启/停）。\n   R3: 只认上升沿：按住不放不会反复翻转；释放后保持当前状态。 *)\nELSIF NOT opeMode THEN\n    (* 从自动切到手动的那一拍：放弃自动流程，手动记忆全部复位（需求未规定，\n       取最安全侧，见文件末尾\"需求未覆盖处\"说明）。 *)\n    IF prevOpeMode THEN\n        state := 0;\n        manA := FALSE;\n        manB := FALSE;\n        manC := FALSE;\n        manD := FALSE;\n        manMix := FALSE;\n    END_IF\n    IF valveAStart AND NOT prevValveAStart THEN\n        manA := NOT manA;\n    END_IF\n    IF valveBStart AND NOT prevValveBStart THEN\n        manB := NOT manB;\n    END_IF\n    IF valveCStart AND NOT prevValveCStart THEN\n        manC := NOT manC;\n    END_IF\n    IF valveDStart AND NOT prevValveDStart THEN\n        manD := NOT manD;\n    END_IF\n    IF mixMotorStart AND NOT prevMixMotorStart THEN\n        manMix := NOT manMix;\n    END_IF\n    valveARun := manA;\n    valveBRun := manB;\n    valveCRun := manC;\n    valveDRun := manD;\n    mixMotorRun := manMix;\n\n(* R4/R5/R6: 自动模式——按工艺步序推进设备，手动按钮被忽略。 *)\nELSE\n    (* 刚进入自动模式：自动流程从头开始，手动残留输出全部关断。 *)\n    IF NOT prevOpeMode THEN\n        state := 0;\n        valveARun := FALSE;\n        valveBRun := FALSE;\n        valveCRun := FALSE;\n        valveDRun := FALSE;\n        mixMotorRun := FALSE;\n    END_IF\n\n    CASE state OF\n        0:  (* 空闲：等待 autoStart 上升沿 *)\n            valveARun := FALSE;\n            valveBRun := FALSE;\n            valveCRun := FALSE;\n            valveDRun := FALSE;\n            mixMotorRun := FALSE;\n            (* R4: 按 autoStart 启动自动流程，先开阀 A *)\n            IF autoStart AND NOT prevAutoStart THEN\n                state := 10;\n                valveARun := TRUE;\n            END_IF\n\n        10: (* 进料 A：液位到 50cm 关 A、开 B *)\n            valveARun := TRUE;\n            valveBRun := FALSE;\n            valveCRun := FALSE;\n            valveDRun := FALSE;\n            mixMotorRun := FALSE;\n            IF levelSensor >= 50 THEN\n                valveARun := FALSE;\n                valveBRun := TRUE;\n                state := 20;\n            END_IF\n\n        20: (* 进料 B：液位到 80cm 关 B；随后按 processMode 决定下一步 *)\n            valveARun := FALSE;\n            valveBRun := TRUE;\n            valveCRun := FALSE;\n            valveDRun := FALSE;\n            mixMotorRun := FALSE;\n            IF levelSensor >= 80 THEN\n                valveBRun := FALSE;\n                IF processMode THEN\n                    (* R5(true): 先开 C 继续进料到 100cm *)\n                    valveCRun := TRUE;\n                    state := 35;\n                ELSE\n                    (* R5(false): 不进 C，直接启动混合电机 *)\n                    mixMotorRun := TRUE;\n                    state := 40;\n                END_IF\n            END_IF\n\n        35: (* 进料 C：液位到 100cm 关 C、启动混合电机 *)\n            valveARun := FALSE;\n            valveBRun := FALSE;\n            valveCRun := TRUE;\n            valveDRun := FALSE;\n            mixMotorRun := FALSE;\n            IF levelSensor >= 100 THEN\n                valveCRun := FALSE;\n                mixMotorRun := TRUE;\n                state := 40;\n            END_IF\n\n        40: (* 混合中：收到混合完成信号 → 停电机、开 D、流程结束 *)\n            valveARun := FALSE;\n            valveBRun := FALSE;\n            valveCRun := FALSE;\n            valveDRun := FALSE;\n            mixMotorRun := TRUE;\n            IF mixMotorComplete THEN\n                mixMotorRun := FALSE;\n                valveDRun := TRUE;\n                state := 50;\n            END_IF\n\n        50: (* 完成：D 保持开启把料送出；再次 autoStart 开始新一周期 *)\n            valveARun := FALSE;\n            valveBRun := FALSE;\n            valveCRun := FALSE;\n            valveDRun := TRUE;\n            mixMotorRun := FALSE;\n            IF autoStart AND NOT prevAutoStart THEN\n                valveDRun := FALSE;\n                valveARun := TRUE;\n                state := 10;\n            END_IF\n    END_CASE\nEND_IF\n\n(* 边沿记忆统一在扫描末尾滚动（顺序不可提前，见约定 §7）。 *)\nprevAutoStart := autoStart;\nprevValveAStart := valveAStart;\nprevValveBStart := valveBStart;\nprevValveCStart := valveCStart;\nprevValveDStart := valveDStart;\nprevMixMotorStart := mixMotorStart;\nprevOpeMode := opeMode;\n\n(*\n  需求未覆盖处的取舍（均为最安全侧，且已由 test_cases 覆盖其行为）：\n  1) 运行方式切换：自动→手动或手动→自动时，当前流程被中止、输出全部关断，\n     不会在切换后残留上一模式的设备动作；自动模式要从步序 0 重新 autoStart。\n  2) 自动流程进行中再次按 autoStart 被忽略（按键只对步序 0 / 50 有效），\n     避免运行中反复重启流程。\n  3) 自动完成后阀 D 保持开启（\"open valve D, and the automatic process ends\"），\n     直到下一次 autoStart 开始新周期或急停触发。\n  4) 步序 0 与各步都显式给全部输出赋值，保证同一扫描周期内输出不残留上一步的值。\n*)\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 14,
+      "tests_total": 14,
+      "feedback": "自动测试：14/14。\nLTL 检查：not_run。",
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "latency_s": 14.312999999965541,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "51ac0df3920abcf6fa24a96e00545fee354258ec72c672271f10b043e2a8a63c",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 14,
+        "tests_passed": 14,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "H01",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H02",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H03",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H04",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H05",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": true,
+              "valveDRun": true,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": true,
+              "valveDRun": true,
+              "mixMotorRun": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H06",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H07",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H08",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H09",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false
+        },
+        "platform_results": {}
+      },
+      "cost_cny": 0.0,
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1792999638.5987256,
+  "finished_at": 1792999652.9191487,
+  "error": "",
+  "stop_reason": "tests_passed_verification_not_run",
+  "run_signature": "b2276973a943f2306e1af45b3893974b124b36afd2d521de1019c5e434f5a918",
+  "experiment_kind": "offline_simulation",
+  "prompt_version": "v2.0-offline",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 0,
+  "total_latency_s": 14.312999999965541,
+  "n_attempts": 1
+}
