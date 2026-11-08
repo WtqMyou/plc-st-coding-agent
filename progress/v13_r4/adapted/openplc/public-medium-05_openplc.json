@@ -1,0 +1,468 @@
+{
+  "pid": "public-medium-05",
+  "source": "public",
+  "difficulty": "medium",
+  "title": "Automated Production Line Control",
+  "requirements": "A simple automated production line consists of three workstations: Workstation A, Workstation B, and Workstation C. The product needs to go through these three stations in sequence to be considered fully completed. There is a motor in the production line that is responsible for moving the product from one workstation to the next. The sequence of the line is from Workstation A to Workstation B, and then to Workstation C. Each workstation has a sensor (used to detect if the product has arrived) and a button (used to trigger the signal that the station's processing is complete).\nControl requirements:\n1. Mode Switching: The mode switch (Mode) is used to switch between manual and automatic modes of the production line.\n2. Manual Mode: In manual mode, the forward rotation button (ForwardButton) controls the forward rotation of the motor, and the reverse rotation button (ReverseButton) controls the reverse rotation of the motor. Forward and reverse rotation operations need to be interlocked and cannot be performed simultaneously.\n3. Automatic Mode:\n   - When the product arrives at Workstation A, SensorA detects the product, and after the operator triggers the processing complete signal via ButtonA, the motor starts forward rotation to move the product to Workstation B.\n   - When the product arrives at Workstation B, SensorB detects the product, the motor stops, and after the operator triggers the processing complete signal via ButtonB, the motor starts forward rotation to move the product to Workstation C.\n   - When the product arrives at Workstation C, SensorC detects the product, the motor stops, and after the operator triggers the processing complete signal via ButtonC, the completion indicator light (CompletionLight) turns on, indicating that the product processing is complete. When the product is taken away, i.e., SensorC no longer detects the product, the completion indicator light (CompletionLight) turns off.",
+  "variables": [
+    {
+      "name": "Mode",
+      "data_type": "BOOL",
+      "description": "Used to switch the production line between manual and automatic modes, 0=manual mode, 1=automatic mode",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "ForwardButton",
+      "data_type": "BOOL",
+      "description": "Forward rotation button",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "ReverseButton",
+      "data_type": "BOOL",
+      "description": "Reverse rotation button",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "SensorA",
+      "data_type": "BOOL",
+      "description": "Sensor A",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "SensorB",
+      "data_type": "BOOL",
+      "description": "Sensor B",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "SensorC",
+      "data_type": "BOOL",
+      "description": "Sensor C",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "ButtonA",
+      "data_type": "BOOL",
+      "description": "Button A",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "ButtonB",
+      "data_type": "BOOL",
+      "description": "Button B",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "ButtonC",
+      "data_type": "BOOL",
+      "description": "Button C",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "MotorForward",
+      "data_type": "BOOL",
+      "description": "Motor forward rotation output",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "MotorReverse",
+      "data_type": "BOOL",
+      "description": "Motor reverse rotation output",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "CompletionLight",
+      "data_type": "BOOL",
+      "description": "Indicator light for product processing completion",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "正转与反转输出互锁，任何周期都不得同时为 TRUE。",
+      "ltl": "G(!(MotorForward & MotorReverse))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "正转只可能出现在自动模式或手动按下正转按钮时。",
+      "ltl": "G(MotorForward -> (Mode | ForwardButton))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "反转只在手动模式且按下反转按钮时输出。",
+      "ltl": "G(MotorReverse -> (!Mode & ReverseButton))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "完成灯亮的前提是自动模式且 C 工位传感器检测到产品。",
+      "ltl": "G(CompletionLight -> (SensorC & Mode))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "产品被取走后（下一周期 SensorC 不再检测），完成灯必须在下一周期熄灭。",
+      "ltl": "G(CompletionLight & X(!SensorC) -> X(!CompletionLight))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "自动模式按 A->B->C 顺序推进：A 工位检测到产品且 ButtonA 后正转，B/C 传感器检测到即停，ButtonB 后继续正转，C 工位 ButtonC 后完成灯亮、产品取走即灭；手动模式下正转/反转按钮互锁，两者同时按下都不动作，切到手动会清空自动流程。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "s1",
+      "inputs": {
+        "Mode": false,
+        "ForwardButton": true,
+        "ReverseButton": false,
+        "SensorA": false,
+        "SensorB": false,
+        "SensorC": false,
+        "ButtonA": false,
+        "ButtonB": false,
+        "ButtonC": false
+      },
+      "expected": {
+        "MotorForward": true,
+        "MotorReverse": false,
+        "CompletionLight": false
+      },
+      "note": "手动模式按正转按钮 → 正转输出，反转不动，完成灯灭",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s2",
+      "inputs": {
+        "Mode": false,
+        "ForwardButton": false,
+        "ReverseButton": true,
+        "SensorA": false,
+        "SensorB": false,
+        "SensorC": false,
+        "ButtonA": false,
+        "ButtonB": false,
+        "ButtonC": false
+      },
+      "expected": {
+        "MotorForward": false,
+        "MotorReverse": true
+      },
+      "note": "手动模式按反转按钮 → 反转输出，正转不动",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s3",
+      "inputs": {
+        "Mode": false,
+        "ForwardButton": true,
+        "ReverseButton": true,
+        "SensorA": false,
+        "SensorB": false,
+        "SensorC": false,
+        "ButtonA": false,
+        "ButtonB": false,
+        "ButtonC": false
+      },
+      "expected": {
+        "MotorForward": false,
+        "MotorReverse": false
+      },
+      "note": "手动模式正转+反转同时按下 → 互锁生效，两个方向都不输出",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s4",
+      "inputs": {
+        "Mode": true,
+        "ForwardButton": true,
+        "ReverseButton": true,
+        "SensorA": false,
+        "SensorB": false,
+        "SensorC": false,
+        "ButtonA": true,
+        "ButtonB": false,
+        "ButtonC": false
+      },
+      "expected": {
+        "MotorForward": false,
+        "MotorReverse": false,
+        "CompletionLight": false
+      },
+      "note": "自动模式按下手动按钮（且 A 工位无产品）→ 手动按钮被屏蔽，电机不动作",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s5",
+      "inputs": {
+        "Mode": true,
+        "ForwardButton": false,
+        "ReverseButton": false,
+        "SensorA": true,
+        "SensorB": false,
+        "SensorC": false,
+        "ButtonA": false,
+        "ButtonB": false,
+        "ButtonC": false
+      },
+      "expected": {
+        "MotorForward": false,
+        "CompletionLight": false
+      },
+      "note": "自动模式产品停在 A、未按 ButtonA → 等待，电机不动作",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s6",
+      "inputs": {
+        "Mode": true,
+        "ForwardButton": false,
+        "ReverseButton": false,
+        "SensorA": true,
+        "SensorB": false,
+        "SensorC": false,
+        "ButtonA": true,
+        "ButtonB": false,
+        "ButtonC": false
+      },
+      "expected": {
+        "MotorForward": true,
+        "MotorReverse": false
+      },
+      "note": "A 工位有产品且按 ButtonA → 本拍即正转去 B",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s7",
+      "inputs": {
+        "Mode": true,
+        "ForwardButton": false,
+        "ReverseButton": false,
+        "SensorA": false,
+        "SensorB": true,
+        "SensorC": false,
+        "ButtonA": false,
+        "ButtonB": false,
+        "ButtonC": false
+      },
+      "expected": {
+        "MotorForward": false,
+        "MotorReverse": false
+      },
+      "note": "产品到达 B（SensorB 检测到）→ 立即停止正转，停在 B 工位等待",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s8",
+      "inputs": {
+        "Mode": true,
+        "ForwardButton": false,
+        "ReverseButton": false,
+        "SensorA": false,
+        "SensorB": true,
+        "SensorC": false,
+        "ButtonA": false,
+        "ButtonB": true,
+        "ButtonC": false
+      },
+      "expected": {
+        "MotorForward": true
+      },
+      "note": "B 工位产品在位且按 ButtonB → 正转去 C",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s9",
+      "inputs": {
+        "Mode": true,
+        "ForwardButton": false,
+        "ReverseButton": false,
+        "SensorA": false,
+        "SensorB": false,
+        "SensorC": true,
+        "ButtonA": false,
+        "ButtonB": false,
+        "ButtonC": false
+      },
+      "expected": {
+        "MotorForward": false,
+        "CompletionLight": false
+      },
+      "note": "产品到达 C（SensorC 检测到）→ 停止正转，等待 C 工位加工",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s10",
+      "inputs": {
+        "Mode": true,
+        "ForwardButton": false,
+        "ReverseButton": false,
+        "SensorA": false,
+        "SensorB": false,
+        "SensorC": true,
+        "ButtonA": false,
+        "ButtonB": false,
+        "ButtonC": true
+      },
+      "expected": {
+        "MotorForward": false,
+        "CompletionLight": true
+      },
+      "note": "C 工位产品在位且按 ButtonC → 完成灯亮，电机保持停止",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s11",
+      "inputs": {
+        "Mode": true,
+        "ForwardButton": false,
+        "ReverseButton": false,
+        "SensorA": false,
+        "SensorB": false,
+        "SensorC": true,
+        "ButtonA": false,
+        "ButtonB": false,
+        "ButtonC": false
+      },
+      "expected": {
+        "CompletionLight": true,
+        "MotorForward": false
+      },
+      "note": "松开 ButtonC 但产品仍在 C（SensorC 仍检测）→ 完成灯保持亮",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s12",
+      "inputs": {
+        "Mode": true,
+        "ForwardButton": false,
+        "ReverseButton": false,
+        "SensorA": false,
+        "SensorB": false,
+        "SensorC": false,
+        "ButtonA": false,
+        "ButtonB": false,
+        "ButtonC": false
+      },
+      "expected": {
+        "CompletionLight": false,
+        "MotorForward": false,
+        "MotorReverse": false
+      },
+      "note": "产品被取走（SensorC 不再检测）→ 完成灯灭并回到等待下一件",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    }
+  ],
+  "provenance": {
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r4",
+      "platform": "openplc",
+      "pid": "public-medium-05",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate",
+        "r4: explicit batch/pump/heater contracts; isolated sequence groups"
+      ],
+      "adapted_source_sha256": "7e32a8fedbcd66e36c5e5b9be1f18ebd9a9bcb179a93139a7bebc34f77603947"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r4",
+      "kind": "platform_adapted",
+      "platform": "openplc",
+      "original_json": "progress/v13/upstream/public/public-medium-05.json",
+      "original_sha256": "7601c14290407a91de7eac6927a1d05d586ef630a5cd5294c3b4f2a01fff9032",
+      "interface_changed": false,
+      "reference_source_sha256": "7e32a8fedbcd66e36c5e5b9be1f18ebd9a9bcb179a93139a7bebc34f77603947",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance",
+      "working_json": "progress/v13_r4/datasets/public/public-medium-05.json"
+    }
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "# Automated Production Line Control\n\n- **Difficulty:** Medium (medium)\n\n## Requirements\n\nA simple automated production line consists of three workstations: Workstation A, Workstation B, and Workstation C. The product needs to go through these three stations in sequence to be considered fully completed. There is a motor in the production line that is responsible for moving the product from one workstation to the next. The sequence of the line is from Workstation A to Workstation B, and then to Workstation C. Each workstation has a sensor (used to detect if the product has arrived) and a button (used to trigger the signal that the station's processing is complete).\nControl requirements:\n1. Mode Switching: The mode switch (Mode) is used to switch between manual and automatic modes of the production line.\n2. Manual Mode: In manual mode, the forward rotation button (ForwardButton) controls the forward rotation of the motor, and the reverse rotation button (ReverseButton) controls the reverse rotation of the motor. Forward and reverse rotation operations need to be interlocked and cannot be performed simultaneously.\n3. Automatic Mode:\n   - When the product arrives at Workstation A, SensorA detects the product, and after the operator triggers the processing complete signal via ButtonA, the motor starts forward rotation to move the product to Workstation B.\n   - When the product arrives at Workstation B, SensorB detects the product, the motor stops, and after the operator triggers the processing complete signal via ButtonB, the motor starts forward rotation to move the product to Workstation C.\n   - When the product arrives at Workstation C, SensorC detects the product, the motor stops, and after the operator triggers the processing complete signal via ButtonC, the completion indicator light (CompletionLight) turns on, indicating that the product processing is complete. When the product is taken away, i.e., SensorC no longer detects the product, the completion indicator light (CompletionLight) turns off.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `Mode` | `BOOL` | Used to switch the production line between manual and automatic modes, 0=manual mode, 1=automatic mode |\n| Input | `ForwardButton` | `BOOL` | Forward rotation button |\n| Input | `ReverseButton` | `BOOL` | Reverse rotation button |\n| Input | `SensorA` | `BOOL` | Sensor A |\n| Input | `SensorB` | `BOOL` | Sensor B |\n| Input | `SensorC` | `BOOL` | Sensor C |\n| Input | `ButtonA` | `BOOL` | Button A |\n| Input | `ButtonB` | `BOOL` | Button B |\n| Input | `ButtonC` | `BOOL` | Button C |\n| Output | `MotorForward` | `BOOL` | Motor forward rotation output |\n| Output | `MotorReverse` | `BOOL` | Motor reverse rotation output |\n| Output | `CompletionLight` | `BOOL` | Indicator light for product processing completion |",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

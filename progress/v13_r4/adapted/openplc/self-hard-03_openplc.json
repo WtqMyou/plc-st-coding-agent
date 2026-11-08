@@ -1,0 +1,396 @@
+{
+  "pid": "self-hard-03",
+  "source": "selfmade",
+  "difficulty": "hard",
+  "title": "分批物料队列（环形缓冲 FIFO 与满空边界）",
+  "requirements": "写一个功能块 FB，实现一个容量为 8 的先入先出物料队列。\n控制要求：\n1. pushEn 的**上升沿**把 pushItem 压入队尾；popEn 的上升沿从队首弹出；\n2. 每次只处理一条指令；若同一周期 pushEn 与 popEn 同时为上升沿，**先出队再入队**；\n3. count 输出当前队列元素个数（0..8），full 在 count = 8 时为 TRUE，empty 在 count = 0 时为 TRUE；\n4. **队列满时入队必须被丢弃**，不得覆盖已有元素，count 保持不变；\n5. **队列空时出队必须被忽略**，count 不得变成负数；\n6. head 输出队首元素的物料号，队列为空时保持 0；\n7. fifo 数组本身对外可见，下标 1 始终是最老元素（每周期需要整理成紧凑数组）。",
+  "variables": [
+    {
+      "name": "pushEn",
+      "data_type": "BOOL",
+      "description": "入队指令（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "pushItem",
+      "data_type": "INT",
+      "description": "入队物料号",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "popEn",
+      "data_type": "BOOL",
+      "description": "出队指令（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "fifo",
+      "data_type": "ARRAY[1..8] OF INT",
+      "description": "队列缓冲区，下标 1 为最老元素",
+      "direction": "inout",
+      "fields": []
+    },
+    {
+      "name": "count",
+      "data_type": "INT",
+      "description": "当前队列元素个数 0..8",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "full",
+      "data_type": "BOOL",
+      "description": "队列满",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "empty",
+      "data_type": "BOOL",
+      "description": "队列空",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "head",
+      "data_type": "INT",
+      "description": "队首元素（空时保持 0）",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "count 恒介于 0 与 8 之间。",
+      "ltl": "G(count >= 0 & count <= 8)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "队列满时入队不得改变 count（本拍即不改变）。",
+      "ltl": "G(prev(full) & pushEn & !popEn -> count = prev(count))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "队列空时出队不得改变 count，也不得产生负值（本拍即不改变）。",
+      "ltl": "G(prev(empty) & popEn & !pushEn -> count = prev(count))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "入队与出队严格保持先进先出顺序：先入的元素先出（需要跟踪元素身份，只在用例中校验）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "S5",
+      "text": "头指针只在出队时前进：没有出队动作的周期 head 必须保持不变。",
+      "ltl": "G(empty -> head = 0)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "q1",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 0,
+        "empty": true,
+        "full": false,
+        "head": 0,
+        "fifo": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "空队列初始状态",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q2",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 11
+      },
+      "expected": {
+        "count": 1,
+        "empty": false,
+        "head": 11,
+        "fifo": [
+          11,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "入队 11",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q3",
+      "inputs": {
+        "pushEn": false
+      },
+      "expected": {
+        "count": 1,
+        "head": 11,
+        "fifo": [
+          11,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开：不得重复入队（边沿触发）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q4",
+      "inputs": {
+        "pushEn": true,
+        "pushItem": 22
+      },
+      "expected": {
+        "count": 2,
+        "head": 11,
+        "fifo": [
+          11,
+          22,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "入队 22，队头仍是 11",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q5",
+      "inputs": {
+        "pushEn": false
+      },
+      "expected": {
+        "count": 2,
+        "fifo": [
+          11,
+          22,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q6",
+      "inputs": {
+        "pushEn": true,
+        "pushItem": 33
+      },
+      "expected": {
+        "count": 3,
+        "head": 11,
+        "fifo": [
+          11,
+          22,
+          33,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "入队 33",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q7",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false
+      },
+      "expected": {
+        "count": 3,
+        "head": 11,
+        "fifo": [
+          11,
+          22,
+          33,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开：为下一拍的上升沿做准备",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q8",
+      "inputs": {
+        "pushEn": true,
+        "popEn": true,
+        "pushItem": 44
+      },
+      "expected": {
+        "count": 3,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "同周期同时按：先出队（11 走）再入队（44 进）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q9",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false
+      },
+      "expected": {
+        "count": 3,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开：状态保持",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "自主构思 / 行业经验改编",
+    "origin": "流程行业赛题里物料缓冲、成品暂存常用于吸收上下游节拍差异，赛题中常要求 FIFO 队列；环形缓冲的满/空判定是经典易错点。",
+    "adaptation": "把赛题中随管线运行的输送队列固化为 8 槽缓冲区，并强制要求每周期整理成紧凑数组（下标 1 为最老），这排除了只写读写指针的偷懒实现，考察真实数据搬移。",
+    "review": "人工审核：满/空边界、同周期双向操作、计数不得为负三项均有独立用例；'先出队再入队'的顺序在题面明确，避免歧义。",
+    "interface_resolution": "原始 input 原样留档；运行平台适配统一为 inout，与参考解和调用方可写存储一致。",
+    "review_revision": "v1.3-review-r2",
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r4",
+      "platform": "openplc",
+      "pid": "self-hard-03",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "v1.3 FIFO input -> inout; upstream retained, reference and caller storage unchanged",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate",
+        "r4: explicit batch/pump/heater contracts; isolated sequence groups"
+      ],
+      "adapted_source_sha256": "c236b8f12e13f3be680abb3da4c383b3e4e1c47df24019cd819412ef7b447bc0"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r4",
+      "kind": "platform_adapted",
+      "platform": "openplc",
+      "original_json": "progress/v13/upstream/selfmade/self-hard-03.json",
+      "original_sha256": "519bfb89ee2586a0a5878de9da2540c9da206f3de1866b685c9c88bcd0a9843c",
+      "interface_changed": true,
+      "reference_source_sha256": "c236b8f12e13f3be680abb3da4c383b3e4e1c47df24019cd819412ef7b447bc0",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance",
+      "working_json": "progress/v13_r4/datasets/selfmade/self-hard-03.json"
+    }
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

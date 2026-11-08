@@ -1,0 +1,428 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>v1.3-review-r2 修改后复审材料</title>
+<style>body{font:16px/1.7 system-ui,"Microsoft YaHei",sans-serif;margin:0;background:#f3f6fa;color:#203047}main{max-width:1100px;margin:auto;padding:25px}section{background:white;padding:22px;margin:22px 0;border-radius:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f5f7fa;padding:14px;font:13px/1.7 Consolas,monospace}a{color:#155eab}table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid #cfd8e3;padding:6px 9px;text-align:left;vertical-align:top}th{background:#eef3f9}td.num{font-family:Consolas,monospace;white-space:nowrap}.ok{color:#1a7f37;font-weight:600}.bad{color:#b42318;font-weight:600}</style><main>
+<h1>v1.3-review-r2 修改后复审材料</h1>
+<p>负责人刘晏铭；原结论五题均需修改（self-hard-05 已在上一轮批准）。本材料用于本轮修改后的复审，<b>尚未标为通过</b>。</p>
+<p>自动验收：35 题 531/531 功能用例、严格接口通过；公共题 LTL 96 条全部界内成立。公式仅在给定测试序列上复验，不代表穷尽证明或实际装置验收。</p>
+<p>原始接口 dt 在平台适配时统一改名 scanSeconds，秒单位和算法不变。请填写同目录“复审记录.md”的实际结论、问题、姓名与日期。</p>
+<p><b>本轮相对 r1 的改动</b>（逐条对应复审意见）：</p><ul>
+<li>self-hard-06：S13 由「足迹数值只增不减」改为<b>逐位精确累积</b>（每一位：本拍历史位 = 上一拍历史位 OR 本拍线索位），已用「变送器失效拍 → 燃烧过剩拍」两拍轨迹验证：正确实现 lcm=5 成立，丢位实现 lcm=4 在第 3 拍被抓；q45 改为<b>停机 + 数据失效 + 复位上升沿</b>，不再与「运行中拒绝复位」混淆。</li>
+<li>self-hard-07：S7/S8 去掉 <code>prev(normalMode)</code> 前提、改用 <code>prev(TRUE)</code> 表达「非首拍」，因此<b>覆盖所有合法切换拍（含连续切换）</b>；S7 补上「阀位保持」与「本拍不正常运算」；题面要求 4 明确「切换当拍 valveCommand 必须保持，flowSP 可按目标模式更新」，与 q11（串级切自动 flowSP 10.8→10.0、阀位 42.2 保持）一致。</li>
+<li>self-hard-07 q7 注释修正：原写「eF=0 → valve 不变」与期望值矛盾，改为「流量偏差由 −5 变为 0，比例项变化，阀位 30%→40%」。</li>
+<li>self-medium-05 q18 注释算错修正：本拍增量为 10.0×10/1000=0.1t，0.28 是更新后的累计值。</li>
+<li>self-medium-06 q13 注释修正：未钳位功率 5−20=−15 已低于下限 0，确实触发下限钳位、最终 power=0。</li>
+</ul>
+<section id="self-hard-05"><h2>self-hard-05 · 燃烧状态与氧量修正联锁（熄火跳闸 + 分析仪故障降级）</h2>
+<h3>修订题面</h3><pre>写一个功能块 FB，实现燃烧器的火焰联锁与烟气氧量修正。
+控制要求：
+1. 运行请求 runRequest 为 TRUE 且火焰探测器 flameOK 为 FALSE 时，**当拍**置位熄火跳闸 tripLatched，并切断燃料许可；
+2. tripLatched 自保持，只有在 runRequest=FALSE 且 flameOK=FALSE（停机且无火焰的安全态）的前提下，resetBtn 的**上升沿**才能清除。复位是边沿命令而不是保持命令：按住的时长不影响判定，每拍只认有没有新的上升沿；复位那一刻条件不满足就无效，之后条件满足了但还按着（没有新上升沿）也**不得**清除；runRequest 仍为 TRUE 或 flameOK 仍为 TRUE 时按下的复位同样无效；
+3. fuelPermit = runRequest AND flameOK AND NOT tripLatched；
+4. 氧量修正：trimEnable = fuelPermit AND NOT o2Fault；airTrim = 2.0 * (2.0 - o2PV)，并钳位到 [-10, +10]；trimEnable=FALSE 时 airTrim 必须为 0.0。说明：±10 是**输出约束**，不代表两个方向都能到饱和——合法量程 0..21% 内原始修正只在 [-38, +4] 之间（o2PV=0 得 +4，o2PV=21 得 -38），因此正向限幅在本题永远不触发，只有 o2PV &gt; 7.0 时负向限幅才起作用；增益偏小属于演示取舍，真实装置的风门增益取决于风道流通能力；
+5. o2Fault = NOT o2Valid OR o2PV &lt; 0.0 OR o2PV &gt; 21.0（分析仪故障只切除修正，**不得**切除燃料；o2Valid=TRUE 但 o2PV&lt;0 同样判故障）；
+6. airCommand = baseAir + airTrim，钳位到 [0, 100]；fuelPermit=FALSE 时 airCommand 必须为 0.0。说明：baseAir 是外部基础开度给定，本题**不要求** baseAir 自身落在 0..100，只要求最终 airCommand 落在 0..100（baseAir+airTrim 可能为负，此时钳位到 0）；
+7. 范围声明：本题只考核**运行阶段**的火焰联锁与氧量修正。预吹扫、点火、火焰建立等启动顺序，以及完整燃烧器安全管理（BMS，含吹扫时的风门要求）不在本题范围内，由其他系统负责。</pre>
+<h3>原始接口</h3><table><tr><th>变量名</th><th>类型</th><th>方向</th><th>说明</th></tr><tr><td class=num>runRequest</td><td class=num>BOOL</td><td>input</td><td>燃烧运行请求</td></tr><tr><td class=num>flameOK</td><td class=num>BOOL</td><td>input</td><td>火焰探测器反馈（TRUE=检测到火焰）</td></tr><tr><td class=num>o2Valid</td><td class=num>BOOL</td><td>input</td><td>氧量分析仪数据有效</td></tr><tr><td class=num>o2PV</td><td class=num>REAL</td><td>input</td><td>烟气含氧量测量值（%）</td></tr><tr><td class=num>baseAir</td><td class=num>REAL</td><td>input</td><td>主风门基础开度给定（%），外部给定，自身不要求在 0..100</td></tr><tr><td class=num>resetBtn</td><td class=num>BOOL</td><td>input</td><td>复位按钮（上升沿有效）</td></tr><tr><td class=num>fuelPermit</td><td class=num>BOOL</td><td>output</td><td>燃料允许（联锁输出）</td></tr><tr><td class=num>trimEnable</td><td class=num>BOOL</td><td>output</td><td>氧量修正投入（无故障才为 TRUE）</td></tr><tr><td class=num>airTrim</td><td class=num>REAL</td><td>output</td><td>氧量修正偏置（%），钳位 ±10</td></tr><tr><td class=num>airCommand</td><td class=num>REAL</td><td>output</td><td>风门开度命令（%），钳位 0..100</td></tr><tr><td class=num>tripLatched</td><td class=num>BOOL</td><td>output</td><td>熄火跳闸自保持</td></tr><tr><td class=num>o2Fault</td><td class=num>BOOL</td><td>output</td><td>氧量分析仪故障（无效或越界）</td></tr></table>
+<h3>平台适配后参考 ST</h3><pre>FUNCTION_BLOCK FB
+VAR_INPUT
+ runRequest : BOOL;
+ flameOK : BOOL;
+ o2Valid : BOOL;
+ o2PV : REAL;
+ baseAir : REAL;
+ resetBtn : BOOL;
+END_VAR
+VAR_OUTPUT
+ fuelPermit : BOOL;
+ trimEnable : BOOL;
+ airTrim : REAL;
+ airCommand : REAL;
+ tripLatched : BOOL;
+ o2Fault : BOOL;
+END_VAR
+VAR
+ prevReset : BOOL;
+ tripMem : BOOL;
+END_VAR
+o2Fault := (NOT o2Valid) OR (o2PV &lt; 0.0) OR (o2PV &gt; 21.0);
+IF runRequest AND NOT flameOK THEN
+ tripMem := TRUE;
+ELSIF resetBtn AND NOT prevReset AND NOT runRequest AND NOT flameOK THEN
+ tripMem := FALSE;
+END_IF;
+prevReset := resetBtn;
+tripLatched := tripMem;
+fuelPermit := runRequest AND flameOK AND NOT tripMem;
+trimEnable := fuelPermit AND NOT o2Fault;
+IF trimEnable THEN
+ airTrim := 2.0 * (2.0 - o2PV);
+ IF airTrim &gt; 10.0 THEN airTrim := 10.0; END_IF;
+ IF airTrim &lt; -10.0 THEN airTrim := -10.0; END_IF;
+ELSE
+ airTrim := 0.0;
+END_IF;
+IF fuelPermit THEN
+ airCommand := baseAir + airTrim;
+ IF airCommand &gt; 100.0 THEN airCommand := 100.0; END_IF;
+ IF airCommand &lt; 0.0 THEN airCommand := 0.0; END_IF;
+ELSE
+ airCommand := 0.0;
+END_IF;
+END_FUNCTION_BLOCK
+</pre>
+<h3>全部用例</h3><p>共 25 条；case_mode = sequence</p><table><tr><th>周期</th><th>输入</th><th>预期输出</th><th>覆盖内容</th></tr><tr><td class=num>q1</td><td class=num>runRequest=F flameOK=F o2Valid=T o2PV=4 baseAir=50 resetBtn=F</td><td class=num>o2Fault=F tripLatched=F fuelPermit=F trimEnable=F airTrim=0 airCommand=0</td><td>停机初始：无故障、不跳闸、无燃料许可，风门命令归 0</td></tr><tr><td class=num>q2</td><td class=num>runRequest=T flameOK=T o2Valid=T o2PV=4 baseAir=50 resetBtn=F</td><td class=num>o2Fault=F fuelPermit=T trimEnable=T airTrim=-4 airCommand=46</td><td>正常运行：o2=4.0 → trim=2*(2-4)=-4，风门 46</td></tr><tr><td class=num>q3</td><td class=num>runRequest=T flameOK=F o2Valid=T o2PV=4 baseAir=50 resetBtn=F</td><td class=num>tripLatched=T fuelPermit=F trimEnable=F airTrim=0 airCommand=0</td><td>运行中熄火：**当拍**跳闸并切断燃料（不得等到下一拍）</td></tr><tr><td class=num>q4</td><td class=num>runRequest=T flameOK=T o2Valid=T o2PV=4 baseAir=50 resetBtn=F</td><td class=num>tripLatched=T fuelPermit=F trimEnable=F airTrim=0 airCommand=0 o2Fault=F</td><td>跳闸自保持：火焰恢复也不自动复位；跳闸期间修正模块必须整段切除（trimEnable=FALSE、airTrim=0），风门命令归 0</td></tr><tr><td class=num>q5</td><td class=num>runRequest=F flameOK=F o2Valid=T o2PV=4 baseAir=50 resetBtn=T</td><td class=num>tripLatched=F fuelPermit=F airCommand=0</td><td>复位：runRequest=FALSE 且 flameOK=FALSE 时上升沿清除跳闸</td></tr><tr><td class=num>q6</td><td class=num>runRequest=T flameOK=T o2Valid=F o2PV=4 baseAir=50 resetBtn=F</td><td class=num>o2Fault=T fuelPermit=T trimEnable=F airTrim=0 airCommand=50</td><td>分析仪无效：切除修正但**不**切燃料，风门只跟基础给定</td></tr><tr><td class=num>q7</td><td class=num>runRequest=T flameOK=T o2Valid=T o2PV=1 baseAir=50 resetBtn=F</td><td class=num>o2Fault=F trimEnable=T airTrim=2 airCommand=52</td><td>恢复有效：o2 偏低 → 加风 +2</td></tr><tr><td class=num>q8</td><td class=num>runRequest=T flameOK=T o2Valid=T o2PV=5.5 baseAir=80 resetBtn=F</td><td class=num>airTrim=-7 airCommand=73</td><td>o2 偏高 → trim=-7，风门 73</td></tr><tr><td class=num>q9</td><td class=num>runRequest=T flameOK=T o2Valid=T o2PV=8 baseAir=95 resetBtn=F</td><td class=num>airTrim=-10 airCommand=85</td><td>【边界】原始 trim=2*(2-8)=-12，必须钳位到 -10</td></tr><tr><td class=num>q10</td><td class=num>runRequest=T flameOK=T o2Valid=T o2PV=1 baseAir=95 resetBtn=F</td><td class=num>airTrim=2 airCommand=97</td><td>正修正：95+2=97，尚在范围内</td></tr><tr><td class=num>q11</td><td class=num>runRequest=T flameOK=T o2Valid=T o2PV=0 baseAir=99 resetBtn=F</td><td class=num>airTrim=4 airCommand=100</td><td>【边界】99+4=103，风门命令必须钳位到 100</td></tr><tr><td class=num>q12</td><td class=num>runRequest=T flameOK=T o2Valid=T o2PV=21 baseAir=100 resetBtn=F</td><td class=num>o2Fault=F airTrim=-10 airCommand=90</td><td>【边界】o2=21.0 仍属合法量程（&lt;=21），trim 钳位 -10</td></tr><tr><td class=num>q13</td><td class=num>runRequest=T flameOK=T o2Valid=T o2PV=21.1 baseAir=100 resetBtn=F</td><td class=num>o2Fault=T trimEnable=F airTrim=0 airCommand=100</td><td>【边界】o2=21.1 越界 → 判故障、切除修正</td></tr><tr><td class=num>q14</td><td class=num>runRequest=T flameOK=T o2Valid=T o2PV=-0.5 baseAir=50 resetBtn=F</td><td class=num>o2Fault=T fuelPermit=T trimEnable=F airTrim=0 airCommand=50 tripLatched=F</td><td>o2Valid=TRUE 但 o2PV=-0.5 &lt;0：同样判分析仪故障，切除修正但**不**切燃料</td></tr><tr><td class=num>q15</td><td class=num>runRequest=T flameOK=F o2Valid=T o2PV=4 baseAir=50 resetBtn=T</td><td class=num>tripLatched=T fuelPermit=F trimEnable=F airTrim=0 airCommand=0 o2Fault=F</td><td>【非法复位】runRequest 仍为 TRUE 时按复位：即便有上升沿也不得清除跳闸</td></tr><tr><td class=num>q16</td><td class=num>runRequest=F flameOK=F o2Valid=T o2PV=4 baseAir=50 resetBtn=T</td><td class=num>tripLatched=T fuelPermit=F trimEnable=F airTrim=0 airCommand=0</td><td>【持续按住】条件虽已满足，但没有新的上升沿 → 跳闸保持</td></tr><tr><td class=num>q17</td><td class=num>runRequest=F flameOK=F o2Valid=T o2PV=4 baseAir=50 resetBtn=F</td><td class=num>tripLatched=T fuelPermit=F airCommand=0</td><td>【松开】复位键松开、无上升沿 → 跳闸仍保持</td></tr><tr><td class=num>q18</td><td class=num>runRequest=F flameOK=F o2Valid=T o2PV=4 baseAir=50 resetBtn=T</td><td class=num>tripLatched=F fuelPermit=F trimEnable=F airTrim=0 airCommand=0 o2Fault=F</td><td>【合法复位】runRequest=FALSE 且 flameOK=FALSE 下的上升沿 → 清除跳闸</td></tr><tr><td class=num>q19</td><td class=num>runRequest=T flameOK=F o2Valid=T o2PV=4 baseAir=50 resetBtn=F</td><td class=num>tripLatched=T fuelPermit=F trimEnable=F airTrim=0 airCommand=0 o2Fault=F</td><td>复位后再次运行中熄火 → 重新跳闸</td></tr><tr><td class=num>q20</td><td class=num>runRequest=F flameOK=T o2Valid=T o2PV=4 baseAir=50 resetBtn=T</td><td class=num>tripLatched=T fuelPermit=F trimEnable=F airTrim=0 airCommand=0</td><td>【非法复位】flameOK 仍为 TRUE（有火焰）时按复位 → 不得清除跳闸</td></tr><tr><td class=num>q21</td><td class=num>runRequest=T flameOK=F o2Valid=F o2PV=4 baseAir=50 resetBtn=F</td><td class=num>tripLatched=T o2Fault=T fuelPermit=F trimEnable=F airTrim=0 airCommand=0</td><td>熄火 + 分析仪失效同时发生：跳闸优先，修正切除</td></tr><tr><td class=num>q22</td><td class=num>runRequest=F flameOK=F o2Valid=T o2PV=4 baseAir=50 resetBtn=T</td><td class=num>tripLatched=F o2Fault=F fuelPermit=F trimEnable=F airTrim=0 airCommand=0</td><td>【恢复路径】再次合法复位 → 跳闸清除、故障不残留</td></tr><tr><td class=num>q23</td><td class=num>runRequest=T flameOK=T o2Valid=T o2PV=8 baseAir=5 resetBtn=F</td><td class=num>o2Fault=F tripLatched=F fuelPermit=T trimEnable=T airTrim=-10 airCommand=0</td><td>【边界】风门下限：airTrim=-10 且 baseAir=5 → 合成 -5 钳位到 0，而 airTrim 本身仍是 -10（钳位作用在合成值上，不回写偏置）</td></tr><tr><td class=num>q24</td><td class=num>runRequest=F flameOK=F o2Valid=F o2PV=4 baseAir=50 resetBtn=F</td><td class=num>o2Fault=T tripLatched=F fuelPermit=F trimEnable=F airTrim=0 airCommand=0</td><td>停机态下分析仪失效：只报故障，不产生燃料许可、不跳闸</td></tr><tr><td class=num>q25</td><td class=num>runRequest=T flameOK=T o2Valid=T o2PV=4 baseAir=50 resetBtn=F</td><td class=num>o2Fault=F tripLatched=F fuelPermit=T trimEnable=T airTrim=-4 airCommand=46</td><td>【恢复正常】o2 恢复 4.0、分析仪有效 → 修正重新投入，风门 46</td></tr></table>
+<h3>运行期性质</h3><table><tr><th>编号</th><th>类别</th><th>性质</th><th>LTL</th></tr><tr><td class=num>S1</td><td>safety</td><td>运行中失去火焰时，**同一周期**就必须跳闸（不得延迟一拍）。</td><td class=num>G((runRequest &amp; !flameOK) -&gt; tripLatched)</td></tr><tr><td class=num>S2</td><td>safety</td><td>跳闸一旦置位就自保持；只有&quot;runRequest=FALSE 且 flameOK=FALSE 下的复位上升沿&quot;这一个条件能清除它，其余任何一拍（含按住不复位、条件不满足时按复位）都必须保持。</td><td class=num>G((prev(tripLatched) &amp; !(rising(resetBtn) &amp; !runRequest &amp; !flameOK)) -&gt; tripLatched)</td></tr><tr><td class=num>S3</td><td>safety</td><td>跳闸状态下绝不允许燃料许可。</td><td class=num>G(tripLatched -&gt; !fuelPermit)</td></tr><tr><td class=num>S4</td><td>safety</td><td>燃料许可的完整定义：运行请求、火焰正常、未跳闸三者同时成立才允许，缺一不可。</td><td class=num>G(fuelPermit &lt;-&gt; (runRequest &amp; flameOK &amp; !tripLatched))</td></tr><tr><td class=num>S5</td><td>safety</td><td>无燃料许可时风门命令必须归零（防止停机后残留开度）。</td><td class=num>G(!fuelPermit -&gt; airCommand = 0.0)</td></tr><tr><td class=num>S6</td><td>safety</td><td>风门命令恒在 0..100 之间。</td><td class=num>G((airCommand &gt;= 0.0) &amp; (airCommand &lt;= 100.0))</td></tr><tr><td class=num>S7</td><td>safety</td><td>氧量修正偏置恒在 ±10 之间。</td><td class=num>G((airTrim &gt;= -10.0) &amp; (airTrim &lt;= 10.0))</td></tr><tr><td class=num>S8</td><td>safety</td><td>修正投入的完整定义：有燃料许可且分析仪无故障才投入；故障当拍即整段切除。</td><td class=num>G(trimEnable &lt;-&gt; (fuelPermit &amp; !o2Fault))</td></tr><tr><td class=num>S9</td><td>safety</td><td>故障判据：数据无效、低于 0 或高于 21 三者任一成立。</td><td class=num>G(o2Fault &lt;-&gt; (!o2Valid | o2PV &lt; 0.0 | o2PV &gt; 21.0))</td></tr><tr><td class=num>S10</td><td>safety</td><td>修正切除时偏置必须归 0（不得残留上一次的修正量）。</td><td class=num>G(!trimEnable -&gt; airTrim = 0.0)</td></tr><tr><td class=num>S11</td><td>safety</td><td>只有 o2PV &gt; 7.0 一侧能触到负向限幅：此时偏置被钳在 -10。</td><td class=num>G((trimEnable &amp; o2PV &gt; 7.0) -&gt; airTrim = -10.0)</td></tr><tr><td class=num>S12</td><td>safety</td><td>o2PV &lt;= 7.0 一侧未达限幅：偏置严格等于 2.0*(2.0-o2PV)。</td><td class=num>G((trimEnable &amp; o2PV &lt;= 7.0) -&gt; airTrim = 2.0 * (2.0 - o2PV))</td></tr><tr><td class=num>S13</td><td>safety</td><td>修正后合成开度超上限时命令钳在 100，且不改变偏置本身。</td><td class=num>G((fuelPermit &amp; baseAir + airTrim &gt; 100.0) -&gt; airCommand = 100.0)</td></tr><tr><td class=num>S14</td><td>safety</td><td>修正后合成开度为负时命令钳在 0（baseAir 可以小于 10）。</td><td class=num>G((fuelPermit &amp; baseAir + airTrim &lt; 0.0) -&gt; airCommand = 0.0)</td></tr><tr><td class=num>S15</td><td>data</td><td>系数与钳位后的合成值：由仿真用例逐拍核对（净收益/风门数值语义）。</td><td class=num>&lt;i&gt;（无 LTL，由仿真用例覆盖）&lt;/i&gt;</td></tr></table>
+</section>
+<section id="self-hard-06"><h2>self-hard-06 · 蒸汽母管超压联锁与故障线索诊断（按位编码 + 足迹保留）</h2>
+<h3>修订题面</h3><pre>写一个功能块 FB，实现母管超压联锁，并在跳闸时记录**故障线索**。
+控制要求：
+1. 压力有效判据 pressureValid；&gt;= 4500.0 kPa 判超压；
+2. 跳闸条件（任一成立）：runRequest 且 pressureValid 且 pressure &gt;= 4500.0；runRequest 且 NOT pressureValid（数据失效按最坏情况处理）；跳闸与本拍线索同拍生效；
+3. tripLatched 自保持；清除条件：resetBtn 上升沿 且 NOT runRequest 且 pressureValid 且 pressure &lt;= 4200.0。4500 与 4200 之间的 300 kPa 是**滞环**：跳闸整定取母管额定压力（约 4.0 MPa）之上 500 kPa，复位门槛再回退 300 kPa，防止压力在阈值附近抖动导致反复跳闸/复位；
+4. 线索位（currentCauseMask，WORD 的**低 4 位**，本拍重新计算）：
+   bit0=1 变送器失效（runRequest 且 NOT pressureValid）；
+   bit1=2 减温减压阀卡滞：outletCmd&gt;=50 且 outletFeedback&lt;=10 **连续 3 个执行周期及以上**；
+   bit2=4 燃烧过剩：fuelFlow &gt;= 4.0 且 steamFlow &lt;= 10.0（比较的是接口流量数值，单位 t/h；两个边界都含等于）；
+   bit1/bit2 只在「runRequest 且 pressureValid 且 pressure &gt;= 4500.0」的超压工况下评估；若超压但以上线索都不成立，置 bit3=8（未定位）；
+   NOT runRequest 时线索为 0；
+5. 卡滞判据必须是**连续扫描周期**：中途反馈恢复、压力回落到 4500 以下、变送器失效或 runRequest=FALSE，都要把 3 拍计数清零——计数不清零就会把历史误当成“连续”；
+6. latchedCauseMask：tripLatched 为 TRUE 时把 currentCauseMask **按位或**并入。注意 WORD 是 **16 位**（DWORD 才是 32 位），本题只用低 4 位（最大 15），16 位足够、不会溢出。该掩码保存的是“本次跳闸期间**全部历史线索的累积**”，**不是**跳闸瞬间的原因快照——跳闸后新出现的线索也会并入，只有合法复位才清零；因此它回答的是“这次跳闸期间一共观察到过哪些现象”，不能把它直接当成唯一的跳闸原因；
+7. fuelPermit = runRequest AND NOT tripLatched；diagnosticActive = (currentCauseMask &lt;&gt; 0)。
+取数与整定说明：
+- 本块每个扫描周期执行一次，题目不定义扫描周期时长：“连续 3 拍”指连续3 个执行周期，不承诺固定秒数；
+- 4500/4200 kPa 与 300 kPa 滞环是该算例的整定值（母管额定约 4.0 MPa，超压保护整定在其上 500 kPa，复位门槛回退 300 kPa），只用于考核联锁逻辑，不代表具体机组的最终整定；工程整定须依据母管设计压力与安全阀铭牌；
+- 燃烧过剩判据 4.0/10.0 t/h 是“燃料流量偏高而蒸汽流量偏低”的算例阈值，同样只作算例参数，不是机组保护定值。</pre>
+<h3>原始接口</h3><table><tr><th>变量名</th><th>类型</th><th>方向</th><th>说明</th></tr><tr><td class=num>runRequest</td><td class=num>BOOL</td><td>input</td><td>运行请求</td></tr><tr><td class=num>pressure</td><td class=num>REAL</td><td>input</td><td>母管压力（kPa）</td></tr><tr><td class=num>pressureValid</td><td class=num>BOOL</td><td>input</td><td>压力变送器数据有效</td></tr><tr><td class=num>fuelFlow</td><td class=num>REAL</td><td>input</td><td>燃料流量（t/h）</td></tr><tr><td class=num>steamFlow</td><td class=num>REAL</td><td>input</td><td>蒸汽流量（t/h）</td></tr><tr><td class=num>outletCmd</td><td class=num>INT</td><td>input</td><td>减温减压阀开度命令（%）</td></tr><tr><td class=num>outletFeedback</td><td class=num>INT</td><td>input</td><td>减温减压阀开度反馈（%）</td></tr><tr><td class=num>resetBtn</td><td class=num>BOOL</td><td>input</td><td>复位按钮（上升沿有效）</td></tr><tr><td class=num>tripLatched</td><td class=num>BOOL</td><td>output</td><td>超压跳闸自保持</td></tr><tr><td class=num>fuelPermit</td><td class=num>BOOL</td><td>output</td><td>燃料许可</td></tr><tr><td class=num>currentCauseMask</td><td class=num>WORD</td><td>output</td><td>本周期诊断线索位掩码</td></tr><tr><td class=num>latchedCauseMask</td><td class=num>WORD</td><td>output</td><td>跳闸期间线索累积掩码（全历史足迹）</td></tr><tr><td class=num>diagnosticActive</td><td class=num>BOOL</td><td>output</td><td>存在有效诊断线索</td></tr></table>
+<h3>平台适配后参考 ST</h3><pre>FUNCTION_BLOCK FB
+VAR_INPUT
+ runRequest : BOOL;
+ pressure : REAL;
+ pressureValid : BOOL;
+ fuelFlow : REAL;
+ steamFlow : REAL;
+ outletCmd : INT;
+ outletFeedback : INT;
+ resetBtn : BOOL;
+END_VAR
+VAR_OUTPUT
+ tripLatched : BOOL;
+ fuelPermit : BOOL;
+ currentCauseMask : WORD;
+ latchedCauseMask : WORD;
+ diagnosticActive : BOOL;
+END_VAR
+VAR
+ prevReset : BOOL;
+ tripMem : BOOL;
+ latMem : WORD;
+ valveCnt : INT;
+END_VAR
+currentCauseMask := 0;
+IF resetBtn AND NOT prevReset AND NOT runRequest AND pressureValid
+ AND (pressure &lt;= 4200.0) THEN
+ tripMem := FALSE;
+ latMem := 0;
+ valveCnt := 0;
+END_IF;
+prevReset := resetBtn;
+IF NOT runRequest THEN
+ valveCnt := 0;
+ELSIF NOT pressureValid THEN
+ currentCauseMask := 16#0001;
+ valveCnt := 0;
+ tripMem := TRUE;
+ELSIF pressureValid AND (pressure &gt;= 4500.0) THEN
+ IF (outletCmd &gt;= 50) AND (outletFeedback &lt;= 10) THEN
+  valveCnt := valveCnt + 1;
+  IF valveCnt &gt; 3 THEN valveCnt := 3; END_IF;
+ ELSE
+  valveCnt := 0;
+ END_IF;
+ IF valveCnt &gt;= 3 THEN
+  currentCauseMask := currentCauseMask OR 16#0002;
+ END_IF;
+ IF (fuelFlow &gt;= 4.0) AND (steamFlow &lt;= 10.0) THEN
+  currentCauseMask := currentCauseMask OR 16#0004;
+ END_IF;
+ IF currentCauseMask = 0 THEN
+  currentCauseMask := 16#0008;
+ END_IF;
+ tripMem := TRUE;
+ELSE
+ valveCnt := 0;
+END_IF;
+IF tripMem THEN
+ latMem := latMem OR currentCauseMask;
+END_IF;
+tripLatched := tripMem;
+latchedCauseMask := latMem;
+diagnosticActive := (currentCauseMask &lt;&gt; 0);
+fuelPermit := runRequest AND NOT tripMem;
+END_FUNCTION_BLOCK
+</pre>
+<h3>全部用例</h3><p>共 45 条；case_mode = sequence</p><table><tr><th>周期</th><th>输入</th><th>预期输出</th><th>覆盖内容</th></tr><tr><td class=num>q1</td><td class=num>runRequest=F pressure=4000 pressureValid=T fuelFlow=1 steamFlow=20 outletCmd=0 outletFeedback=0 resetBtn=F</td><td class=num>tripLatched=F fuelPermit=F currentCauseMask=0 latchedCauseMask=0 diagnosticActive=F</td><td>停机初始：无跳闸、无线索</td></tr><tr><td class=num>q2</td><td class=num>runRequest=T pressure=4200 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=60 outletFeedback=60 resetBtn=F</td><td class=num>tripLatched=F fuelPermit=T currentCauseMask=0</td><td>压力 4200 未达 4500：允许燃料，无线索</td></tr><tr><td class=num>q3</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=60 outletFeedback=60 resetBtn=F</td><td class=num>tripLatched=T fuelPermit=F currentCauseMask=8 latchedCauseMask=8 diagnosticActive=T</td><td>超压但阀位正常、燃烧正常 → 线索=8（未定位）</td></tr><tr><td class=num>q4</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=80 outletFeedback=0 resetBtn=F</td><td class=num>tripLatched=T currentCauseMask=8 latchedCauseMask=8</td><td>阀卡滞第 1 拍（计数 1，未达 3 拍判据）仍只报 8</td></tr><tr><td class=num>q5</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=4.5 steamFlow=5 outletCmd=80 outletFeedback=0 resetBtn=F</td><td class=num>currentCauseMask=4 latchedCauseMask=12</td><td>阀计数 2 + 燃烧过剩 → 位2 已置（8|4=12）</td></tr><tr><td class=num>q6</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=4.5 steamFlow=5 outletCmd=80 outletFeedback=0 resetBtn=F</td><td class=num>currentCauseMask=6 latchedCauseMask=14</td><td>阀计数达 3 → 位1 置；与位2 合并得 6（14=8|4|2）</td></tr><tr><td class=num>q7</td><td class=num>runRequest=F pressure=4000 pressureValid=T fuelFlow=0 steamFlow=0 outletCmd=0 outletFeedback=0 resetBtn=F</td><td class=num>tripLatched=T fuelPermit=F currentCauseMask=0 latchedCauseMask=14 diagnosticActive=F</td><td>停机后本拍无线索，但**已累积**的足迹必须保留（供事后诊断）</td></tr><tr><td class=num>q8</td><td class=num>runRequest=F pressure=4000 pressureValid=T fuelFlow=0 steamFlow=0 outletCmd=0 outletFeedback=0 resetBtn=T</td><td class=num>tripLatched=F currentCauseMask=0 latchedCauseMask=0</td><td>复位：runRequest=FALSE、压力已回落到 &lt;=4200 → 跳闸与足迹一起清</td></tr><tr><td class=num>q9</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=4.5 steamFlow=5 outletCmd=0 outletFeedback=0 resetBtn=F</td><td class=num>tripLatched=T currentCauseMask=4 latchedCauseMask=4</td><td>阀命令未达 50 → 不计卡滞；只剩燃烧过剩线索</td></tr><tr><td class=num>q10</td><td class=num>runRequest=T pressure=4600 pressureValid=F fuelFlow=4.5 steamFlow=5 outletCmd=90 outletFeedback=0 resetBtn=F</td><td class=num>tripLatched=T currentCauseMask=1 latchedCauseMask=5</td><td>变送器失效：线索=1（优先于压力判据），并入累积 5</td></tr><tr><td class=num>q11</td><td class=num>runRequest=T pressure=4000 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=60 outletFeedback=60 resetBtn=F</td><td class=num>tripLatched=T fuelPermit=F currentCauseMask=0 latchedCauseMask=5 diagnosticActive=F</td><td>变送器恢复、压力回落到 4000：本拍线索清零，历史足迹 5 仍保留</td></tr><tr><td class=num>q12</td><td class=num>runRequest=T pressure=4100 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=60 outletFeedback=60 resetBtn=T</td><td class=num>tripLatched=T fuelPermit=F currentCauseMask=0 latchedCauseMask=5</td><td>非法复位：有上升沿但 runRequest 仍为 TRUE → 不得清除</td></tr><tr><td class=num>q13</td><td class=num>runRequest=F pressure=4100 pressureValid=T fuelFlow=0 steamFlow=0 outletCmd=0 outletFeedback=0 resetBtn=T</td><td class=num>tripLatched=T currentCauseMask=0 latchedCauseMask=5</td><td>复位持续按住、条件（停机）后来才满足但没有新的上升沿 → 仍不得清除</td></tr><tr><td class=num>q14</td><td class=num>runRequest=F pressure=4100 pressureValid=T fuelFlow=0 steamFlow=0 outletCmd=0 outletFeedback=0 resetBtn=F</td><td class=num>tripLatched=T currentCauseMask=0 latchedCauseMask=5 diagnosticActive=F</td><td>松开复位：跳闸保持，足迹不变</td></tr><tr><td class=num>q15</td><td class=num>runRequest=F pressure=4201 pressureValid=T fuelFlow=0 steamFlow=0 outletCmd=0 outletFeedback=0 resetBtn=T</td><td class=num>tripLatched=T currentCauseMask=0 latchedCauseMask=5</td><td>【边界】新上升沿但压力 4201 &gt; 4200 → 复位许可不满足，不得清除</td></tr><tr><td class=num>q16</td><td class=num>runRequest=F pressure=4200 pressureValid=T fuelFlow=0 steamFlow=0 outletCmd=0 outletFeedback=0 resetBtn=F</td><td class=num>tripLatched=T currentCauseMask=0 latchedCauseMask=5</td><td>松开复位、压力回到 4200：仍保持（清除只认上升沿）</td></tr><tr><td class=num>q17</td><td class=num>runRequest=F pressure=4200 pressureValid=T fuelFlow=0 steamFlow=0 outletCmd=0 outletFeedback=0 resetBtn=T</td><td class=num>tripLatched=F fuelPermit=F currentCauseMask=0 latchedCauseMask=0 diagnosticActive=F</td><td>【边界】恰好 4200（含端点）+ 新上升沿 → 跳闸与足迹一起清</td></tr><tr><td class=num>q18</td><td class=num>runRequest=T pressure=4499 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=60 outletFeedback=60 resetBtn=F</td><td class=num>tripLatched=F fuelPermit=T currentCauseMask=0 diagnosticActive=F</td><td>【边界】4499 &lt; 4500 → 不跳闸、无线索、燃料许可</td></tr><tr><td class=num>q19</td><td class=num>runRequest=T pressure=4500 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=60 outletFeedback=60 resetBtn=F</td><td class=num>tripLatched=T fuelPermit=F currentCauseMask=8 latchedCauseMask=8 diagnosticActive=T</td><td>【边界】恰好 4500（含端点）→ 当拍跳闸，线索=8</td></tr><tr><td class=num>q20</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>tripLatched=T currentCauseMask=8 latchedCauseMask=8</td><td>【边界】outletCmd=50、outletFeedback=10 都含端点 → 计 1 拍，未达 3 拍仍报 8</td></tr><tr><td class=num>q21</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>currentCauseMask=8 latchedCauseMask=8</td><td>卡滞第 2 拍（连续）→ 计数 2，仍未达判据</td></tr><tr><td class=num>q22</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=30 resetBtn=F</td><td class=num>currentCauseMask=8 latchedCauseMask=8</td><td>中途反馈恢复（10→30）：连续 3 拍被打破 → 计数清零，仍只报 8</td></tr><tr><td class=num>q23</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>currentCauseMask=8 latchedCauseMask=8</td><td>重新计第 1 拍（清零后从头算）</td></tr><tr><td class=num>q24</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>currentCauseMask=8 latchedCauseMask=8</td><td>重新计第 2 拍</td></tr><tr><td class=num>q25</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>currentCauseMask=2 latchedCauseMask=10</td><td>第 3 拍达标 → **单独出现 bit1=2**（有线索故不置 bit3），足迹 8|2=10</td></tr><tr><td class=num>q26</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>currentCauseMask=2 latchedCauseMask=10</td><td>连续第 4 拍（超过 3 拍）：仍只报 2，计数饱和不溢出</td></tr><tr><td class=num>q27</td><td class=num>runRequest=T pressure=4400 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>tripLatched=T currentCauseMask=0 latchedCauseMask=10 diagnosticActive=F</td><td>压力回落到 4400（不再超压）→ 卡滞计数清零、本拍无线索，跳闸与足迹保持</td></tr><tr><td class=num>q28</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>tripLatched=T currentCauseMask=8 latchedCauseMask=10</td><td>再次超压 + 卡滞第 1 拍：若压力回落时没清零会误报 2，这里只报 8</td></tr><tr><td class=num>q29</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>currentCauseMask=8 latchedCauseMask=10</td><td>卡滞第 2 拍（连续）</td></tr><tr><td class=num>q30</td><td class=num>runRequest=T pressure=4600 pressureValid=F fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>tripLatched=T currentCauseMask=1 latchedCauseMask=11 diagnosticActive=T</td><td>变送器失效打断卡滞计数：线索=1，足迹 10|1=11，跳闸保持</td></tr><tr><td class=num>q31</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>currentCauseMask=8 latchedCauseMask=11</td><td>变送器恢复后卡滞从第 1 拍重新计数（失效期间的中断已被清零）</td></tr><tr><td class=num>q32</td><td class=num>runRequest=F pressure=4600 pressureValid=T fuelFlow=0 steamFlow=0 outletCmd=0 outletFeedback=0 resetBtn=F</td><td class=num>tripLatched=T fuelPermit=F currentCauseMask=0 latchedCauseMask=11 diagnosticActive=F</td><td>停止运行打断计数：本拍线索=0、计数清零，跳闸与足迹保持</td></tr><tr><td class=num>q33</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>currentCauseMask=8 latchedCauseMask=11</td><td>重新运行 + 卡滞第 1 拍：计数从 0 起（停机期间已清零）</td></tr><tr><td class=num>q34</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>currentCauseMask=8 latchedCauseMask=11</td><td>卡滞第 2 拍</td></tr><tr><td class=num>q35</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>currentCauseMask=2 latchedCauseMask=11</td><td>卡滞第 3 拍 → bit1 置；足迹 11 本来就含位1，按位或后仍是 11</td></tr><tr><td class=num>q36</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=4 steamFlow=10 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>currentCauseMask=6 latchedCauseMask=15</td><td>【边界】fuelFlow=4.0、steamFlow=10.0 都含端点 → 燃烧过剩成立，6=2|4，足迹 15</td></tr><tr><td class=num>q37</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=3.9 steamFlow=10 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>currentCauseMask=2 latchedCauseMask=15</td><td>【边界】fuelFlow=3.9 &lt; 4.0 → 不判燃烧过剩，只剩 bit1</td></tr><tr><td class=num>q38</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=4 steamFlow=10.1 outletCmd=50 outletFeedback=10 resetBtn=F</td><td class=num>currentCauseMask=2 latchedCauseMask=15</td><td>【边界】steamFlow=10.1 &gt; 10.0 → 不判燃烧过剩</td></tr><tr><td class=num>q39</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=5 steamFlow=5 outletCmd=0 outletFeedback=0 resetBtn=F</td><td class=num>currentCauseMask=4 latchedCauseMask=15</td><td>只有燃烧过剩（阀命令未达 50）→ 4；足迹 15|4 仍为 15</td></tr><tr><td class=num>q40</td><td class=num>runRequest=T pressure=4600 pressureValid=T fuelFlow=2 steamFlow=20 outletCmd=60 outletFeedback=60 resetBtn=F</td><td class=num>currentCauseMask=8 latchedCauseMask=15</td><td>超压但一切正常 → 未定位 8；累积时 15|8 仍为 15</td></tr><tr><td class=num>q41</td><td class=num>runRequest=F pressure=4000 pressureValid=T fuelFlow=0 steamFlow=0 outletCmd=0 outletFeedback=0 resetBtn=T</td><td class=num>tripLatched=F fuelPermit=F currentCauseMask=0 latchedCauseMask=0 diagnosticActive=F</td><td>停机 + 合法复位 → 跳闸与全部足迹清零</td></tr><tr><td class=num>q42</td><td class=num>runRequest=T pressure=4000 pressureValid=F fuelFlow=2 steamFlow=20 outletCmd=60 outletFeedback=60 resetBtn=F</td><td class=num>tripLatched=T fuelPermit=F currentCauseMask=1 latchedCauseMask=1 diagnosticActive=T</td><td>**从未跳闸的干净状态**起：压力本身只有 4000 kPa，仅靠 pressureValid=FALSE 就独立触发跳闸（线索=1），证明失效路径不依赖压力判据</td></tr><tr><td class=num>q43</td><td class=num>runRequest=F pressure=4000 pressureValid=T fuelFlow=0 steamFlow=0 outletCmd=0 outletFeedback=0 resetBtn=T</td><td class=num>tripLatched=F fuelPermit=F currentCauseMask=0 latchedCauseMask=0 diagnosticActive=F</td><td>收尾：停机 + 合法复位 → 清零</td></tr><tr><td class=num>q44</td><td class=num>runRequest=T pressure=4200 pressureValid=F fuelFlow=0 steamFlow=0 outletCmd=0 outletFeedback=0 resetBtn=F</td><td class=num>tripLatched=T fuelPermit=F currentCauseMask=1 latchedCauseMask=1 diagnosticActive=T</td><td>压力 4200 本不越限，但**变送器失效**按最坏情况处理 → 独立跳闸（线索=1）</td></tr><tr><td class=num>q45</td><td class=num>runRequest=F pressure=4200 pressureValid=F fuelFlow=0 steamFlow=0 outletCmd=0 outletFeedback=0 resetBtn=T</td><td class=num>tripLatched=T fuelPermit=F currentCauseMask=0 latchedCauseMask=1 diagnosticActive=F</td><td>停机 + 变送器失效 + 复位上升沿：runRequest 已 FALSE，唯一不满足的许可条件是「压力数据有效」→ 跳闸与足迹都不得清除</td></tr></table>
+<h3>运行期性质</h3><table><tr><th>编号</th><th>类别</th><th>性质</th><th>LTL</th></tr><tr><td class=num>S1</td><td>safety</td><td>压力变送器失效且仍在运行时，必须当拍跳闸并切除燃料。</td><td class=num>G((runRequest &amp; !pressureValid) -&gt; (tripLatched &amp; !fuelPermit))</td></tr><tr><td class=num>S2</td><td>safety</td><td>母管压力达到 4500 kPa（数据有效）时必须当拍跳闸。</td><td class=num>G((runRequest &amp; pressureValid &amp; pressure &gt;= 4500.0) -&gt; tripLatched)</td></tr><tr><td class=num>S3</td><td>safety</td><td>跳闸状态下绝不允许燃料许可。</td><td class=num>G(tripLatched -&gt; !fuelPermit)</td></tr><tr><td class=num>S4</td><td>safety</td><td>跳闸自保持：没有复位上升沿时不得自行解锁。</td><td class=num>G((prev(tripLatched) &amp; !rising(resetBtn)) -&gt; tripLatched)</td></tr><tr><td class=num>S4b</td><td>safety</td><td>存在复位上升沿但复位许可条件（停机 + 数据有效 + 压力 &lt;= 4200）不满足时，跳闸也不得解锁。</td><td class=num>G((prev(tripLatched) &amp; rising(resetBtn) &amp; (runRequest OR !pressureValid OR pressure &gt; 4200.0)) -&gt; tripLatched)</td></tr><tr><td class=num>S5</td><td>safety</td><td>无运行请求时本周期线索掩码必须为 0。</td><td class=num>G(!runRequest -&gt; currentCauseMask = 0)</td></tr><tr><td class=num>S6</td><td>safety</td><td>压力未越限且数据有效时不产生线索。</td><td class=num>G((runRequest &amp; pressureValid &amp; pressure &lt; 4500.0) -&gt; currentCauseMask = 0)</td></tr><tr><td class=num>S7</td><td>safety</td><td>诊断有效位与线索掩码一致。</td><td class=num>G(diagnosticActive &lt;-&gt; currentCauseMask &lt;&gt; 0)</td></tr><tr><td class=num>S8</td><td>safety</td><td>合法复位（上升沿 + 停机 + 数据有效 + 压力 &lt;= 4200）必须同时清除跳闸与线索足迹。</td><td class=num>G((rising(resetBtn) &amp; !runRequest &amp; pressureValid &amp; pressure &lt;= 4200.0) -&gt; (!tripLatched &amp; latchedCauseMask = 0))</td></tr><tr><td class=num>S9</td><td>safety</td><td>bit3（未定位，掩码恰为 8）只出现在运行中的超压工况。</td><td class=num>G(currentCauseMask = 8 -&gt; (runRequest &amp; pressureValid &amp; pressure &gt;= 4500.0))</td></tr><tr><td class=num>S10</td><td>safety</td><td>bit2（燃烧过剩）成立时必然满足燃料流量偏高、蒸汽流量偏低的判据。</td><td class=num>G((currentCauseMask = 4 OR currentCauseMask = 6 OR currentCauseMask = 12 OR currentCauseMask = 14) -&gt; (fuelFlow &gt;= 4.0 &amp; steamFlow &lt;= 10.0))</td></tr><tr><td class=num>S11</td><td>safety</td><td>bit1（阀卡滞）成立时必然满足阀命令/反馈的卡滞判据。</td><td class=num>G((currentCauseMask = 2 OR currentCauseMask = 6 OR currentCauseMask = 10 OR currentCauseMask = 14) -&gt; (outletCmd &gt;= 50 &amp; outletFeedback &lt;= 10))</td></tr><tr><td class=num>S12</td><td>safety</td><td>bit0 只在运行中变送器失效时出现，且失效当拍掩码恰为 1。</td><td class=num>G((runRequest &amp; !pressureValid) -&gt; currentCauseMask = 1)</td></tr><tr><td class=num>S13</td><td>safety</td><td>跳闸期间逐位精确累积：每一历史位等于上一拍历史位或本拍线索位，且仅使用低四位。</td><td class=num>G((latchedCauseMask &gt;= 0 AND latchedCauseMask &lt;= 15 AND currentCauseMask &gt;= 0 AND currentCauseMask &lt;= 15) AND (tripLatched -&gt; (((latchedCauseMask = 1 OR latchedCauseMask = 3 OR latchedCauseMask = 5 OR latchedCauseMask = 7 OR latchedCauseMask = 9 OR latchedCauseMask = 11 OR latchedCauseMask = 13 OR latchedCauseMask = 15) &lt;-&gt; (prev((latchedCauseMask = 1 OR latchedCauseMask = 3 OR latchedCauseMask = 5 OR latchedCauseMask = 7 OR latchedCauseMask = 9 OR latchedCauseMask = 11 OR latchedCauseMask = 13 OR latchedCauseMask = 15)) OR (currentCauseMask = 1 OR currentCauseMask = 3 OR currentCauseMask = 5 OR currentCauseMask = 7 OR currentCauseMask = 9 OR currentCauseMask = 11 OR currentCauseMask = 13 OR currentCauseMask = 15))) AND ((latchedCauseMask = 2 OR latchedCauseMask = 3 OR latchedCauseMask = 6 OR latchedCauseMask = 7 OR latchedCauseMask = 10 OR latchedCauseMask = 11 OR latchedCauseMask = 14 OR latchedCauseMask = 15) &lt;-&gt; (prev((latchedCauseMask = 2 OR latchedCauseMask = 3 OR latchedCauseMask = 6 OR latchedCauseMask = 7 OR latchedCauseMask = 10 OR latchedCauseMask = 11 OR latchedCauseMask = 14 OR latchedCauseMask = 15)) OR (currentCauseMask = 2 OR currentCauseMask = 3 OR currentCauseMask = 6 OR currentCauseMask = 7 OR currentCauseMask = 10 OR currentCauseMask = 11 OR currentCauseMask = 14 OR currentCauseMask = 15))) AND ((latchedCauseMask = 4 OR latchedCauseMask = 5 OR latchedCauseMask = 6 OR latchedCauseMask = 7 OR latchedCauseMask = 12 OR latchedCauseMask = 13 OR latchedCauseMask = 14 OR latchedCauseMask = 15) &lt;-&gt; (prev((latchedCauseMask = 4 OR latchedCauseMask = 5 OR latchedCauseMask = 6 OR latchedCauseMask = 7 OR latchedCauseMask = 12 OR latchedCauseMask = 13 OR latchedCauseMask = 14 OR latchedCauseMask = 15)) OR (currentCauseMask = 4 OR currentCauseMask = 5 OR currentCauseMask = 6 OR currentCauseMask = 7 OR currentCauseMask = 12 OR currentCauseMask = 13 OR currentCauseMask = 14 OR currentCauseMask = 15))) AND ((latchedCauseMask = 8 OR latchedCauseMask = 9 OR latchedCauseMask = 10 OR latchedCauseMask = 11 OR latchedCauseMask = 12 OR latchedCauseMask = 13 OR latchedCauseMask = 14 OR latchedCauseMask = 15) &lt;-&gt; (prev((latchedCauseMask = 8 OR latchedCauseMask = 9 OR latchedCauseMask = 10 OR latchedCauseMask = 11 OR latchedCauseMask = 12 OR latchedCauseMask = 13 OR latchedCauseMask = 14 OR latchedCauseMask = 15)) OR (currentCauseMask = 8 OR currentCauseMask = 9 OR currentCauseMask = 10 OR currentCauseMask = 11 OR currentCauseMask = 12 OR currentCauseMask = 13 OR currentCauseMask = 14 OR currentCauseMask = 15))))))</td></tr><tr><td class=num>S14</td><td>data</td><td>线索位含义、卡滞连续 3 拍判据（中断/压力回落/失效/停机均清零）、足迹累积与复位清零的完整行为。</td><td class=num>&lt;i&gt;（无 LTL，由仿真用例覆盖）&lt;/i&gt;</td></tr></table>
+</section>
+<section id="self-hard-07"><h2>self-hard-07 · 串级 PI 温控回路的手/自动无扰切换（bumpless transfer）</h2>
+<h3>修订题面</h3><pre>写一个功能块 FB，实现**串级 PI 控制回路**的手/自动无扰切换。
+1. 串级结构：外环以温度偏差驱动流量设定，内环以流量偏差驱动阀门开度；
+2. 模式：0=手动（操作员直接给定流量设定与阀门开度，两者都跟随手动值）；1=自动（手动给定流量设定 manualFlowSP，内环 PI 自动算阀门）；2=串级（温度环 PI 算流量设定，流量环 PI 算阀门）；
+3. 每个扫描周期只执行一次，dt 为本次周期时长（秒）；控制器系数按**秒**计算：外环 KiT=0.2/s、内环 KiF=0.5/s；温度偏差 eT=tempSP-tempPV（℃），流量偏差 eF=flowSP-flowPV（t/h），阀门开度单位 %，因此积分项 accT 的单位是t/h、accF 的单位是 %，增益 1.0 与 2.0 分别对应 ℃→t/h 与 t/h→% 的折算：
+   外环 trial = accT + 0.2*eT*dt；flowSP = 1.0*eT + trial；限幅 0..50（t/h）；accT = flowSP - 1.0*eT；
+   内环 trial = accF + 0.5*eF*dt；valveCommand = 2.0*eF + trial；限幅 0..100（%）；accF = valveCommand - 2.0*eF；
+   抗积分饱和用**回算**：acc 取限幅后的实际输出反算，因此限幅期间积分不会越积越多、解除饱和后立即恢复；
+4. 无扰切换（bumpless）：任何模式切换都在**切换当拍**预置积分器，把 accT/accF 反算成“上一拍输出值”。切换当拍对两个输出分别要求：
+   - valveCommand **必须保持**上一拍值（最终执行机构是调节阀，阀位跳变就是工艺扰动，这是硬指标）；
+   - flowSP 是**内部设定值**、不是执行机构指令：切到自动/手动（mode 0/1）  时 flowSP 取 manualFlowSP（跟手操给定），切到串级（mode 2）时保持上一拍值；   两种情况下它都与上一拍可能不同，这是预置型切换的正常结果，不算扰动；
+   只有自动/串级**正常运算**的周期才允许阀位变化；
+   本拍 normalMode 必须为 FALSE（切换拍不按正常运算处理）；
+5. 复位 resetBtn 上升沿：整个回路回到初值——预置积分器、输出跟手动值、当拍不运算；按住不放不重复动作；
+6. 故障安全：mode 不在 0/1/2，或 dt&lt;=0.0（时标丢失），或 dt&gt;10.0（超过 10 s 的扫描周期视为时基异常）→ fault 置位，输出**立即**跟手动值、不积分，并预置积分器；故障期间允许阀位跳变（安全优先，与“无扰切换”区分）；
+7. 复位/故障优先于正常运算：同一拍既有复位上升沿又有故障时，按复位处理（两者输出相同，均跟手动值）；
+8. normalMode 表示“本拍处于正常运算”，即既不在复位拍也不在故障、也不在模式切换/首次执行拍；
+9. 模式可以任意跳转（不要求 0→1→2 依次投入；直接 0→2 合法）；但工程上一般建议先投入内环（1）再投入外环（2），这样温度环 PI 的积分器在切换时已有较接近的初值、可减少切换瞬态——这是操作建议，不是本块强制的算法约束。
+扫描周期与单位约定：dt 由调用方每周期给出（秒）；模块内部不做时基换算，因此同一份参数在 dt=0.1 s 或 1 s 的扫描下控制效果不同——这是本算例的简化；实际工程应把 Ki 换成“每周期”形式或显式按扫描周期折算。</pre>
+<h3>原始接口</h3><table><tr><th>变量名</th><th>类型</th><th>方向</th><th>说明</th></tr><tr><td class=num>mode</td><td class=num>INT</td><td>input</td><td>0=手动 1=自动 2=串级（其它值为故障回退）</td></tr><tr><td class=num>resetBtn</td><td class=num>BOOL</td><td>input</td><td>复位（上升沿回到初值）</td></tr><tr><td class=num>dt</td><td class=num>REAL</td><td>input</td><td>本次扫描周期（秒）</td></tr><tr><td class=num>tempSP</td><td class=num>REAL</td><td>input</td><td>温度设定值（℃）</td></tr><tr><td class=num>tempPV</td><td class=num>REAL</td><td>input</td><td>温度测量值（℃）</td></tr><tr><td class=num>flowPV</td><td class=num>REAL</td><td>input</td><td>流量测量值（t/h）</td></tr><tr><td class=num>manualFlowSP</td><td class=num>REAL</td><td>input</td><td>手动流量设定值（t/h）</td></tr><tr><td class=num>manualValve</td><td class=num>REAL</td><td>input</td><td>手动阀门开度取值（%）</td></tr><tr><td class=num>flowSP</td><td class=num>REAL</td><td>output</td><td>流量设定值输出（t/h，限幅 0..50）</td></tr><tr><td class=num>valveCommand</td><td class=num>REAL</td><td>output</td><td>阀门开度指令（%，限幅 0..100）</td></tr><tr><td class=num>fault</td><td class=num>BOOL</td><td>output</td><td>故障（模式越界或 dt 越界）</td></tr><tr><td class=num>normalMode</td><td class=num>BOOL</td><td>output</td><td>本拍处于正常运算（非复位/故障/切换/首次拍）</td></tr></table>
+<h3>平台适配后参考 ST</h3><pre>FUNCTION_BLOCK FB
+VAR_INPUT
+ mode : INT;
+ resetBtn : BOOL;
+ dt : REAL;
+ tempSP : REAL;
+ tempPV : REAL;
+ flowPV : REAL;
+ manualFlowSP : REAL;
+ manualValve : REAL;
+END_VAR
+VAR_OUTPUT
+ flowSP : REAL;
+ valveCommand : REAL;
+ fault : BOOL;
+ normalMode : BOOL;
+END_VAR
+VAR
+ prevReset : BOOL;
+ initDone : BOOL;
+ lastMode : INT;
+ accT : REAL;
+ accF : REAL;
+ oFlow : REAL;
+ oValve : REAL;
+ eTemp : REAL;
+ eFlow : REAL;
+ trial : REAL;
+ normalMem : BOOL;
+END_VAR
+fault := (mode &lt; 0) OR (mode &gt; 2) OR (dt &lt;= 0.0) OR (dt &gt; 10.0);
+normalMem := FALSE;
+IF (NOT initDone) OR (resetBtn AND NOT prevReset) OR fault THEN
+ oFlow := manualFlowSP;
+ oValve := manualValve;
+ accT := oFlow - 1.0 * (tempSP - tempPV);
+ accF := oValve - 2.0 * (oFlow - flowPV);
+ lastMode := mode;
+ initDone := TRUE;
+ELSIF lastMode &lt;&gt; mode THEN
+ IF mode &lt;&gt; 2 THEN
+  oFlow := manualFlowSP;
+ END_IF;
+ accT := oFlow - 1.0 * (tempSP - tempPV);
+ accF := oValve - 2.0 * (oFlow - flowPV);
+ lastMode := mode;
+ELSE
+ normalMem := TRUE;
+ IF mode = 0 THEN
+  oFlow := manualFlowSP;
+  oValve := manualValve;
+  accT := oFlow - 1.0 * (tempSP - tempPV);
+  accF := oValve - 2.0 * (oFlow - flowPV);
+ ELSIF mode = 1 THEN
+  oFlow := manualFlowSP;
+  accT := oFlow - 1.0 * (tempSP - tempPV);
+  eFlow := oFlow - flowPV;
+  trial := accF + 0.5 * eFlow * dt;
+  oValve := 2.0 * eFlow + trial;
+  IF oValve &gt; 100.0 THEN oValve := 100.0; END_IF;
+  IF oValve &lt; 0.0 THEN oValve := 0.0; END_IF;
+  accF := oValve - 2.0 * eFlow;
+ ELSE
+  eTemp := tempSP - tempPV;
+  trial := accT + 0.2 * eTemp * dt;
+  oFlow := 1.0 * eTemp + trial;
+  IF oFlow &gt; 50.0 THEN oFlow := 50.0; END_IF;
+  IF oFlow &lt; 0.0 THEN oFlow := 0.0; END_IF;
+  accT := oFlow - 1.0 * eTemp;
+  eFlow := oFlow - flowPV;
+  trial := accF + 0.5 * eFlow * dt;
+  oValve := 2.0 * eFlow + trial;
+  IF oValve &gt; 100.0 THEN oValve := 100.0; END_IF;
+  IF oValve &lt; 0.0 THEN oValve := 0.0; END_IF;
+  accF := oValve - 2.0 * eFlow;
+ END_IF;
+END_IF;
+prevReset := resetBtn;
+flowSP := oFlow;
+valveCommand := oValve;
+normalMode := normalMem;
+END_FUNCTION_BLOCK
+</pre>
+<h3>全部用例</h3><p>共 40 条；case_mode = sequence</p><table><tr><th>周期</th><th>输入</th><th>预期输出</th><th>覆盖内容</th></tr><tr><td class=num>q1</td><td class=num>mode=-1 dt=1 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=5 manualValve=20 resetBtn=F</td><td class=num>flowSP=5 valveCommand=20 fault=T normalMode=F</td><td>首次执行即 mode=-1：故障回退跟手操，accT=5-(100-98)=3、accF=20-2*(5-20)=50</td></tr><tr><td class=num>q2</td><td class=num>mode=0 dt=1 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=5 manualValve=20 resetBtn=F</td><td class=num>flowSP=5 valveCommand=20 fault=F normalMode=F</td><td>mode 由 -1 切到 0：切换当拍预置积分器、输出保持手动值，不运算</td></tr><tr><td class=num>q3</td><td class=num>mode=0 dt=1 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=5 manualValve=35 resetBtn=F</td><td class=num>flowSP=5 valveCommand=35 fault=F normalMode=T</td><td>手动正常运算：flowSP 跟 manualFlowSP=5、valveCommand 跟 manualValve=35</td></tr><tr><td class=num>q4</td><td class=num>mode=1 dt=1 tempSP=100 tempPV=98 flowPV=10 manualFlowSP=5 manualValve=35 resetBtn=F</td><td class=num>flowSP=5 valveCommand=35 fault=F normalMode=F</td><td>切到自动：当拍预置 accF=35-2*(5-10)=45，输出仍保持 35</td></tr><tr><td class=num>q5</td><td class=num>mode=1 dt=1 tempSP=100 tempPV=98 flowPV=10 manualFlowSP=5 manualValve=35 resetBtn=F</td><td class=num>flowSP=5 valveCommand=32.5 fault=F normalMode=T</td><td>自动正常运算：eF=5-10=-5，trial=45-2.5=42.5，valve=2*(-5)+42.5=32.5，accF=32.5+10=42.5</td></tr><tr><td class=num>q6</td><td class=num>mode=1 dt=1 tempSP=100 tempPV=98 flowPV=10 manualFlowSP=5 manualValve=35 resetBtn=F</td><td class=num>flowSP=5 valveCommand=30 fault=F normalMode=T</td><td>自动第 2 拍：trial=42.5-2.5=40，valve=-10+40=30，accF=40</td></tr><tr><td class=num>q7</td><td class=num>mode=1 dt=1 tempSP=100 tempPV=98 flowPV=10 manualFlowSP=10 manualValve=35 resetBtn=F</td><td class=num>flowSP=10 valveCommand=40 fault=F normalMode=T</td><td>自动模式下 manualFlowSP 改成 10：flowSP 立即跟 10；流量偏差由 -5 变为 0，比例项变化，阀位 30%→40%</td></tr><tr><td class=num>q8</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=10 manualFlowSP=10 manualValve=35 resetBtn=F</td><td class=num>flowSP=10 valveCommand=40 fault=F normalMode=F</td><td>切到串级：当拍不运算，flowSP/valveCommand 均保持上一拍（10/40）</td></tr><tr><td class=num>q9</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=10 manualFlowSP=10 manualValve=35 resetBtn=F</td><td class=num>flowSP=10.4 valveCommand=41 fault=F normalMode=T</td><td>串级正常运算：eT=2，外环 trial=8+0.4=8.4，flowSP=2+8.4=10.4；eF=0.4，内环 trial=40+0.2=40.2，valve=0.8+40.2=41</td></tr><tr><td class=num>q10</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=10 manualFlowSP=10 manualValve=35 resetBtn=F</td><td class=num>flowSP=10.8 valveCommand=42.2 fault=F normalMode=T</td><td>串级第 2 拍：外环 accT=8.4 → trial 8.8 → flowSP 10.8；内环 valve 42.2</td></tr><tr><td class=num>q11</td><td class=num>mode=1 dt=1 tempSP=100 tempPV=98 flowPV=10 manualFlowSP=10 manualValve=35 resetBtn=F</td><td class=num>flowSP=10 valveCommand=42.2 fault=F normalMode=F</td><td>串级切回自动：flowSP 跟 manualFlowSP=10，valveCommand 保持 42.2</td></tr><tr><td class=num>q12</td><td class=num>mode=1 dt=1 tempSP=100 tempPV=98 flowPV=10 manualFlowSP=10 manualValve=35 resetBtn=F</td><td class=num>flowSP=10 valveCommand=42.2 fault=F normalMode=T</td><td>自动正常运算：eF=0，valve 保持 42.2</td></tr><tr><td class=num>q13</td><td class=num>mode=3 dt=1 tempSP=100 tempPV=98 flowPV=10 manualFlowSP=10 manualValve=99 resetBtn=F</td><td class=num>flowSP=10 valveCommand=99 fault=T normalMode=F</td><td>mode=3 越界 → 故障回退：输出立即跟手操（允许阀位跳变）</td></tr><tr><td class=num>q14</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=10 manualFlowSP=10 manualValve=99 resetBtn=F</td><td class=num>flowSP=10 valveCommand=99 fault=F normalMode=F</td><td>故障恢复后切到串级：当拍预置积分器、输出保持 99</td></tr><tr><td class=num>q15</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=10 manualFlowSP=10 manualValve=99 resetBtn=F</td><td class=num>flowSP=10.4 valveCommand=100 fault=F normalMode=T</td><td>串级正常运算：内环输出 100.8 被上限 100 截断（accF 回算 99.2）</td></tr><tr><td class=num>q16</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=10 manualValve=99 resetBtn=F</td><td class=num>flowSP=10.8 valveCommand=76.2 fault=F normalMode=T</td><td>flowPV 升到 20：eF=-9.2，valve 从饱和 100 立刻回到 76.2（回算未积压）</td></tr><tr><td class=num>q17</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=40 manualFlowSP=10 manualValve=99 resetBtn=F</td><td class=num>flowSP=11.2 valveCommand=22.6 fault=F normalMode=T</td><td>flowPV=40：eF=-28.8，valve 22.6</td></tr><tr><td class=num>q18</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=40 manualFlowSP=10 manualValve=99 resetBtn=F</td><td class=num>flowSP=11.6 valveCommand=9.2 fault=F normalMode=T</td><td>串级继续：valve 9.2</td></tr><tr><td class=num>q19</td><td class=num>mode=0 dt=1 tempSP=100 tempPV=98 flowPV=40 manualFlowSP=10 manualValve=99 resetBtn=F</td><td class=num>flowSP=10 valveCommand=9.2 fault=F normalMode=F</td><td>串级→手动（连续切换第 1 拍）：flowSP 跟手操 10，valve 保持 9.2</td></tr><tr><td class=num>q20</td><td class=num>mode=1 dt=1 tempSP=100 tempPV=98 flowPV=40 manualFlowSP=10 manualValve=99 resetBtn=F</td><td class=num>flowSP=10 valveCommand=9.2 fault=F normalMode=F</td><td>手→自动（连续切换第 2 拍）：当拍仍不运算，输出保持</td></tr><tr><td class=num>q21</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=40 manualFlowSP=30 manualValve=99 resetBtn=F</td><td class=num>flowSP=10 valveCommand=9.2 fault=F normalMode=F</td><td>自动→串级（连续切换第 3 拍）：manualFlowSP=30 也不得被采用，flowSP 保持上一拍 10.0</td></tr><tr><td class=num>q22</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=40 manualFlowSP=10 manualValve=99 resetBtn=F</td><td class=num>flowSP=10.4 valveCommand=0 fault=F normalMode=T</td><td>串级正常运算：eF=-29.6，valve 算出 -4.8 被下限 0 截断</td></tr><tr><td class=num>q23</td><td class=num>mode=1 dt=1 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=10 manualValve=50 resetBtn=T</td><td class=num>flowSP=10 valveCommand=50 fault=F normalMode=F</td><td>复位上升沿：回初值（跟 manualFlowSP=10 / manualValve=50），当拍不运算</td></tr><tr><td class=num>q24</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=10 manualValve=50 resetBtn=T</td><td class=num>flowSP=10 valveCommand=50 fault=F normalMode=F</td><td>复位按住不放 + 切模式：没有新上升沿不再复位，按切换处理，输出保持</td></tr><tr><td class=num>q25</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=10 manualValve=50 resetBtn=F</td><td class=num>flowSP=10.4 valveCommand=46 fault=F normalMode=T</td><td>松开复位后串级正常运算：valve 46</td></tr><tr><td class=num>q26</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=10 manualValve=20 resetBtn=T</td><td class=num>flowSP=10 valveCommand=20 fault=F normalMode=F</td><td>复位后松手再按：重新出现上升沿 → 再次回初值</td></tr><tr><td class=num>q27</td><td class=num>mode=2 dt=10 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=10 manualValve=20 resetBtn=T</td><td class=num>flowSP=14 valveCommand=0 fault=F normalMode=T</td><td>复位按住 + dt=10.0（允许上限）：不重复复位，按串级运算，外环 8+0.2*2*10=12 → flowSP 14；内环 eF=-6 → valve 10-12=-2 截断 0</td></tr><tr><td class=num>q28</td><td class=num>mode=2 dt=10.1 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=10 manualValve=20 resetBtn=F</td><td class=num>flowSP=10 valveCommand=20 fault=T normalMode=F</td><td>dt=10.1 &gt; 10.0 → 时基异常故障：跟手操</td></tr><tr><td class=num>q29</td><td class=num>mode=2 dt=0 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=10 manualValve=20 resetBtn=F</td><td class=num>flowSP=10 valveCommand=20 fault=T normalMode=F</td><td>dt=0 → 故障</td></tr><tr><td class=num>q30</td><td class=num>mode=2 dt=-1 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=10 manualValve=20 resetBtn=F</td><td class=num>flowSP=10 valveCommand=20 fault=T normalMode=F</td><td>dt=-1 → 故障（负时标不允许）</td></tr><tr><td class=num>q31</td><td class=num>mode=1 dt=1 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=10 manualValve=20 resetBtn=F</td><td class=num>flowSP=10 valveCommand=20 fault=F normalMode=F</td><td>故障消失后切到自动：当拍预置积分器、输出保持</td></tr><tr><td class=num>q32</td><td class=num>mode=1 dt=1 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=10 manualValve=20 resetBtn=F</td><td class=num>flowSP=10 valveCommand=15 fault=F normalMode=T</td><td>自动正常运算：eF=-10，trial=40-5=35，valve=-20+35=15</td></tr><tr><td class=num>q33</td><td class=num>mode=1 dt=1 tempSP=100 tempPV=98 flowPV=20 manualFlowSP=10 manualValve=20 resetBtn=F</td><td class=num>flowSP=10 valveCommand=10 fault=F normalMode=T</td><td>自动第 2 拍：valve 10</td></tr><tr><td class=num>q34</td><td class=num>mode=1 dt=1 tempSP=100 tempPV=98 flowPV=0 manualFlowSP=10 manualValve=20 resetBtn=F</td><td class=num>flowSP=10 valveCommand=55 fault=F normalMode=T</td><td>flowPV=0：eF=10，trial=30+5=35，valve=20+35=55</td></tr><tr><td class=num>q35</td><td class=num>mode=1 dt=1 tempSP=100 tempPV=98 flowPV=0 manualFlowSP=10 manualValve=20 resetBtn=F</td><td class=num>flowSP=10 valveCommand=60 fault=F normalMode=T</td><td>自动第 2 拍：valve 60</td></tr><tr><td class=num>q36</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=98 flowPV=0 manualFlowSP=10 manualValve=20 resetBtn=F</td><td class=num>flowSP=10 valveCommand=60 fault=F normalMode=F</td><td>切到串级：valve 保持 60，积分器按当前偏差重算</td></tr><tr><td class=num>q37</td><td class=num>mode=2 dt=1 tempSP=30 tempPV=100 flowPV=10 manualFlowSP=10 manualValve=20 resetBtn=F</td><td class=num>flowSP=0 valveCommand=15 fault=F normalMode=T</td><td>外环下限：eT=-70，trial=8-14=-6，flowSP=-76 截断 0（accT 回算 70）</td></tr><tr><td class=num>q38</td><td class=num>mode=2 dt=1 tempSP=30 tempPV=100 flowPV=10 manualFlowSP=10 manualValve=20 resetBtn=F</td><td class=num>flowSP=0 valveCommand=10 fault=F normalMode=T</td><td>继续：valve 10</td></tr><tr><td class=num>q39</td><td class=num>mode=2 dt=1 tempSP=400 tempPV=100 flowPV=10 manualFlowSP=10 manualValve=20 resetBtn=F</td><td class=num>flowSP=50 valveCommand=100 fault=F normalMode=T</td><td>外环上限：eT=300，flowSP 430 截断 50；内环 eF=40 → valve 130 截断 100</td></tr><tr><td class=num>q40</td><td class=num>mode=2 dt=1 tempSP=100 tempPV=80 flowPV=10 manualFlowSP=10 manualValve=20 resetBtn=F</td><td class=num>flowSP=0 valveCommand=0 fault=F normalMode=T</td><td>上下限解除：外环 8→accT=-20，flowSP 截断 0；内环 accF=20，valve 截断 0</td></tr></table>
+<h3>运行期性质</h3><table><tr><th>编号</th><th>类别</th><th>性质</th><th>LTL</th></tr><tr><td class=num>S1</td><td>safety</td><td>流量设定值始终在 0..50 t/h 之间。</td><td class=num>G((flowSP &gt;= 0.0) &amp; (flowSP &lt;= 50.0))</td></tr><tr><td class=num>S2</td><td>safety</td><td>阀门指令始终在 0..100 % 之间。</td><td class=num>G((valveCommand &gt;= 0.0) &amp; (valveCommand &lt;= 100.0))</td></tr><tr><td class=num>S3</td><td>safety</td><td>故障周期必须立即回退到手动：跟手操值且本拍非正常运算。</td><td class=num>G(fault -&gt; ((flowSP = manualFlowSP) &amp; (valveCommand = manualValve) &amp; !normalMode))</td></tr><tr><td class=num>S4</td><td>safety</td><td>复位上升沿必须让回路回到初值：跟手操值且本拍非正常运算。</td><td class=num>G(rising(resetBtn) -&gt; ((flowSP = manualFlowSP) &amp; (valveCommand = manualValve) &amp; !normalMode))</td></tr><tr><td class=num>S5</td><td>safety</td><td>手动正常运算周期两个输出分别跟随手动给定。</td><td class=num>G((normalMode &amp; (mode = 0)) -&gt; ((flowSP = manualFlowSP) &amp; (valveCommand = manualValve)))</td></tr><tr><td class=num>S6</td><td>safety</td><td>自动正常运算周期流量设定跟随 manualFlowSP。</td><td class=num>G((normalMode &amp; (mode = 1)) -&gt; (flowSP = manualFlowSP))</td></tr><tr><td class=num>S7</td><td>sequencing</td><td>非首次、无复位/故障的模式切换到自动或手动：流量跟手操、阀位保持，且本拍不正常运算；含连续切换。</td><td class=num>G(((prev(TRUE) AND mode &lt;&gt; prev(mode) AND NOT fault AND NOT (resetBtn AND NOT prev(resetBtn))) AND mode &lt;&gt; 2) -&gt; (flowSP = manualFlowSP AND valveCommand = prev(valveCommand) AND NOT normalMode))</td></tr><tr><td class=num>S8</td><td>sequencing</td><td>非首次、无复位/故障的模式切换到串级：两个输出都保持上一拍且本拍不正常运算；不依赖上一拍 normalMode。</td><td class=num>G(((prev(TRUE) AND mode &lt;&gt; prev(mode) AND NOT fault AND NOT (resetBtn AND NOT prev(resetBtn))) AND mode = 2) -&gt; (flowSP = prev(flowSP) AND valveCommand = prev(valveCommand) AND NOT normalMode))</td></tr><tr><td class=num>S9</td><td>data</td><td>串级/自动 PI 的积分预置、抗积分饱和回算、dt 校验与手动保持的完整行为。</td><td class=num>&lt;i&gt;（无 LTL，由仿真用例覆盖）&lt;/i&gt;</td></tr></table>
+</section>
+<section id="self-medium-05"><h2>self-medium-05 · 合格蒸汽产量与净收益累计（闭区间判定 + 数据故障冻结）</h2>
+<h3>修订题面</h3><pre>写一个功能块 FB，按扫描周期累计锅炉的合格蒸汽产量、燃料消耗与净收益。
+控制要求：
+1. 合格判据：steamTemp 在 [447.0, 453.0] 且 steamPressure 在 [3750.0, 3850.0]（**闭区间**，端点合格；温度高于 453、压力低于 3750 或高于 3850 都判不合格）；
+2. 本周期合格且 enable=TRUE 且无数据故障时，qualifiedTon += steamFlow * dt / 1000.0（流量按 kg/s、周期按 s 计，kg/s × s ÷ 1000 = t）；无论是否合格，只要 enable 且无故障，fuelTon += fuelFlow * dt / 1000.0；
+3. 数据故障判据：dt &lt;= 0.0 或 dt &gt; 10.0（含恰好 10.0 合法、10.0 以上非法）或 steamFlow 不在 [0,90] 或 fuelFlow 不在 [0,6]（负流量同样判故障）；故障拍**不累计**，累计值保持不变；
+4. resetBtn 上升沿：两个累计量清零，且**当拍不再累计**。复位是边沿命令、不是保持命令：按住的时长不影响判定，每拍只认有没有新的上升沿。**复位优先于故障冻结**：同一拍同时出现复位上升沿与数据故障时，先执行清零，清零结果生效（故障位仍如实报出，但累计量不得停留在旧值）；
+5. revenue = qualifiedTon * 280.0，cost = fuelTon * 1500.0，netProfit = revenue - cost，三者每拍都要更新（即使不累计）。单价单位：蒸汽 280 元/t，燃料 1500 元/t，配 kg 换算后金额单位为元；
+6. qualifiedTon、fuelTon、revenue、cost 必须非负；netProfit **允许为负**（烧燃料不产汽时会亏损）。enable=FALSE 时只更新 qualified/dataFault 两个判定位，不改累计量。</pre>
+<h3>原始接口</h3><table><tr><th>变量名</th><th>类型</th><th>方向</th><th>说明</th></tr><tr><td class=num>enable</td><td class=num>BOOL</td><td>input</td><td>计量使能</td></tr><tr><td class=num>resetBtn</td><td class=num>BOOL</td><td>input</td><td>清零按钮（上升沿有效）</td></tr><tr><td class=num>dt</td><td class=num>LREAL</td><td>input</td><td>本周期时长（s），合法 0 &lt; dt &lt;= 10</td></tr><tr><td class=num>steamFlow</td><td class=num>LREAL</td><td>input</td><td>蒸汽流量（kg/s），合法 0..90</td></tr><tr><td class=num>fuelFlow</td><td class=num>LREAL</td><td>input</td><td>燃料流量（kg/s），合法 0..6</td></tr><tr><td class=num>steamTemp</td><td class=num>LREAL</td><td>input</td><td>蒸汽温度（℃）</td></tr><tr><td class=num>steamPressure</td><td class=num>LREAL</td><td>input</td><td>蒸汽压力（kPa）</td></tr><tr><td class=num>qualified</td><td class=num>BOOL</td><td>output</td><td>本周期蒸汽是否合格</td></tr><tr><td class=num>dataFault</td><td class=num>BOOL</td><td>output</td><td>数据故障（参数越界）</td></tr><tr><td class=num>qualifiedTon</td><td class=num>LREAL</td><td>output</td><td>累计合格蒸汽产量（t）</td></tr><tr><td class=num>fuelTon</td><td class=num>LREAL</td><td>output</td><td>累计燃料消耗（t）</td></tr><tr><td class=num>revenue</td><td class=num>LREAL</td><td>output</td><td>累计收入（元）</td></tr><tr><td class=num>cost</td><td class=num>LREAL</td><td>output</td><td>累计成本（元）</td></tr><tr><td class=num>netProfit</td><td class=num>LREAL</td><td>output</td><td>累计净收益（元）</td></tr></table>
+<h3>平台适配后参考 ST</h3><pre>FUNCTION_BLOCK FB
+VAR_INPUT
+ enable : BOOL;
+ resetBtn : BOOL;
+ dt : LREAL;
+ steamFlow : LREAL;
+ fuelFlow : LREAL;
+ steamTemp : LREAL;
+ steamPressure : LREAL;
+END_VAR
+VAR_OUTPUT
+ qualified : BOOL;
+ dataFault : BOOL;
+ qualifiedTon : LREAL;
+ fuelTon : LREAL;
+ revenue : LREAL;
+ cost : LREAL;
+ netProfit : LREAL;
+END_VAR
+VAR
+ prevReset : BOOL;
+ qTon : LREAL;
+ fTon : LREAL;
+END_VAR
+qualified := (steamTemp &gt;= 447.0) AND (steamTemp &lt;= 453.0)
+ AND (steamPressure &gt;= 3750.0) AND (steamPressure &lt;= 3850.0);
+dataFault := (dt &lt;= 0.0) OR (dt &gt; 10.0)
+ OR (steamFlow &lt; 0.0) OR (steamFlow &gt; 90.0)
+ OR (fuelFlow &lt; 0.0) OR (fuelFlow &gt; 6.0);
+IF resetBtn AND NOT prevReset THEN
+ qTon := 0.0;
+ fTon := 0.0;
+ELSIF enable AND NOT dataFault THEN
+ fTon := fTon + fuelFlow * dt / 1000.0;
+ IF qualified THEN
+  qTon := qTon + steamFlow * dt / 1000.0;
+ END_IF;
+END_IF;
+prevReset := resetBtn;
+qualifiedTon := qTon;
+fuelTon := fTon;
+revenue := qTon * 280.0;
+cost := fTon * 1500.0;
+netProfit := revenue - cost;
+END_FUNCTION_BLOCK
+</pre>
+<h3>全部用例</h3><p>共 25 条；case_mode = sequence</p><table><tr><th>周期</th><th>输入</th><th>预期输出</th><th>覆盖内容</th></tr><tr><td class=num>q1</td><td class=num>enable=T resetBtn=F dt=1 steamFlow=20 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>qualified=T dataFault=F qualifiedTon=0.02 fuelTon=0.001 revenue=5.6 cost=1.5 netProfit=4.1</td><td>正常：q=20*1/1000=0.02t，f=1*1/1000=0.001t</td></tr><tr><td class=num>q2</td><td class=num>enable=T resetBtn=F dt=2 steamFlow=20 fuelFlow=1 steamTemp=446 steamPressure=3800</td><td class=num>qualified=F dataFault=F qualifiedTon=0.02 fuelTon=0.003 revenue=5.6 cost=4.5 netProfit=1.1</td><td>温度 446 不合格：只累计燃料，不累计产量</td></tr><tr><td class=num>q3</td><td class=num>enable=T resetBtn=F dt=1 steamFlow=20 fuelFlow=1 steamTemp=447 steamPressure=3750</td><td class=num>qualified=T qualifiedTon=0.04 fuelTon=0.004 revenue=11.2 cost=6 netProfit=5.2</td><td>【边界】447.0 与 3750.0 恰好合格（闭区间）</td></tr><tr><td class=num>q4</td><td class=num>enable=T resetBtn=F dt=0 steamFlow=20 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>dataFault=T qualifiedTon=0.04 fuelTon=0.004 netProfit=5.2</td><td>【边界】dt=0 判数据故障：本拍不累计；质量换算除的是固定 1000，这里不存在除零风险，dt=0 的意义是“程序周期数据无效”，不是除零</td></tr><tr><td class=num>q5</td><td class=num>enable=T resetBtn=T dt=1 steamFlow=20 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>qualifiedTon=0 fuelTon=0 revenue=0 cost=0 netProfit=0</td><td>复位上升沿：累计量清零，当拍不累计</td></tr><tr><td class=num>q6</td><td class=num>enable=T resetBtn=F dt=1 steamFlow=0 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>qualifiedTon=0 fuelTon=0.001 revenue=0 cost=1.5 netProfit=-1.5</td><td>只烧燃料不产汽：净收益为负，累计燃料照记</td></tr><tr><td class=num>q7</td><td class=num>enable=T resetBtn=F dt=11 steamFlow=20 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>dataFault=T qualified=T qualifiedTon=0 fuelTon=0.001 revenue=0 cost=1.5 netProfit=-1.5</td><td>【边界】dt=11 超上限 → 故障：本拍不累计，但判定位照常更新，累计燃料保持</td></tr><tr><td class=num>q8</td><td class=num>enable=T resetBtn=F dt=1 steamFlow=91 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>dataFault=T fuelTon=0.001 qualifiedTon=0</td><td>【边界】蒸汽流量 91 超量程 → 故障</td></tr><tr><td class=num>q9</td><td class=num>enable=T resetBtn=F dt=2 steamFlow=90 fuelFlow=6 steamTemp=453 steamPressure=3850</td><td class=num>qualified=T dataFault=F qualifiedTon=0.18 fuelTon=0.013 revenue=50.4 cost=19.5 netProfit=30.9</td><td>【边界】四个量全部取合法上界：90*2/1000=0.18t，6*2/1000=0.012t</td></tr><tr><td class=num>q10</td><td class=num>enable=F resetBtn=F dt=1 steamFlow=50 fuelFlow=2 steamTemp=451 steamPressure=3800</td><td class=num>qualified=T qualifiedTon=0.18 fuelTon=0.013 netProfit=30.9</td><td>enable=FALSE：只更新判定位，累计量保持（不得静默累加）</td></tr><tr><td class=num>q11</td><td class=num>enable=T resetBtn=F dt=1 steamFlow=50 fuelFlow=6.1 steamTemp=451 steamPressure=3800</td><td class=num>dataFault=T qualified=T qualifiedTon=0.18 fuelTon=0.013 revenue=50.4 cost=19.5 netProfit=30.9</td><td>【边界】燃料 6.1 超量程 → 故障：本拍不累计，累计量全部保持上拍值</td></tr><tr><td class=num>q12</td><td class=num>enable=T resetBtn=F dt=1 steamFlow=20 fuelFlow=1 steamTemp=454 steamPressure=3700</td><td class=num>qualified=F dataFault=F qualifiedTon=0.18 fuelTon=0.014 revenue=50.4 cost=21 netProfit=29.4</td><td>温度 454 高于上限 → 不合格：仍累计燃料、不累计产量</td></tr><tr><td class=num>q13</td><td class=num>enable=T resetBtn=F dt=1 steamFlow=20 fuelFlow=1 steamTemp=450 steamPressure=3851</td><td class=num>qualified=F qualifiedTon=0.18 fuelTon=0.015 revenue=50.4 cost=22.5 netProfit=27.9</td><td>【边界】压力 3851 高于上限 → 不合格</td></tr><tr><td class=num>q14</td><td class=num>enable=T resetBtn=F dt=1 steamFlow=20 fuelFlow=1 steamTemp=450 steamPressure=3749</td><td class=num>qualified=F qualifiedTon=0.18 fuelTon=0.016 revenue=50.4 cost=24 netProfit=26.4</td><td>【边界】压力 3749 低于下限 → 不合格</td></tr><tr><td class=num>q15</td><td class=num>enable=T resetBtn=F dt=1 steamFlow=-1 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>qualified=T dataFault=T qualifiedTon=0.18 fuelTon=0.016 revenue=50.4 cost=24 netProfit=26.4</td><td>负蒸汽流量 → 数据故障：本拍冻结，累计量保持</td></tr><tr><td class=num>q16</td><td class=num>enable=T resetBtn=F dt=1 steamFlow=20 fuelFlow=-0.5 steamTemp=450 steamPressure=3800</td><td class=num>dataFault=T qualifiedTon=0.18 fuelTon=0.016 netProfit=26.4</td><td>负燃料流量 → 数据故障：冻结</td></tr><tr><td class=num>q17</td><td class=num>enable=T resetBtn=F dt=-1 steamFlow=20 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>dataFault=T qualifiedTon=0.18 fuelTon=0.016 netProfit=26.4</td><td>负扫描周期 → 数据故障：冻结（不得出现负增量）</td></tr><tr><td class=num>q18</td><td class=num>enable=T resetBtn=F dt=10 steamFlow=10 fuelFlow=0.5 steamTemp=450 steamPressure=3800</td><td class=num>qualified=T dataFault=F qualifiedTon=0.28 fuelTon=0.021 revenue=78.4 cost=31.5 netProfit=46.9</td><td>【边界】dt 恰好 10.0 合法：本次累计 +10.0×10/1000=0.1t、+0.5×10/1000=0.005t；0.28 是加上本拍之后的累计值</td></tr><tr><td class=num>q19</td><td class=num>enable=T resetBtn=F dt=1 steamFlow=20 fuelFlow=0 steamTemp=450 steamPressure=3800</td><td class=num>qualified=T dataFault=F qualifiedTon=0.3 fuelTon=0.021 revenue=84 cost=31.5 netProfit=52.5</td><td>【边界】燃料流量恰好 0 合法（0 不是越界）：只产汽不耗燃料</td></tr><tr><td class=num>q20</td><td class=num>enable=T resetBtn=T dt=0 steamFlow=20 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>dataFault=T qualifiedTon=0 fuelTon=0 revenue=0 cost=0 netProfit=0</td><td>【优先级】复位上升沿与数据故障同时发生：先清零，清零结果生效，故障位仍如实报出</td></tr><tr><td class=num>q21</td><td class=num>enable=T resetBtn=F dt=1 steamFlow=20 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>dataFault=F qualifiedTon=0.02 fuelTon=0.001 revenue=5.6 cost=1.5 netProfit=4.1</td><td>清零后恢复累计（故障消失）</td></tr><tr><td class=num>q22</td><td class=num>enable=T resetBtn=T dt=1 steamFlow=20 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>qualifiedTon=0 fuelTon=0 revenue=0 cost=0 netProfit=0</td><td>再次复位上升沿 → 清零</td></tr><tr><td class=num>q23</td><td class=num>enable=T resetBtn=T dt=1 steamFlow=20 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>qualifiedTon=0.02 fuelTon=0.001 revenue=5.6 cost=1.5 netProfit=4.1</td><td>【持续按住】没有新的上升沿 → 复位不再生效，恢复正常累计</td></tr><tr><td class=num>q24</td><td class=num>enable=T resetBtn=F dt=1 steamFlow=20 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>qualifiedTon=0.04 fuelTon=0.002 revenue=11.2 cost=3 netProfit=8.2</td><td>【松开】复位键松开 → 继续累计</td></tr><tr><td class=num>q25</td><td class=num>enable=T resetBtn=T dt=1 steamFlow=20 fuelFlow=1 steamTemp=450 steamPressure=3800</td><td class=num>qualified=T dataFault=F qualifiedTon=0 fuelTon=0 revenue=0 cost=0 netProfit=0</td><td>【重新按下】松开后再按出上升沿 → 再次清零</td></tr></table>
+<h3>运行期性质</h3><table><tr><th>编号</th><th>类别</th><th>性质</th><th>LTL</th></tr><tr><td class=num>S1</td><td>safety</td><td>合格判据：温度 447..453 ℃ 且 压力 3750..3850 kPa（闭区间）。</td><td class=num>G(qualified &lt;-&gt; (steamTemp &gt;= 447.0 &amp; steamTemp &lt;= 453.0 &amp; steamPressure &gt;= 3750.0 &amp; steamPressure &lt;= 3850.0))</td></tr><tr><td class=num>S2</td><td>safety</td><td>产量、燃料、收入、成本四项累计量永远非负（净收益不在此列，允许亏损）。</td><td class=num>G((qualifiedTon &gt;= 0.0) &amp; (fuelTon &gt;= 0.0) &amp; (revenue &gt;= 0.0) &amp; (cost &gt;= 0.0))</td></tr><tr><td class=num>S3</td><td>safety</td><td>复位上升沿当拍把两个累计量清零。</td><td class=num>G(rising(resetBtn) -&gt; (qualifiedTon = 0.0 &amp; fuelTon = 0.0))</td></tr><tr><td class=num>S4</td><td>safety</td><td>数据故障判据：dt 不在 (0,10] 或流量越界。</td><td class=num>G(dataFault &lt;-&gt; (dt &lt;= 0.0 | dt &gt; 10.0 | steamFlow &lt; 0.0 | steamFlow &gt; 90.0 | fuelFlow &lt; 0.0 | fuelFlow &gt; 6.0))</td></tr><tr><td class=num>S5</td><td>safety</td><td>数据故障或未使能时，累计燃料在本拍保持不变。</td><td class=num>G((!rising(resetBtn) &amp; (!enable | dataFault)) -&gt; fuelTon = prev(fuelTon))</td></tr><tr><td class=num>S6</td><td>safety</td><td>数据故障且未复位时，累计产量在本拍保持不变。</td><td class=num>G((dataFault &amp; !rising(resetBtn)) -&gt; qualifiedTon = prev(qualifiedTon))</td></tr><tr><td class=num>S7</td><td>safety</td><td>金额三式恒成立：收入=产量×280、成本=燃料×1500、净收益=收入-成本。</td><td class=num>G((revenue = qualifiedTon * 280.0) &amp; (cost = fuelTon * 1500.0) &amp; (netProfit = revenue - cost))</td></tr><tr><td class=num>S9</td><td>safety</td><td>复位上升沿优先于故障冻结：复位与数据故障同拍时，累计量仍必须清零。</td><td class=num>G((rising(resetBtn) &amp; dataFault) -&gt; (qualifiedTon = 0.0 &amp; fuelTon = 0.0))</td></tr><tr><td class=num>S10</td><td>data</td><td>累计量按 flow*dt/1000 递推，收入=产量*280，成本=燃料*1500。</td><td class=num>&lt;i&gt;（无 LTL，由仿真用例覆盖）&lt;/i&gt;</td></tr></table>
+</section>
+<section id="self-medium-06"><h2>self-medium-06 · 温度模糊控制与输出钳位（重心法 + 历史误差清除）</h2>
+<h3>修订题面</h3><pre>写一个功能块 FB，用九条规则的温度模糊控制器计算加热功率。
+控制要求：
+1. e = setpoint - temperature；de = (e - ePrev) / dt，**首拍**或历史被清除时 de = 0；
+2. x = clamp(e / 10.0, -1, 1)，y = clamp(de / 2.0, -1, 1)。量程说明：±10 ℃ 与 ±2 ℃/s 是本演示的满量程假设（对应温度回路约 ±10 ℃、变化率 ±2 ℃/s 的振荡工况；按幅值 ±10 ℃、周期 31.4 s 估算，变化率峰值约 2.0 ℃/s，该假设在演示工况下自洽），换到真实装置应按实际量程重新整定；
+3. 隶属度：μN(z)=max(-z,0)、μZ(z)=1-|z|、μP(z)=max(z,0)；
+4. 九条规则的单点输出：N×N=-30、N×Z=-20、N×P=-10、Z×N=-10、Z×Z=0、Z×P=10、P×N=10、P×Z=20、P×P=30；correction = Σ(w·c)/Σw（重心法），Σw=0 时 correction=0；
+5. power = clamp(bias + correction, 0, 100)，**correction 不钳位**；
+6. fault = NOT sensorValid OR dt &lt;= 0.0 OR dt &gt; 10.0；fault、enable=FALSE 或 resetBtn **上升沿**时：power=0、correction=0，并清除历史（ePrev=0、历史标志=FALSE）。复位是边沿命令、不是停机保持命令：按住的时长不影响判定，每拍只认有没有新的上升沿；按住复位期间输出的 0 只在上升沿那一拍成立，之后回到正常模糊计算（历史已清除，所以恢复后的首拍按 de=0 处理）。“首拍/复位后/故障或禁用后恢复的首拍”指历史标志为 FALSE 的那一拍，该拍 ePrev 不参与，de 一律取 0；下一拍起才用正常差分。</pre>
+<h3>原始接口</h3><table><tr><th>变量名</th><th>类型</th><th>方向</th><th>说明</th></tr><tr><td class=num>enable</td><td class=num>BOOL</td><td>input</td><td>自动投入</td></tr><tr><td class=num>resetBtn</td><td class=num>BOOL</td><td>input</td><td>复位（上升沿清除历史误差）</td></tr><tr><td class=num>sensorValid</td><td class=num>BOOL</td><td>input</td><td>温度传感器数据有效</td></tr><tr><td class=num>setpoint</td><td class=num>REAL</td><td>input</td><td>温度设定值（℃）</td></tr><tr><td class=num>temperature</td><td class=num>REAL</td><td>input</td><td>温度测量值（℃）</td></tr><tr><td class=num>dt</td><td class=num>REAL</td><td>input</td><td>本周期时长（s），合法 0 &lt; dt &lt;= 10</td></tr><tr><td class=num>bias</td><td class=num>REAL</td><td>input</td><td>基础输出（%）</td></tr><tr><td class=num>power</td><td class=num>REAL</td><td>output</td><td>加热功率输出（%），钳位 0..100</td></tr><tr><td class=num>correction</td><td class=num>REAL</td><td>output</td><td>模糊修正量（%）</td></tr><tr><td class=num>fault</td><td class=num>BOOL</td><td>output</td><td>传感器或参数故障</td></tr></table>
+<h3>平台适配后参考 ST</h3><pre>FUNCTION_BLOCK FB
+VAR_INPUT
+ enable : BOOL;
+ resetBtn : BOOL;
+ sensorValid : BOOL;
+ setpoint : REAL;
+ temperature : REAL;
+ dt : REAL;
+ bias : REAL;
+END_VAR
+VAR_OUTPUT
+ power : REAL;
+ correction : REAL;
+ fault : BOOL;
+END_VAR
+VAR
+ prevReset : BOOL;
+ prevE : REAL;
+ hasHist : BOOL;
+ eNow : REAL;
+ eDe : REAL;
+ xx : REAL;
+ yy : REAL;
+ mx : REAL;
+ zx : REAL;
+ px : REAL;
+ my : REAL;
+ zy : REAL;
+ py : REAL;
+ wsum : REAL;
+ wc : REAL;
+ cOut : REAL;
+ edgeReset : BOOL;
+END_VAR
+fault := (NOT sensorValid) OR (dt &lt;= 0.0) OR (dt &gt; 10.0);
+edgeReset := resetBtn AND NOT prevReset;
+IF edgeReset OR (NOT enable) OR fault THEN
+ cOut := 0.0;
+ hasHist := FALSE;
+ prevE := 0.0;
+ELSE
+ eNow := setpoint - temperature;
+ IF hasHist THEN
+  eDe := (eNow - prevE) / dt;
+ ELSE
+  eDe := 0.0;
+ END_IF;
+ xx := eNow / 10.0;
+ IF xx &gt; 1.0 THEN xx := 1.0; END_IF;
+ IF xx &lt; -1.0 THEN xx := -1.0; END_IF;
+ yy := eDe / 2.0;
+ IF yy &gt; 1.0 THEN yy := 1.0; END_IF;
+ IF yy &lt; -1.0 THEN yy := -1.0; END_IF;
+ mx := MAX(-xx, 0.0);
+ zx := 1.0 - ABS(xx);
+ px := MAX(xx, 0.0);
+ my := MAX(-yy, 0.0);
+ zy := 1.0 - ABS(yy);
+ py := MAX(yy, 0.0);
+ wsum := mx * my + mx * zy + mx * py + zx * my + zx * zy + zx * py
+  + px * my + px * zy + px * py;
+ wc := mx * my * (-30.0) + mx * zy * (-20.0) + mx * py * (-10.0)
+  + zx * my * (-10.0) + zx * zy * 0.0 + zx * py * 10.0
+  + px * my * 10.0 + px * zy * 20.0 + px * py * 30.0;
+ IF wsum &gt; 0.0 THEN
+  cOut := wc / wsum;
+ ELSE
+  cOut := 0.0;
+ END_IF;
+ prevE := eNow;
+ hasHist := TRUE;
+END_IF;
+prevReset := resetBtn;
+correction := cOut;
+IF edgeReset OR (NOT enable) OR fault THEN
+ power := 0.0;
+ELSE
+ power := bias + cOut;
+ IF power &gt; 100.0 THEN power := 100.0; END_IF;
+ IF power &lt; 0.0 THEN power := 0.0; END_IF;
+END_IF;
+END_FUNCTION_BLOCK
+</pre>
+<h3>全部用例</h3><p>共 18 条；case_mode = sequence</p><table><tr><th>周期</th><th>输入</th><th>预期输出</th><th>覆盖内容</th></tr><tr><td class=num>q1</td><td class=num>enable=T resetBtn=F sensorValid=T setpoint=100 temperature=90 dt=1 bias=50</td><td class=num>fault=F correction=20 power=70</td><td>首拍无历史：de=0，e=10 → x=1.0/y=0 → 只踩 P×Z 规则（单点输出 20），修正 +20</td></tr><tr><td class=num>q2</td><td class=num>enable=T resetBtn=F sensorValid=T setpoint=100 temperature=92 dt=1 bias=50</td><td class=num>correction=6 power=56</td><td>e=8、de=(8-10)/1=-2 → x=0.8/y=-1：命中 Z×N(-10) 与 P×N(+10)，重心 = (-2+8)/1 = +6</td></tr><tr><td class=num>q3</td><td class=num>enable=T resetBtn=F sensorValid=T setpoint=100 temperature=100 dt=1 bias=50</td><td class=num>correction=-10 power=40</td><td>e=0、de=-8 → 命中 Z×N，修正 -10（误差为零也要抑制负向趋势）</td></tr><tr><td class=num>q4</td><td class=num>enable=T resetBtn=F sensorValid=T setpoint=100 temperature=98 dt=2 bias=50</td><td class=num>correction=9 power=59</td><td>三邻域同时激活：e=2、de=1、dt=2 → x=0.2/y=0.5；隶属度 μZ(x)=0.8、μP(x)=0.2、μZ(y)=0.5、μP(y)=0.5 → Z×Z(0.8×0.5×0=0)、Z×P(0.8×0.5×10=4)、P×Z(0.2×0.5×20=2)、P×P(0.2×0.5×30=3)，权重和 0.4+0.4+0.1+0.1=1 → 修正 (0+4+2+3)/1 = 9.0</td></tr><tr><td class=num>q5</td><td class=num>enable=T resetBtn=F sensorValid=F setpoint=100 temperature=98 dt=1 bias=50</td><td class=num>fault=T power=0 correction=0</td><td>传感器故障：功率与修正都归零，并清除历史误差</td></tr><tr><td class=num>q6</td><td class=num>enable=T resetBtn=F sensorValid=T setpoint=100 temperature=100 dt=1 bias=50</td><td class=num>fault=F correction=0 power=50</td><td>故障恢复首拍：历史已清除，按 de=0 处理，只出基础输出</td></tr><tr><td class=num>q7</td><td class=num>enable=T resetBtn=F sensorValid=T setpoint=100 temperature=90 dt=1 bias=95</td><td class=num>correction=30 power=100</td><td>【边界】上界：e=10、de=10 → x=1/y=1 → 只踩 P×P(30)；95+30=125 → power 钳位 100，而 correction 仍如实报 30</td></tr><tr><td class=num>q8</td><td class=num>enable=T resetBtn=F sensorValid=T setpoint=100 temperature=110 dt=10 bias=5</td><td class=num>correction=-30 power=0</td><td>【边界】下界：e=-10、de=(-10-10)/10=-2 → x=-1/y=-1 → N×N(-30)；5-30=-25 → power 钳位 0；同时 dt=10.0 恰好是合法上界</td></tr><tr><td class=num>q9</td><td class=num>enable=T resetBtn=F sensorValid=T setpoint=100 temperature=110 dt=11 bias=5</td><td class=num>fault=T power=0 correction=0</td><td>【边界】dt=11 超出上限 → 故障、输出归零、清除历史</td></tr><tr><td class=num>q10</td><td class=num>enable=T resetBtn=F sensorValid=T setpoint=100 temperature=110 dt=0 bias=50</td><td class=num>fault=T power=0 correction=0</td><td>【边界】dt=0 → 故障（既不能除零，也不允许按 0 周期积分）</td></tr><tr><td class=num>q11</td><td class=num>enable=F resetBtn=F sensorValid=T setpoint=100 temperature=90 dt=1 bias=50</td><td class=num>fault=F power=0 correction=0</td><td>未投入自动：输出归零并清除历史</td></tr><tr><td class=num>q12</td><td class=num>enable=T resetBtn=F sensorValid=T setpoint=100 temperature=110 dt=1 bias=30</td><td class=num>fault=F correction=-20 power=10</td><td>【恢复】禁用后重新投入的首拍：历史已清除 → de=0，x=-1/y=0 → 只踩 N×Z(-20)，30-20=10</td></tr><tr><td class=num>q13</td><td class=num>enable=T resetBtn=F sensorValid=T setpoint=100 temperature=110 dt=1 bias=5</td><td class=num>correction=-20 power=0</td><td>【边界】下界侧：e=-10、de=0 → N×Z(-20)，未钳位功率 5-20=-15 已低于下限 0，触发下限钳位，最终 power=0（与 q8 的上限侧钳位对照）</td></tr><tr><td class=num>q14</td><td class=num>enable=T resetBtn=T sensorValid=T setpoint=100 temperature=90 dt=1 bias=50</td><td class=num>fault=F power=0 correction=0</td><td>复位上升沿：输出与修正归零并清除历史</td></tr><tr><td class=num>q15</td><td class=num>enable=T resetBtn=T sensorValid=T setpoint=100 temperature=90 dt=1 bias=50</td><td class=num>correction=20 power=70</td><td>【持续按住】复位是边沿命令：没有新上升沿 → 不清零，恢复正常计算（历史已清 → de=0，只踩 P×Z=20）</td></tr><tr><td class=num>q16</td><td class=num>enable=T resetBtn=F sensorValid=T setpoint=100 temperature=90 dt=1 bias=50</td><td class=num>correction=20 power=70</td><td>【松开】复位键松开 → 继续按正常逻辑计算（e=10、de=0 → +20）</td></tr><tr><td class=num>q17</td><td class=num>enable=T resetBtn=T sensorValid=T setpoint=100 temperature=90 dt=1 bias=50</td><td class=num>power=0 correction=0</td><td>【重新按下】松开后再按出上升沿 → 再次清零</td></tr><tr><td class=num>q18</td><td class=num>enable=T resetBtn=F sensorValid=T setpoint=100 temperature=100 dt=1 bias=50</td><td class=num>fault=F correction=0 power=50</td><td>【复位后恢复】历史确已清除：e=0、de=0（若历史未清则 de=(0-10)/1=-10 → -10） → 只踩 Z×Z=0，功率=基础给定 50</td></tr></table>
+<h3>运行期性质</h3><table><tr><th>编号</th><th>类别</th><th>性质</th><th>LTL</th></tr><tr><td class=num>S1</td><td>safety</td><td>加热功率恒在 0..100 之间。</td><td class=num>G((power &gt;= 0.0) &amp; (power &lt;= 100.0))</td></tr><tr><td class=num>S2</td><td>safety</td><td>模糊修正量恒在 ±30 之间（九个单点输出量的极值）。</td><td class=num>G((correction &gt;= -30.0) &amp; (correction &lt;= 30.0))</td></tr><tr><td class=num>S3</td><td>safety</td><td>未投入、复位上升沿或故障时，输出与修正必须归零。</td><td class=num>G((!enable | rising(resetBtn) | fault) -&gt; (power = 0.0 &amp; correction = 0.0))</td></tr><tr><td class=num>S4</td><td>safety</td><td>故障判据：传感器无效或 dt 越界。</td><td class=num>G(fault &lt;-&gt; (!sensorValid | dt &lt;= 0.0 | dt &gt; 10.0))</td></tr><tr><td class=num>S5</td><td>safety</td><td>传感器无效必然判故障（不允许用坏数据继续闭环）。</td><td class=num>G(!sensorValid -&gt; fault)</td></tr><tr><td class=num>S7</td><td>safety</td><td>故障/禁用之后重新计算的首拍，历史必须已清除：误差为正且超过满量程时只踩 P×Z 一条规则，修正恰为 +20（若历史未清，de 会带出别的值）。</td><td class=num>G(((prev(fault) | prev(!enable)) &amp; enable &amp; !fault &amp; !rising(resetBtn) &amp; setpoint - temperature &gt;= 10.0) -&gt; correction = 20.0)</td></tr><tr><td class=num>S8</td><td>safety</td><td>故障/禁用之后重新计算的首拍，误差为 0 时修正必须为 0（历史未清则会因 de≠0 给出非零修正）。</td><td class=num>G(((prev(fault) | prev(!enable)) &amp; enable &amp; !fault &amp; !rising(resetBtn) &amp; setpoint = temperature) -&gt; correction = 0.0)</td></tr><tr><td class=num>S9</td><td>safety</td><td>复位不是保持命令：按住复位（无新上升沿）时不得继续强制清零，必须按正常模糊逻辑出功率。</td><td class=num>G((resetBtn &amp; prev(resetBtn) &amp; !fault &amp; enable &amp; (bias &gt; 0.0) &amp; setpoint - temperature &gt;= 10.0) -&gt; power &gt; 0.0)</td></tr><tr><td class=num>S10</td><td>data</td><td>功率 = 基础输出 + 修正后再钳位。</td><td class=num>&lt;i&gt;（无 LTL，由仿真用例覆盖）&lt;/i&gt;</td></tr></table>
+</section>
+</main></html>

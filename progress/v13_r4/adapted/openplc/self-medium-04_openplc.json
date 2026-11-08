@@ -1,0 +1,313 @@
+{
+  "pid": "self-medium-04",
+  "source": "selfmade",
+  "difficulty": "medium",
+  "title": "定量灌装阀控制（浮点累计与计数去抖）",
+  "requirements": "写一个功能块 FB，控制一条定量灌装工位。\n控制要求：\n1. startBtn 的上升沿开始一瓶的灌装：valveOpen 置 TRUE，并把内部累计体积清零；\n2. 每个扫描周期把 flowVol 累加到内部体积；**累计值达到或超过** targetVol 时立即关阀；\n3. 关阀后等待 doneSensor 为 TRUE，确认该瓶装满；\n4. **只有确认之后** fillsToday 才加 1；阀未确认就再次启动不得重复计数；\n5. 正在灌装过程中 startBtn 再次按下无效（不重新开始，也不重复计数）；\n6. resetBtn 的上升沿把 fillsToday 清零，并关闭灌装阀、清除内部累计。",
+  "variables": [
+    {
+      "name": "startBtn",
+      "data_type": "BOOL",
+      "description": "启动按钮（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "resetBtn",
+      "data_type": "BOOL",
+      "description": "复位按钮（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "doneSensor",
+      "data_type": "BOOL",
+      "description": "满瓶检测传感器",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "targetVol",
+      "data_type": "REAL",
+      "description": "目标灌装体积 mL",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "flowVol",
+      "data_type": "REAL",
+      "description": "本周期累计流量增量 mL",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "valveOpen",
+      "data_type": "BOOL",
+      "description": "灌装阀开命令",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "fillsToday",
+      "data_type": "INT",
+      "description": "今日完成瓶数",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "复位按钮上升沿必须在**当周期**把今日计数清零。",
+      "ltl": "G(rising(resetBtn) -> fillsToday = 0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "开阀只允许发生在启动按钮的上升沿：阀从关到开的那一拍必须有新按下。",
+      "ltl": "G(!valveOpen & X(valveOpen) -> X(rising(startBtn)))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "除复位那一拍外，计数单调不减（不得回退）。",
+      "ltl": "G(!rising(resetBtn) -> fillsToday >= prev(fillsToday))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "每拍计数最多增加 1（不得因阀抖动重复计数）。",
+      "ltl": "G(fillsToday <= prev(fillsToday) + 1)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "计数只发生在满瓶确认之后：计数增加的那一拍 doneSensor 必须为真。",
+      "ltl": "G(fillsToday > prev(fillsToday) -> doneSensor)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "累计流量达到目标体积后，灌装阀必须在当周期关闭（涉及内部累计量，只在用例中校验）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "b1",
+      "inputs": {
+        "startBtn": true,
+        "flowVol": 10.0,
+        "doneSensor": false
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 0
+      },
+      "note": "启动 → 开阀",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b2",
+      "inputs": {
+        "startBtn": true,
+        "flowVol": 10.0,
+        "doneSensor": false
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 0
+      },
+      "note": "按钮保持按住不得重复启动",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b3",
+      "inputs": {
+        "startBtn": true,
+        "flowVol": 0.0,
+        "doneSensor": false
+      },
+      "expected": {
+        "fillsToday": 0,
+        "valveOpen": false
+      },
+      "note": "复位优先：计数清零、关阀",
+      "const_inputs": {
+        "resetBtn": true,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b4",
+      "inputs": {
+        "startBtn": false,
+        "flowVol": 25.0,
+        "doneSensor": false
+      },
+      "expected": {
+        "valveOpen": false
+      },
+      "note": "复位后启动按钮还没按：阀必须关着，没启动就不许加料",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b5",
+      "inputs": {
+        "startBtn": true,
+        "flowVol": 25.0,
+        "doneSensor": false
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 0
+      },
+      "note": "上升沿再启动",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b6",
+      "inputs": {
+        "startBtn": false,
+        "flowVol": 25.0,
+        "doneSensor": false
+      },
+      "expected": {
+        "valveOpen": false,
+        "fillsToday": 0
+      },
+      "note": "累计 50 ≥ 目标 → 关阀，等确认",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b7",
+      "inputs": {
+        "startBtn": false,
+        "flowVol": 0.0,
+        "doneSensor": true
+      },
+      "expected": {
+        "fillsToday": 1
+      },
+      "note": "满瓶确认 → 计数 +1",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b8",
+      "inputs": {
+        "startBtn": false,
+        "flowVol": 0.0,
+        "doneSensor": true
+      },
+      "expected": {
+        "fillsToday": 1
+      },
+      "note": "确认信号保持 → 不得重复计数",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "自主构思 / 行业经验改编",
+    "origin": "流程行业自动化赛项的灌装/称重工位核心逻辑：按体积或重量定量，并以满瓶检测作为计数确认。",
+    "adaptation": "把称重传感器抽象为'本周期流量增量 + 目标体积'，保留浮点累计的边界判定（>= 而非 >）与计数确认时序。",
+    "review": "人工审核：浮点累加存在精度问题，题面要求用 >= 判定并在仿真里以 1e-6 相对误差比较；计数去抖单独设用例 f4/f5。",
+    "review_revision": "v1.3-review-r2",
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r4",
+      "platform": "openplc",
+      "pid": "self-medium-04",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate",
+        "r4: explicit batch/pump/heater contracts; isolated sequence groups"
+      ],
+      "adapted_source_sha256": "b9f47c093b8655c640333a35cb66684cd41e8e0e16081b3b438f6e9813d61774"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r4",
+      "kind": "platform_adapted",
+      "platform": "openplc",
+      "original_json": "progress/v13/upstream/selfmade/self-medium-04.json",
+      "original_sha256": "ffda836c2fc77e71c9e814a009f74908144c652d68687c41dc756fe77eecfd2b",
+      "interface_changed": false,
+      "reference_source_sha256": "b9f47c093b8655c640333a35cb66684cd41e8e0e16081b3b438f6e9813d61774",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance",
+      "working_json": "progress/v13_r4/datasets/selfmade/self-medium-04.json"
+    }
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

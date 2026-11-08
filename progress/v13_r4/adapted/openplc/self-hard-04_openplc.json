@@ -1,0 +1,592 @@
+{
+  "pid": "self-hard-04",
+  "source": "selfmade",
+  "difficulty": "hard",
+  "title": "多泵均衡运行与主备切换（数组遍历与迟滞阈值）",
+  "requirements": "写一个功能块 FB，管理5台并联泵的主备选择与迟滞。只验 leadPump、lagPump、runningCount，不推断其余泵的启停输出。\n1. runHours[1..5] 为非负整数小时；全场按（运行小时、泵号）升序排序，同工时小泵号优先。demand 裁剪到0..5，runningCount等于裁剪后的需求。\n2. 需求为0时主备都清零；重新产生正需求时按排序初选主泵。需求1时备泵为0。\n3. 正需求期间保留当前主泵。rotated 按电平逐拍读取：只有请求有效且当前主泵工时比全场最短工时泵多严格超过50小时，才将最短者设为新主泵。差49或50小时均不得切换；无请求不得切换。\n4. 需求至少为2时，仅在初选、从1台升至需备泵或换主时，从其余泵中选排序最小者作备泵；其余拍保持原备泵。主备必须不同，数组仅用1..5下标。\n5. 独立用例各自初始化；标注相同 sequence 组名的用例在新实例中连续运行，各组互相独立并全部计分。",
+  "variables": [
+    {
+      "name": "demand",
+      "data_type": "INT",
+      "description": "需求泵台数 0..5（超出请先按边界裁剪）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "runHours",
+      "data_type": "ARRAY[1..5] OF LINT",
+      "description": "各泵累计运行小时数（只读）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "leadPump",
+      "data_type": "INT",
+      "description": "当前主泵号 1..5，0 表示尚未选定",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "lagPump",
+      "data_type": "INT",
+      "description": "当前备用泵号 1..5，0 表示无",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "runningCount",
+      "data_type": "INT",
+      "description": "实际运行泵台数",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "rotated",
+      "data_type": "BOOL",
+      "description": "本周期存在轮换请求（输入，由维护逻辑置位）",
+      "direction": "input",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "实际需求台数等于裁剪到0..5的需求。",
+      "ltl": "G(runningCount=LIMIT(0,demand,5))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "主备泵必须是不同的泵（备泵为 0 表示只有一台）。",
+      "ltl": "G(lagPump <> 0 -> leadPump <> lagPump)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "主泵状态迟滞、严格50小时边界、备泵保持及平局顺序用独立和连续用例校验。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "S4",
+      "text": "需求为 0 时不得有任何泵处于选中状态（当周期即成立）。",
+      "ltl": "G(demand <= 0 -> leadPump = 0 & lagPump = 0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "需求为 0 时运行台数必须为 0。",
+      "ltl": "G(demand <= 0 -> runningCount = 0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "p1",
+      "inputs": {
+        "demand": 0,
+        "runHours": [
+          100,
+          200,
+          300,
+          400,
+          500
+        ],
+        "rotated": false
+      },
+      "expected": {
+        "leadPump": 0,
+        "lagPump": 0,
+        "runningCount": 0
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p2",
+      "inputs": {
+        "demand": 1,
+        "runHours": [
+          100,
+          200,
+          300,
+          400,
+          500
+        ],
+        "rotated": false
+      },
+      "expected": {
+        "leadPump": 1,
+        "lagPump": 0,
+        "runningCount": 1
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p3",
+      "inputs": {
+        "demand": 2,
+        "runHours": [
+          500,
+          100,
+          300,
+          400,
+          200
+        ],
+        "rotated": false
+      },
+      "expected": {
+        "leadPump": 2,
+        "lagPump": 5,
+        "runningCount": 2
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p4",
+      "inputs": {
+        "demand": 7,
+        "runHours": [
+          100,
+          200,
+          300,
+          400,
+          500
+        ],
+        "rotated": false
+      },
+      "expected": {
+        "leadPump": 1,
+        "lagPump": 2,
+        "runningCount": 5
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p5",
+      "inputs": {
+        "demand": -1,
+        "runHours": [
+          100,
+          200,
+          300,
+          400,
+          500
+        ],
+        "rotated": false
+      },
+      "expected": {
+        "leadPump": 0,
+        "lagPump": 0,
+        "runningCount": 0
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p6",
+      "inputs": {
+        "demand": 2,
+        "runHours": [
+          100,
+          200,
+          300,
+          400,
+          500
+        ],
+        "rotated": true
+      },
+      "expected": {
+        "leadPump": 1,
+        "lagPump": 2,
+        "runningCount": 2
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:pump",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p7",
+      "inputs": {
+        "demand": 2,
+        "runHours": [
+          100,
+          130,
+          300,
+          400,
+          500
+        ],
+        "rotated": true
+      },
+      "expected": {
+        "leadPump": 1,
+        "lagPump": 2,
+        "runningCount": 2
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:pump",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p8",
+      "inputs": {
+        "demand": 2,
+        "runHours": [
+          149,
+          100,
+          300,
+          400,
+          500
+        ],
+        "rotated": true
+      },
+      "expected": {
+        "leadPump": 1,
+        "lagPump": 2,
+        "runningCount": 2
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:pump",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p9",
+      "inputs": {
+        "demand": 2,
+        "runHours": [
+          150,
+          100,
+          300,
+          400,
+          500
+        ],
+        "rotated": true
+      },
+      "expected": {
+        "leadPump": 1,
+        "lagPump": 2,
+        "runningCount": 2
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:pump",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p10",
+      "inputs": {
+        "demand": 2,
+        "runHours": [
+          151,
+          100,
+          300,
+          400,
+          500
+        ],
+        "rotated": true
+      },
+      "expected": {
+        "leadPump": 2,
+        "lagPump": 1,
+        "runningCount": 2
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:pump",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p11",
+      "inputs": {
+        "demand": 2,
+        "runHours": [
+          151,
+          100,
+          300,
+          400,
+          500
+        ],
+        "rotated": true
+      },
+      "expected": {
+        "leadPump": 2,
+        "lagPump": 1,
+        "runningCount": 2
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:pump",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p12",
+      "inputs": {
+        "demand": 2,
+        "runHours": [
+          0,
+          100,
+          300,
+          400,
+          500
+        ],
+        "rotated": false
+      },
+      "expected": {
+        "leadPump": 2,
+        "lagPump": 1,
+        "runningCount": 2
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:pump",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p13",
+      "inputs": {
+        "demand": 1,
+        "runHours": [
+          0,
+          100,
+          300,
+          400,
+          500
+        ],
+        "rotated": false
+      },
+      "expected": {
+        "leadPump": 2,
+        "lagPump": 0,
+        "runningCount": 1
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:pump",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p14",
+      "inputs": {
+        "demand": 2,
+        "runHours": [
+          0,
+          100,
+          300,
+          400,
+          500
+        ],
+        "rotated": false
+      },
+      "expected": {
+        "leadPump": 2,
+        "lagPump": 1,
+        "runningCount": 2
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:pump",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p15",
+      "inputs": {
+        "demand": 0,
+        "runHours": [
+          0,
+          100,
+          300,
+          400,
+          500
+        ],
+        "rotated": true
+      },
+      "expected": {
+        "leadPump": 0,
+        "lagPump": 0,
+        "runningCount": 0
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:pump",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p16",
+      "inputs": {
+        "demand": 2,
+        "runHours": [
+          100,
+          100,
+          300,
+          400,
+          500
+        ],
+        "rotated": true
+      },
+      "expected": {
+        "leadPump": 1,
+        "lagPump": 2,
+        "runningCount": 2
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:pump",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p17",
+      "inputs": {
+        "demand": 2,
+        "runHours": [
+          100,
+          100,
+          100,
+          100,
+          100
+        ],
+        "rotated": true
+      },
+      "expected": {
+        "leadPump": 1,
+        "lagPump": 2,
+        "runningCount": 2
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:pump",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "p18",
+      "inputs": {
+        "demand": 2,
+        "runHours": [
+          300,
+          200,
+          0,
+          400,
+          500
+        ],
+        "rotated": true
+      },
+      "expected": {
+        "leadPump": 3,
+        "lagPump": 2,
+        "runningCount": 2
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:pump",
+      "cycles": 1,
+      "expect_full": true
+    }
+  ],
+  "provenance": {
+    "source_type": "自主构思 / 行业经验改编",
+    "origin": "流程行业赛题中多泵并联供水（多泵切换）是标志性题型，要求按运行时间均衡分配并设置切换阈值。",
+    "adaptation": "把赛题的 3 泵简化为 5 泵以考察数组遍历；把'均衡'量化为'运行小时差超过 50 才切换'的精确阈值，从而可被测试用例判定，而不是模糊的'尽量均衡'。",
+    "review": "r4技术修订完成，人工工艺复审待确认；旧上游审核字样不作为本版本批准。",
+    "review_revision": "v1.3-review-r4",
+    "upstream_review_claim": "人工审核：LINT 类型用于小时累计（显式考察 64 位整型）；裁剪与阈值两个边界均有正反用例；数组下标按 1 起，不得越界。",
+    "human_process_review": {
+      "status": "r4_pending",
+      "reviewer": "刘晏铭",
+      "approved": false
+    },
+    "contract_change": "review2 verified correction; old scores are not overwritten",
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r4",
+      "platform": "openplc",
+      "pid": "self-hard-04",
+      "rules": [
+        "Pump-index swap temporary LINT -> INT; temporary holds indices 1..5, not run hours",
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate",
+        "r4: explicit batch/pump/heater contracts; isolated sequence groups"
+      ],
+      "adapted_source_sha256": "437212545f82abfb7d700f0d7fd9b6d2c16ef8310f8e044806d1bfabc0e0f29f"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r4",
+      "kind": "platform_adapted",
+      "platform": "openplc",
+      "original_json": "progress/v13/upstream/selfmade/self-hard-04.json",
+      "original_sha256": "c9a68448fc7ec30741f81fc787e0aa15d237971d7b2255b687a42752e0473053",
+      "interface_changed": false,
+      "reference_source_sha256": "437212545f82abfb7d700f0d7fd9b6d2c16ef8310f8e044806d1bfabc0e0f29f",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance",
+      "working_json": "progress/v13_r4/datasets/selfmade/self-hard-04.json"
+    }
+  },
+  "language": "en",
+  "case_mode": "single",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

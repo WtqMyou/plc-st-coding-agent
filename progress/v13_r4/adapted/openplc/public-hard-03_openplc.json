@@ -1,0 +1,859 @@
+{
+  "pid": "public-hard-03",
+  "source": "public",
+  "difficulty": "hard",
+  "title": "Recipe Management System",
+  "requirements": "A factory's production line needs to produce a variety of products based on different recipes. The control center of the production line requires a recipe management system that allows operators to add, delete, modify, and query recipe data.\nControl requirements:\nRecipe data should include recipe number, raw material type, raw material ratio, and production temperature.\nThe system should allow input of new recipe data and store it in the recipe database.\nThe system should allow deletion or modification of existing recipe data by recipe number.\nThe system should allow querying recipe details by recipe number and output the recipe.\nNotes:\n1. Recipes are constructed using the ST_Recipe data type, which includes recipe number (recipeID), raw material type (ingredientType), raw material ratio (ingredientRatio), and production temperature (productionTemperature). The recipe database can store up to 10 recipes, constructed with ARRAY[1..10] OF ST_Recipe, where recipe numbers must not be duplicated, and a recipe number of 0 indicates an empty slot.\n2. When a query recipe request signal (queryRecipe) is triggered, the system first compares the recipe number (recipeID) from the input recipe (recipeIn) with all recipes in the recipe database recipe. If the number does not exist, an error status (error=true) and error code (status=16#8001) are output. If the number exists, the recipe is output to the recipe query result (recipeQueryResult).\n3. When an add recipe request signal (addRecipe) is triggered, the system first compares the recipe number (recipeID) from the input recipe (recipeIn) with all recipes in the recipe database (recipe). If a duplicate number exists, an error status (error=true) and error code (status=16#8002) are output. If there is no empty slot in the recipe database (recipe), an error status (error=true) and error code (status=16#8003) are output. If there are no errors, the input recipe (recipeIn) is stored in the recipe database (recipe), prioritizing the empty slot with the smallest array index.\n4. When a delete recipe request signal (deleteRecipe) is triggered, the system first compares the recipe number (recipeID) from the input recipe (recipeIn) with all recipes in the recipe database (recipe). If the number does not exist, an error status (error=true) and error code (status=16#8004) are output. If the number exists, the recipe is deleted, i.e., the recipe number (recipeID) in the recipe database (recipe) is set to 0.\n5. When a modify recipe request signal (modifyRecipe) is triggered, the system first compares the recipe number (recipeID) from the input recipe (recipeIn) with all recipes in the recipe database (recipe). If the number does not exist, an error status (error=true) and error code (status=16#8005) are output. If the number exists, the recipe is replaced with the input recipe (recipeIn).",
+  "variables": [
+    {
+      "name": "addRecipe",
+      "data_type": "BOOL",
+      "description": "Add Recipe Request Signal",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "deleteRecipe",
+      "data_type": "BOOL",
+      "description": "Delete Recipe Request Signal",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "modifyRecipe",
+      "data_type": "BOOL",
+      "description": "Modify Recipe Request Signal",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "queryRecipe",
+      "data_type": "BOOL",
+      "description": "Query Recipe Request Signal",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "recipeIn",
+      "data_type": "ST_Recipe",
+      "description": "Input Recipe",
+      "direction": "input",
+      "fields": [
+        {
+          "name": "recipeID",
+          "data_type": "INT",
+          "description": "Recipe identifier; zero denotes an unused database slot.",
+          "direction": "inout",
+          "fields": []
+        },
+        {
+          "name": "ingredientType",
+          "data_type": "INT",
+          "description": "Ingredient-type identifier.",
+          "direction": "inout",
+          "fields": []
+        },
+        {
+          "name": "ingredientRatio",
+          "data_type": "REAL",
+          "description": "Ingredient proportion.",
+          "direction": "inout",
+          "fields": []
+        },
+        {
+          "name": "productionTemperature",
+          "data_type": "REAL",
+          "description": "Production temperature.",
+          "direction": "inout",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "recipeAdded",
+      "data_type": "BOOL",
+      "description": "Recipe Added Success Indicator",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "recipeDeleted",
+      "data_type": "BOOL",
+      "description": "Recipe Deleted Success Indicator",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "recipeModified",
+      "data_type": "BOOL",
+      "description": "Recipe Modified Success Indicator",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "recipeQueryResult",
+      "data_type": "ST_Recipe",
+      "description": "Recipe Query Result Output",
+      "direction": "output",
+      "fields": [
+        {
+          "name": "recipeID",
+          "data_type": "INT",
+          "description": "Recipe identifier; zero denotes an unused database slot.",
+          "direction": "inout",
+          "fields": []
+        },
+        {
+          "name": "ingredientType",
+          "data_type": "INT",
+          "description": "Ingredient-type identifier.",
+          "direction": "inout",
+          "fields": []
+        },
+        {
+          "name": "ingredientRatio",
+          "data_type": "REAL",
+          "description": "Ingredient proportion.",
+          "direction": "inout",
+          "fields": []
+        },
+        {
+          "name": "productionTemperature",
+          "data_type": "REAL",
+          "description": "Production temperature.",
+          "direction": "inout",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "error",
+      "data_type": "BOOL",
+      "description": "Error Status Indicator<br>FALSE: No Error Occurred<br>TRUE: Execution Error",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "status",
+      "data_type": "WORD",
+      "description": "Status Code",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "recipe",
+      "data_type": "ARRAY[1..10] OF ST_Recipe",
+      "description": "Recipe Database",
+      "direction": "inout",
+      "fields": [
+        {
+          "name": "recipeID",
+          "data_type": "INT",
+          "description": "Recipe identifier; zero denotes an unused database slot.",
+          "direction": "inout",
+          "fields": []
+        },
+        {
+          "name": "ingredientType",
+          "data_type": "INT",
+          "description": "Ingredient-type identifier.",
+          "direction": "inout",
+          "fields": []
+        },
+        {
+          "name": "ingredientRatio",
+          "data_type": "REAL",
+          "description": "Ingredient proportion.",
+          "direction": "inout",
+          "fields": []
+        },
+        {
+          "name": "productionTemperature",
+          "data_type": "REAL",
+          "description": "Production temperature.",
+          "direction": "inout",
+          "fields": []
+        }
+      ]
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "状态码非 0 的那一拍必须同时置起 error（非零状态码只用于报错）。",
+      "ltl": "G(status <> 0 -> error)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "error 为真时状态码只能是需求规定的五个错误码之一。",
+      "ltl": "G(error -> status = 32769 OR status = 32770 OR status = 32771 OR status = 32772 OR status = 32773)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "新增请求的上升沿必须落地：当拍要么 recipeAdded，要么报错，不会被静默丢掉。",
+      "ltl": "G(rising(addRecipe) -> recipeAdded OR error)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "删除请求的上升沿必须落地：当拍要么 recipeDeleted，要么报错。",
+      "ltl": "G(rising(deleteRecipe) -> recipeDeleted OR error)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "修改请求的上升沿必须落地：当拍要么 recipeModified，要么报错。",
+      "ltl": "G(rising(modifyRecipe) -> recipeModified OR error)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "查询成功的当拍 recipeQueryResult 必须是一条真实配方（配方号非 0），不会把空槽当结果输出。",
+      "ltl": "G(rising(queryRecipe) -> error OR recipeQueryResult.recipeID <> 0)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "h03-1",
+      "inputs": {},
+      "expected": {
+        "recipeAdded": false,
+        "recipeDeleted": false,
+        "recipeModified": false,
+        "error": false,
+        "status": 0
+      },
+      "note": "空库且没有任何请求信号 → 四个成功指示都为 FALSE、不报错（负例）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-2",
+      "inputs": {
+        "addRecipe": true,
+        "recipeIn": {
+          "recipeID": 1,
+          "ingredientType": 1,
+          "ingredientRatio": 10.0,
+          "productionTemperature": 105.0
+        }
+      },
+      "expected": {
+        "error": false,
+        "status": 0,
+        "recipeAdded": true,
+        "recipe": [
+          {
+            "recipeID": 1
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          }
+        ]
+      },
+      "note": "新增 1 号配方 → 落在下标最小的空槽 1",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-3",
+      "inputs": {
+        "queryRecipe": true,
+        "recipeIn": {
+          "recipeID": 1,
+          "ingredientType": 1,
+          "ingredientRatio": 10.0,
+          "productionTemperature": 105.0
+        }
+      },
+      "expected": {
+        "error": false,
+        "status": 0,
+        "recipeQueryResult": {
+          "recipeID": 1,
+          "ingredientType": 1,
+          "ingredientRatio": 10.0,
+          "productionTemperature": 105.0
+        }
+      },
+      "note": "查询 1 号配方 → 四个字段原样输出到 recipeQueryResult",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-4",
+      "inputs": {
+        "addRecipe": true,
+        "recipeIn": {
+          "recipeID": 2,
+          "ingredientType": 2,
+          "ingredientRatio": 20.0,
+          "productionTemperature": 110.0
+        }
+      },
+      "expected": {
+        "error": false,
+        "status": 0,
+        "recipeAdded": true,
+        "recipe": [
+          {
+            "recipeID": 1
+          },
+          {
+            "recipeID": 2
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          }
+        ]
+      },
+      "note": "新增 2 号配方 → 落在下一个空槽 2",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-5",
+      "inputs": {
+        "queryRecipe": true,
+        "recipeIn": {
+          "recipeID": 2,
+          "ingredientType": 2,
+          "ingredientRatio": 20.0,
+          "productionTemperature": 110.0
+        }
+      },
+      "expected": {
+        "error": false,
+        "status": 0,
+        "recipeQueryResult": {
+          "recipeID": 2,
+          "ingredientRatio": 20.0
+        }
+      },
+      "note": "查询 2 号配方 → 返回 2 号自己的数据（不是上一条的残留结果）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-6",
+      "inputs": {
+        "addRecipe": true,
+        "recipeIn": {
+          "recipeID": 1,
+          "ingredientType": 9,
+          "ingredientRatio": 9.9,
+          "productionTemperature": 9.0
+        }
+      },
+      "expected": {
+        "error": true,
+        "status": 32770,
+        "recipeAdded": false
+      },
+      "note": "新增已存在的 1 号配方（数据不同）→ status=16#8002、库不变（负例，重复号）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-7",
+      "inputs": {
+        "deleteRecipe": true,
+        "recipeIn": {
+          "recipeID": 2,
+          "ingredientType": 2,
+          "ingredientRatio": 20.0,
+          "productionTemperature": 110.0
+        }
+      },
+      "expected": {
+        "error": false,
+        "status": 0,
+        "recipeDeleted": true
+      },
+      "note": "删除 2 号配方 → 成功指示为真，槽 2 的 recipeID 清零",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-8",
+      "inputs": {
+        "queryRecipe": true,
+        "recipeIn": {
+          "recipeID": 2,
+          "ingredientType": 2,
+          "ingredientRatio": 20.0,
+          "productionTemperature": 110.0
+        }
+      },
+      "expected": {
+        "error": true,
+        "status": 32769
+      },
+      "note": "删除后再查 2 号 → status=16#8001（配方已不存在）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-9",
+      "inputs": {
+        "addRecipe": true,
+        "recipeIn": {
+          "recipeID": 3,
+          "ingredientType": 3,
+          "ingredientRatio": 30.0,
+          "productionTemperature": 115.0
+        }
+      },
+      "expected": {
+        "error": false,
+        "status": 0,
+        "recipeAdded": true,
+        "recipe": [
+          {
+            "recipeID": 1
+          },
+          {
+            "recipeID": 3
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          },
+          {
+            "recipeID": 0
+          }
+        ]
+      },
+      "note": "再新增 3 号配方 → 复用刚腾空的槽 2（下标最小的空槽），不是追加到末尾",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-10",
+      "inputs": {
+        "modifyRecipe": true,
+        "recipeIn": {
+          "recipeID": 1,
+          "ingredientType": 33,
+          "ingredientRatio": 3.3,
+          "productionTemperature": 210.0
+        }
+      },
+      "expected": {
+        "error": false,
+        "status": 0,
+        "recipeModified": true
+      },
+      "note": "修改 1 号配方（原料类型 33、配比 3.3、温度 210.0）→ 成功",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-11",
+      "inputs": {
+        "queryRecipe": true,
+        "recipeIn": {
+          "recipeID": 1,
+          "ingredientType": 1,
+          "ingredientRatio": 10.0,
+          "productionTemperature": 105.0
+        }
+      },
+      "expected": {
+        "error": false,
+        "status": 0,
+        "recipeQueryResult": {
+          "recipeID": 1,
+          "ingredientType": 33,
+          "ingredientRatio": 3.3,
+          "productionTemperature": 210.0
+        }
+      },
+      "note": "再查 1 号 → 返回修改后的数据（证明是整体覆盖而不是部分写入）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-12",
+      "inputs": {
+        "addRecipe": true,
+        "recipeIn": {
+          "recipeID": 11,
+          "ingredientType": 11,
+          "ingredientRatio": 110.0,
+          "productionTemperature": 155.0
+        }
+      },
+      "expected": {
+        "error": true,
+        "status": 32771,
+        "recipeAdded": false
+      },
+      "note": "预置 10 条占满配方库后再新增 11 号 → status=16#8003、不新增（负例，上边界）",
+      "const_inputs": {},
+      "init": {
+        "recipe": [
+          {
+            "recipeID": 1
+          },
+          {
+            "recipeID": 2
+          },
+          {
+            "recipeID": 3
+          },
+          {
+            "recipeID": 4
+          },
+          {
+            "recipeID": 5
+          },
+          {
+            "recipeID": 6
+          },
+          {
+            "recipeID": 7
+          },
+          {
+            "recipeID": 8
+          },
+          {
+            "recipeID": 9
+          },
+          {
+            "recipeID": 10
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-13",
+      "inputs": {
+        "deleteRecipe": true,
+        "recipeIn": {
+          "recipeID": 5,
+          "ingredientType": 5,
+          "ingredientRatio": 50.0,
+          "productionTemperature": 125.0
+        }
+      },
+      "expected": {
+        "error": false,
+        "status": 0,
+        "recipeDeleted": true
+      },
+      "note": "在满库上删除 5 号配方 → 成功，槽 5 腾空",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-14",
+      "inputs": {
+        "queryRecipe": true,
+        "recipeIn": {
+          "recipeID": 5,
+          "ingredientType": 5,
+          "ingredientRatio": 50.0,
+          "productionTemperature": 125.0
+        }
+      },
+      "expected": {
+        "error": true,
+        "status": 32769
+      },
+      "note": "删除后再查 5 号 → status=16#8001（负例）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-15",
+      "inputs": {
+        "addRecipe": true,
+        "recipeIn": {
+          "recipeID": 11,
+          "ingredientType": 11,
+          "ingredientRatio": 110.0,
+          "productionTemperature": 155.0
+        }
+      },
+      "expected": {
+        "error": false,
+        "status": 0,
+        "recipeAdded": true,
+        "recipe": [
+          {
+            "recipeID": 1
+          },
+          {
+            "recipeID": 2
+          },
+          {
+            "recipeID": 3
+          },
+          {
+            "recipeID": 4
+          },
+          {
+            "recipeID": 11
+          },
+          {
+            "recipeID": 6
+          },
+          {
+            "recipeID": 7
+          },
+          {
+            "recipeID": 8
+          },
+          {
+            "recipeID": 9
+          },
+          {
+            "recipeID": 10
+          }
+        ]
+      },
+      "note": "库满后又腾出槽 5，此时新增 11 号 → 正好落在槽 5，库重新变满（复用最小空槽）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-16",
+      "inputs": {
+        "queryRecipe": true,
+        "recipeIn": {
+          "recipeID": 99,
+          "ingredientType": 99,
+          "ingredientRatio": 990.0,
+          "productionTemperature": 595.0
+        }
+      },
+      "expected": {
+        "error": true,
+        "status": 32769
+      },
+      "note": "查询库中不存在的 99 号 → error=TRUE、status=16#8001（负例）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-17",
+      "inputs": {
+        "deleteRecipe": true,
+        "recipeIn": {
+          "recipeID": 99,
+          "ingredientType": 99,
+          "ingredientRatio": 990.0,
+          "productionTemperature": 595.0
+        }
+      },
+      "expected": {
+        "error": true,
+        "status": 32772
+      },
+      "note": "删除库中不存在的 99 号 → error=TRUE、status=16#8004（负例）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-18",
+      "inputs": {
+        "modifyRecipe": true,
+        "recipeIn": {
+          "recipeID": 99,
+          "ingredientType": 99,
+          "ingredientRatio": 990.0,
+          "productionTemperature": 595.0
+        }
+      },
+      "expected": {
+        "error": true,
+        "status": 32773
+      },
+      "note": "修改库中不存在的 99 号 → error=TRUE、status=16#8005（负例）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h03-19",
+      "inputs": {},
+      "expected": {
+        "recipeAdded": false,
+        "recipeDeleted": false,
+        "recipeModified": false,
+        "error": false,
+        "status": 0
+      },
+      "note": "所有请求信号都撤掉 → 成功指示与状态码回到 0、库不再变化（负例）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r4",
+      "platform": "openplc",
+      "pid": "public-hard-03",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate",
+        "r4: explicit batch/pump/heater contracts; isolated sequence groups"
+      ],
+      "adapted_source_sha256": "55588de5f0731c5504251fd8601ebcf36ec6217739949c3b3b634e05bbd856bf"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r4",
+      "kind": "platform_adapted",
+      "platform": "openplc",
+      "original_json": "progress/v13/upstream/public/public-hard-03.json",
+      "original_sha256": "afedf2e442dfbf8a87e1c58ccfeaa1b63377c30db4c5ed0333f1b7560e9fd389",
+      "interface_changed": false,
+      "reference_source_sha256": "55588de5f0731c5504251fd8601ebcf36ec6217739949c3b3b634e05bbd856bf",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance",
+      "working_json": "progress/v13_r4/datasets/public/public-hard-03.json"
+    }
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "# Recipe Management System\n\n- **Difficulty:** Hard (hard)\n\n## Requirements\n\nA factory's production line needs to produce a variety of products based on different recipes. The control center of the production line requires a recipe management system that allows operators to add, delete, modify, and query recipe data.\nControl requirements:\nRecipe data should include recipe number, raw material type, raw material ratio, and production temperature.\nThe system should allow input of new recipe data and store it in the recipe database.\nThe system should allow deletion or modification of existing recipe data by recipe number.\nThe system should allow querying recipe details by recipe number and output the recipe.\nNotes:\n1. Recipes are constructed using the ST_Recipe data type, which includes recipe number (recipeID), raw material type (ingredientType), raw material ratio (ingredientRatio), and production temperature (productionTemperature). The recipe database can store up to 10 recipes, constructed with ARRAY[1..10] OF ST_Recipe, where recipe numbers must not be duplicated, and a recipe number of 0 indicates an empty slot.\n2. When a query recipe request signal (queryRecipe) is triggered, the system first compares the recipe number (recipeID) from the input recipe (recipeIn) with all recipes in the recipe database recipe. If the number does not exist, an error status (error=true) and error code (status=16#8001) are output. If the number exists, the recipe is output to the recipe query result (recipeQueryResult).\n3. When an add recipe request signal (addRecipe) is triggered, the system first compares the recipe number (recipeID) from the input recipe (recipeIn) with all recipes in the recipe database (recipe). If a duplicate number exists, an error status (error=true) and error code (status=16#8002) are output. If there is no empty slot in the recipe database (recipe), an error status (error=true) and error code (status=16#8003) are output. If there are no errors, the input recipe (recipeIn) is stored in the recipe database (recipe), prioritizing the empty slot with the smallest array index.\n4. When a delete recipe request signal (deleteRecipe) is triggered, the system first compares the recipe number (recipeID) from the input recipe (recipeIn) with all recipes in the recipe database (recipe). If the number does not exist, an error status (error=true) and error code (status=16#8004) are output. If the number exists, the recipe is deleted, i.e., the recipe number (recipeID) in the recipe database (recipe) is set to 0.\n5. When a modify recipe request signal (modifyRecipe) is triggered, the system first compares the recipe number (recipeID) from the input recipe (recipeIn) with all recipes in the recipe database (recipe). If the number does not exist, an error status (error=true) and error code (status=16#8005) are output. If the number exists, the recipe is replaced with the input recipe (recipeIn).\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `addRecipe` | `BOOL` | Add Recipe Request Signal |\n| Input | `deleteRecipe` | `BOOL` | Delete Recipe Request Signal |\n| Input | `modifyRecipe` | `BOOL` | Modify Recipe Request Signal |\n| Input | `queryRecipe` | `BOOL` | Query Recipe Request Signal |\n| Input | `recipeIn` | `ST_Recipe` | Input Recipe |\n| Output | `recipeAdded` | `BOOL` | Recipe Added Success Indicator |\n| Output | `recipeDeleted` | `BOOL` | Recipe Deleted Success Indicator |\n| Output | `recipeModified` | `BOOL` | Recipe Modified Success Indicator |\n| Output | `recipeQueryResult` | `ST_Recipe` | Recipe Query Result Output |\n| Output | `error` | `BOOL` | Error Status Indicator<br>FALSE: No Error Occurred<br>TRUE: Execution Error |\n| Output | `status` | `WORD` | Status Code |\n| Input/Output | `recipe` | `ARRAY[1..10] OF ST_Recipe` | Recipe Database |\n\n**Data type `ST_Recipe`**\n\n| Field | Data Type | Description |\n| --- | --- | --- |\n| `recipeID` | `INT` | Recipe identifier; zero denotes an unused database slot. |\n| `ingredientType` | `INT` | Ingredient-type identifier. |\n| `ingredientRatio` | `REAL` | Ingredient proportion. |\n| `productionTemperature` | `REAL` | Production temperature. |",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

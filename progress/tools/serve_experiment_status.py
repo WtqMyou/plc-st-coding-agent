@@ -33,9 +33,14 @@ def offline_page():
     version = str(offline.get('version', 'v1.3'))
     reused = bool(offline.get('native_results_reused'))
     native_note = '已按同源码哈希及当前平台身份复用 r1 原生编译证据。' if reused else '参考解已执行真实平台编译。'
+    combined_native = load(root / 'native_references.json')
+    if isinstance(combined_native,list) and combined_native:
+        native_note = f'本版新增 {offline.get("native_fresh",0)} 次参考编译，按相同源码与当前编译器身份复用 {offline.get("native_reused",0)} 份。'
     native = []
     for label in ('codesys', 'openplc'):
-        if reused:
+        if isinstance(combined_native,list) and combined_native:
+            rows = [r for r in combined_native if r.get('platform') == label]
+        elif reused:
             record = next((r for r in offline.get('native_evidence', []) if r['platform'] == label), {})
             rows = record.get('entries', [])
         else:
@@ -45,7 +50,7 @@ def offline_page():
     baseline_label = escape(str(scores.get('baseline_label', '旧版本地整题')))
     current_label = escape(str(scores.get('current_label', '修订版本地整题')))
     review_route = active.get('review_route') or ('/v13-r2-review.html' if version == 'v1.3-review-r2' else '/v13-review.html')
-    if review_route not in ('/v13-review.html','/v13-r2-review.html'):
+    if review_route not in ('/v13-review.html','/v13-r2-review.html','/v13-r4-review.html'):
         raise RuntimeError('Unknown review route')
     repo_revision_path = quote(revision_root.relative_to(REPO.resolve()).as_posix())
     native_probes_note = ('新增 ' + str(offline.get('native_probes_count',0)) + ' 项原生对照（含预期失败），平台接受不等于运行正确。'
@@ -54,8 +59,15 @@ def offline_page():
     table = []
     for r in scores.get('rows', []):
         cells = [r['group'], f'{r["old_solved"]}/35', f'{r["new_solved"]}/35',
-                 f'{r["new_passed"]}/531', ', '.join(r['lost']) or '无', len(r['tool_errors'])]
+                 f'{r["new_passed"]}/{r.get("new_cases",offline.get("cases",531))}', ', '.join(r['lost']) or '无', len(r['tool_errors'])]
         table.append('<tr>' + ''.join('<td>' + escape(str(x)) + '</td>' for x in cells) + '</tr>')
+    depth_rows = load(root / 'depth_diagnostics.json').get('results',[])
+    depth_note = ''
+    if depth_rows:
+        rows = ''.join('<tr>'+''.join('<td>'+escape(str(value))+'</td>' for value in
+            (r['pid'],r.get('actual_depth','—'),r.get('complete_depth','—'),8))+'</tr>' for r in depth_rows)
+        depth_note = '<section><h2>形式检查实际范围</h2><p>下表是每题5秒的免费诊断，题库名义上限为8拍。到达某拍不代表这一层已完整展开；这六题均发生预算截断。</p><table><tr><th>题号</th><th>最深到达</th><th>完整展开</th><th>名义上限</th></tr>'+rows+'</table><p>缩小输入域的变异诊断单独存档，不计入正式通过率。</p></section>'
+    handout_link = ' · <a href="/v13-r4-review.zip">下载给刘晏铭的r4复审包</a>' if version=='v1.3-review-r4' else ''
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="15"><title>PLC 修订验收状态</title><style>
 body{{background:#f1f5fa;color:#203047;font:16px/1.7 system-ui,"Microsoft YaHei",sans-serif;margin:0}}
@@ -68,10 +80,11 @@ table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{padding:10px;t
 <p>{escape(native_probes_note)}</p>
 <p>性质总数 {offline.get('total_properties', '—')}；原始 LTL {offline.get('raw_ltl', '—')}，运行期 LTL {offline.get('runtime_ltl', '—')}。测试轨迹检查不代表穷尽证明。</p></section>
 <section><h2>固定历史候选的事后评分</h2><div class="scroll"><table><tr><th>组别</th><th>{baseline_label}</th><th>{current_label}</th><th>修订版通过用例</th><th>新增失败题</th><th>工具未决</th></tr>{''.join(table)}</table></div>
-<p>两侧使用相同检查器及相同历史候选；不替换 R8 正式结果，不是新版提示的模型生成实验。</p></section>
-<section><h2>人工复审与费用</h2><p>已收到上游复核记录2草稿：火焰题标批准，其余四题需修改；适用版本待确认。本修订版技术整改后待复审，未补造批准。</p>
+<p>同一批历史答卷，保留原选中轮次；数据与裁判版本见表头，用例分母可能不同。不替换R8正式结果，也不表示模型生成能力提升。</p></section>
+{depth_note}
+<section><h2>人工复审与费用</h2><p>刘晏铭的本版工艺复审待填写；已收到的旧稿与新意见均留档，旧版批准不自动适用于当前修订版。</p>
 <p>本阶段模型费用 ¥0；共享账本累计 ¥{ledger.get('spent_cny', 0):.6f}/75，原诊断额度未增加。</p>
-<p><a href="{review_route}">查看修改后复审材料</a> · <a href="https://github.com/WtqMyou/plc-st-coding-agent/tree/main/{repo_revision_path}">GitHub 修订版</a></p></section></main></html>'''
+<p><a href="{review_route}">查看修改后复审材料</a> · <a href="https://github.com/WtqMyou/plc-st-coding-agent/tree/main/{repo_revision_path}">GitHub 修订版</a>{handout_link}</p></section></main></html>'''
 
 
 def page():
@@ -171,6 +184,10 @@ class Handler(BaseHTTPRequestHandler):
             raw, mime = (REPO / 'progress/v13/复审材料.html').read_bytes(), 'text/html; charset=utf-8'
         elif path == '/v13-r2-review.html':
             raw, mime = (REPO / 'progress/v13_r2/复审材料.html').read_bytes(), 'text/html; charset=utf-8'
+        elif path == '/v13-r4-review.html':
+            raw, mime = (REPO / 'progress/v13_r4/复审材料.html').read_bytes(), 'text/html; charset=utf-8'
+        elif path == '/v13-r4-review.zip':
+            raw, mime = (REPO / 'progress/工艺复审_r4_刘晏铭_20261108.zip').read_bytes(), 'application/zip'
         elif path == '/review.zip':
             raw, mime = ZIP.read_bytes(), 'application/zip'
         else:
@@ -182,6 +199,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(raw)))
         if path == '/review.zip':
             self.send_header('Content-Disposition', 'attachment; filename="review_liu_20261101.zip"')
+        elif path == '/v13-r4-review.zip':
+            self.send_header('Content-Disposition', 'attachment; filename="review_r4_liu_20261108.zip"')
         self.end_headers()
         self.wfile.write(raw)
 
