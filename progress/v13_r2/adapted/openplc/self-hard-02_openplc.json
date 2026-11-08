@@ -1,0 +1,338 @@
+{
+  "pid": "self-hard-02",
+  "source": "selfmade",
+  "difficulty": "hard",
+  "title": "批次工艺阶段与运行时长统计（无外部时钟）",
+  "requirements": "写一个功能块 FB，管理一个间歇反应釜的批次生命周期。\n控制要求：\n1. startBtn 的上升沿开始一个新批次：phase := 1，elapsed := 0，timeout := FALSE；\n2. phase = 1（升温）时，每个扫描周期 elapsed 加 1；当 pv **达到或超过** setpoint 时进入 phase = 2（保温）；\n3. phase = 2（保温）时，elapsed 继续每周期加 1，直到操作员按确认或超时；\n4. **超时判定**：elapsed 达到 maxDuration 时 timeout 置 TRUE，并进入 phase = 3（完成）；\n5. **中止按钮优先级最高**：任何阶段按下 abortBtn 都立即进入 phase = 9，且 elapsed 停止累加；\n6. 进入中止态后不得自动恢复，必须重新按 startBtn 并在新批次中清零一切状态；\n7. **不得使用任何系统时钟**（无 TIME/TON 等计时器），时长只能来自扫描周期计数。",
+  "variables": [
+    {
+      "name": "startBtn",
+      "data_type": "BOOL",
+      "description": "批次开始（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "abortBtn",
+      "data_type": "BOOL",
+      "description": "中止按钮（直接中止批次）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "setpoint",
+      "data_type": "REAL",
+      "description": "工艺设定值",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "pv",
+      "data_type": "REAL",
+      "description": "过程测量值",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "maxDuration",
+      "data_type": "INT",
+      "description": "本批次允许的最长持续时间（秒）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "elapsed",
+      "data_type": "INT",
+      "description": "已运行秒数",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "phase",
+      "data_type": "INT",
+      "description": "阶段号：0=空闲 1=升温 2=保温 3=完成 9=已中止",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "timeout",
+      "data_type": "BOOL",
+      "description": "超时标志",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "批次的秒数只在运行阶段（phase 1/2）每周期恰好增加 1，重新开始的那一拍例外（要清零）。",
+      "ltl": "G((phase = 1 | phase = 2) & !rising(startBtn) -> elapsed = prev(elapsed) + 1)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "已运行秒数达到最长持续时间后，timeout 必须在当拍置 TRUE。",
+      "ltl": "G(elapsed >= maxDuration & !rising(startBtn) -> timeout)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "中止按钮优先级最高：按下即进入中止态（同一拍生效）。",
+      "ltl": "G(abortBtn & !rising(startBtn) -> phase = 9)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "进入中止态后不得自动离开，除非出现新的启动上升沿。",
+      "ltl": "G(phase = 9 & !X(rising(startBtn)) -> X(phase = 9))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "重新开始时 elapsed 与 timeout 必须在同一拍清零/复位。",
+      "ltl": "G(rising(startBtn) -> elapsed = 0 & !timeout & phase = 1)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "b1",
+      "inputs": {
+        "startBtn": true,
+        "pv": 20.0,
+        "abortBtn": false
+      },
+      "expected": {
+        "phase": 1,
+        "elapsed": 0,
+        "timeout": false
+      },
+      "note": "启动 → 升温，计时从 0 开始",
+      "const_inputs": {
+        "setpoint": 100.0,
+        "maxDuration": 5
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b2",
+      "inputs": {
+        "startBtn": true,
+        "pv": 60.0,
+        "abortBtn": false
+      },
+      "expected": {
+        "phase": 1,
+        "elapsed": 1
+      },
+      "note": "升温中累加计时",
+      "const_inputs": {
+        "setpoint": 100.0,
+        "maxDuration": 5
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b3",
+      "inputs": {
+        "startBtn": false,
+        "pv": 100.0,
+        "abortBtn": false
+      },
+      "expected": {
+        "phase": 2,
+        "elapsed": 2,
+        "timeout": false
+      },
+      "note": "到达设定值 → 保温",
+      "const_inputs": {
+        "setpoint": 100.0,
+        "maxDuration": 5
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b4",
+      "inputs": {
+        "startBtn": false,
+        "pv": 101.0,
+        "abortBtn": false
+      },
+      "expected": {
+        "phase": 2,
+        "elapsed": 3
+      },
+      "note": "保温继续计时",
+      "const_inputs": {
+        "setpoint": 100.0,
+        "maxDuration": 5
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b5",
+      "inputs": {
+        "startBtn": false,
+        "pv": 101.0,
+        "abortBtn": true
+      },
+      "expected": {
+        "phase": 9,
+        "elapsed": 3
+      },
+      "note": "中止 → 结束态，计时冻结",
+      "const_inputs": {
+        "setpoint": 100.0,
+        "maxDuration": 5
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b6",
+      "inputs": {
+        "startBtn": true,
+        "pv": 30.0,
+        "abortBtn": false
+      },
+      "expected": {
+        "phase": 1,
+        "elapsed": 0
+      },
+      "note": "重新启动：计时复位",
+      "const_inputs": {
+        "setpoint": 100.0,
+        "maxDuration": 3
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b7",
+      "inputs": {
+        "startBtn": false,
+        "pv": 40.0,
+        "abortBtn": false
+      },
+      "expected": {
+        "elapsed": 1,
+        "phase": 1
+      },
+      "note": "计时 1",
+      "const_inputs": {
+        "setpoint": 100.0,
+        "maxDuration": 3
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b8",
+      "inputs": {
+        "startBtn": false,
+        "pv": 40.0,
+        "abortBtn": false
+      },
+      "expected": {
+        "elapsed": 2,
+        "phase": 1
+      },
+      "note": "计时 2",
+      "const_inputs": {
+        "setpoint": 100.0,
+        "maxDuration": 3
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b9",
+      "inputs": {
+        "startBtn": false,
+        "pv": 40.0,
+        "abortBtn": false
+      },
+      "expected": {
+        "timeout": true,
+        "phase": 9
+      },
+      "note": "计时到 3 = maxDuration → 超时结束",
+      "const_inputs": {
+        "setpoint": 100.0,
+        "maxDuration": 3
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "自主构思 / 行业经验改编",
+    "origin": "流程行业赛题的间歇反应工位普遍要求'升温—保温—完成'三阶段以及批次时长统计；判断题面是否允许用 TON 是常见考点。",
+    "adaptation": "显式禁止计时器，要求用扫描周期计数实现，以考察 LLM 对 PLC 扫描周期语义的理解（这是纯软件工程师最容易忽略的一点）。",
+    "review": "人工审核：题面第 7 条明确禁用时间类型，否则不同模型会走'用 TON 实现'的分歧路径，导致测试不可比。",
+    "note": "本题是'扫描周期计数 vs 真实时钟'的经典区分点，在控制系统里两者语义不同，必须按题面要求。",
+    "review_revision": "v1.3-review-r2",
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r2",
+      "platform": "openplc",
+      "pid": "self-hard-02",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate"
+      ],
+      "adapted_source_sha256": "89db230125a446fee3c10deeb391f4098b1817d9ada2622a9e3416b82bb11512"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r2",
+      "kind": "platform_adapted",
+      "platform": "openplc",
+      "original_json": "progress/v13/upstream/selfmade/self-hard-02.json",
+      "original_sha256": "0bd57f7f586c1521e2d92c5c58423293fa04321cc76a635079535a792381afed",
+      "interface_changed": false,
+      "reference_source_sha256": "89db230125a446fee3c10deeb391f4098b1817d9ada2622a9e3416b82bb11512",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance"
+    }
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

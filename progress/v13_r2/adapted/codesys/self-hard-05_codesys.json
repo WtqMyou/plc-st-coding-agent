@@ -1,0 +1,845 @@
+{
+  "pid": "self-hard-05",
+  "source": "selfmade",
+  "difficulty": "hard",
+  "title": "燃烧状态与氧量修正联锁（熄火跳闸 + 分析仪故障降级）",
+  "requirements": "写一个功能块 FB，实现燃烧器的火焰联锁与烟气氧量修正。\n控制要求：\n1. 运行请求 runRequest 为 TRUE 且火焰探测器 flameOK 为 FALSE 时，**当拍**置位熄火跳闸 tripLatched，并切断燃料许可；\n2. tripLatched 自保持，只有在 runRequest=FALSE 且 flameOK=FALSE（停机且无火焰的安全态）的前提下，resetBtn 的**上升沿**才能清除。复位是边沿命令而不是保持命令：按住的时长不影响判定，每拍只认有没有新的上升沿；复位那一刻条件不满足就无效，之后条件满足了但还按着（没有新上升沿）也**不得**清除；runRequest 仍为 TRUE 或 flameOK 仍为 TRUE 时按下的复位同样无效；\n3. fuelPermit = runRequest AND flameOK AND NOT tripLatched；\n4. 氧量修正：trimEnable = fuelPermit AND NOT o2Fault；airTrim = 2.0 * (2.0 - o2PV)，并钳位到 [-10, +10]；trimEnable=FALSE 时 airTrim 必须为 0.0。说明：±10 是**输出约束**，不代表两个方向都能到饱和——合法量程 0..21% 内原始修正只在 [-38, +4] 之间（o2PV=0 得 +4，o2PV=21 得 -38），因此正向限幅在本题永远不触发，只有 o2PV > 7.0 时负向限幅才起作用；增益偏小属于演示取舍，真实装置的风门增益取决于风道流通能力；\n5. o2Fault = NOT o2Valid OR o2PV < 0.0 OR o2PV > 21.0（分析仪故障只切除修正，**不得**切除燃料；o2Valid=TRUE 但 o2PV<0 同样判故障）；\n6. airCommand = baseAir + airTrim，钳位到 [0, 100]；fuelPermit=FALSE 时 airCommand 必须为 0.0。说明：baseAir 是外部基础开度给定，本题**不要求** baseAir 自身落在 0..100，只要求最终 airCommand 落在 0..100（baseAir+airTrim 可能为负，此时钳位到 0）；\n7. 范围声明：本题只考核**运行阶段**的火焰联锁与氧量修正。预吹扫、点火、火焰建立等启动顺序，以及完整燃烧器安全管理（BMS，含吹扫时的风门要求）不在本题范围内，由其他系统负责。",
+  "variables": [
+    {
+      "name": "runRequest",
+      "data_type": "BOOL",
+      "description": "燃烧运行请求",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "flameOK",
+      "data_type": "BOOL",
+      "description": "火焰探测器反馈（TRUE=检测到火焰）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "o2Valid",
+      "data_type": "BOOL",
+      "description": "氧量分析仪数据有效",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "o2PV",
+      "data_type": "REAL",
+      "description": "烟气含氧量测量值（%）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "baseAir",
+      "data_type": "REAL",
+      "description": "主风门基础开度给定（%），外部给定，自身不要求在 0..100",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "resetBtn",
+      "data_type": "BOOL",
+      "description": "复位按钮（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "fuelPermit",
+      "data_type": "BOOL",
+      "description": "燃料允许（联锁输出）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "trimEnable",
+      "data_type": "BOOL",
+      "description": "氧量修正投入（无故障才为 TRUE）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "airTrim",
+      "data_type": "REAL",
+      "description": "氧量修正偏置（%），钳位 ±10",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "airCommand",
+      "data_type": "REAL",
+      "description": "风门开度命令（%），钳位 0..100",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "tripLatched",
+      "data_type": "BOOL",
+      "description": "熄火跳闸自保持",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "o2Fault",
+      "data_type": "BOOL",
+      "description": "氧量分析仪故障（无效或越界）",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "运行中失去火焰时，**同一周期**就必须跳闸（不得延迟一拍）。",
+      "ltl": "G((runRequest & !flameOK) -> tripLatched)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "跳闸一旦置位就自保持；只有\"runRequest=FALSE 且 flameOK=FALSE 下的复位上升沿\"这一个条件能清除它，其余任何一拍（含按住不复位、条件不满足时按复位）都必须保持。",
+      "ltl": "G((prev(tripLatched) & !(rising(resetBtn) & !runRequest & !flameOK)) -> tripLatched)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "跳闸状态下绝不允许燃料许可。",
+      "ltl": "G(tripLatched -> !fuelPermit)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "燃料许可的完整定义：运行请求、火焰正常、未跳闸三者同时成立才允许，缺一不可。",
+      "ltl": "G(fuelPermit <-> (runRequest & flameOK & !tripLatched))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "无燃料许可时风门命令必须归零（防止停机后残留开度）。",
+      "ltl": "G(!fuelPermit -> airCommand = 0.0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "风门命令恒在 0..100 之间。",
+      "ltl": "G((airCommand >= 0.0) & (airCommand <= 100.0))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S7",
+      "text": "氧量修正偏置恒在 ±10 之间。",
+      "ltl": "G((airTrim >= -10.0) & (airTrim <= 10.0))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S8",
+      "text": "修正投入的完整定义：有燃料许可且分析仪无故障才投入；故障当拍即整段切除。",
+      "ltl": "G(trimEnable <-> (fuelPermit & !o2Fault))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S9",
+      "text": "故障判据：数据无效、低于 0 或高于 21 三者任一成立。",
+      "ltl": "G(o2Fault <-> (!o2Valid | o2PV < 0.0 | o2PV > 21.0))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S10",
+      "text": "修正切除时偏置必须归 0（不得残留上一次的修正量）。",
+      "ltl": "G(!trimEnable -> airTrim = 0.0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S11",
+      "text": "只有 o2PV > 7.0 一侧能触到负向限幅：此时偏置被钳在 -10。",
+      "ltl": "G((trimEnable & o2PV > 7.0) -> airTrim = -10.0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S12",
+      "text": "o2PV <= 7.0 一侧未达限幅：偏置严格等于 2.0*(2.0-o2PV)。",
+      "ltl": "G((trimEnable & o2PV <= 7.0) -> airTrim = 2.0 * (2.0 - o2PV))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S13",
+      "text": "修正后合成开度超上限时命令钳在 100，且不改变偏置本身。",
+      "ltl": "G((fuelPermit & baseAir + airTrim > 100.0) -> airCommand = 100.0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S14",
+      "text": "修正后合成开度为负时命令钳在 0（baseAir 可以小于 10）。",
+      "ltl": "G((fuelPermit & baseAir + airTrim < 0.0) -> airCommand = 0.0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S15",
+      "text": "系数与钳位后的合成值：由仿真用例逐拍核对（净收益/风门数值语义）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "q1",
+      "inputs": {
+        "runRequest": false,
+        "flameOK": false,
+        "o2Valid": true,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "o2Fault": false,
+        "tripLatched": false,
+        "fuelPermit": false,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 0.0
+      },
+      "note": "停机初始：无故障、不跳闸、无燃料许可，风门命令归 0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q2",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": true,
+        "o2Valid": true,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "o2Fault": false,
+        "fuelPermit": true,
+        "trimEnable": true,
+        "airTrim": -4.0,
+        "airCommand": 46.0
+      },
+      "note": "正常运行：o2=4.0 → trim=2*(2-4)=-4，风门 46",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q3",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": false,
+        "o2Valid": true,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 0.0
+      },
+      "note": "运行中熄火：**当拍**跳闸并切断燃料（不得等到下一拍）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q4",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": true,
+        "o2Valid": true,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 0.0,
+        "o2Fault": false
+      },
+      "note": "跳闸自保持：火焰恢复也不自动复位；跳闸期间修正模块必须整段切除（trimEnable=FALSE、airTrim=0），风门命令归 0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q5",
+      "inputs": {
+        "runRequest": false,
+        "flameOK": false,
+        "o2Valid": true,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": false,
+        "fuelPermit": false,
+        "airCommand": 0.0
+      },
+      "note": "复位：runRequest=FALSE 且 flameOK=FALSE 时上升沿清除跳闸",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q6",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": true,
+        "o2Valid": false,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "o2Fault": true,
+        "fuelPermit": true,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 50.0
+      },
+      "note": "分析仪无效：切除修正但**不**切燃料，风门只跟基础给定",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q7",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": true,
+        "o2Valid": true,
+        "o2PV": 1.0,
+        "baseAir": 50.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "o2Fault": false,
+        "trimEnable": true,
+        "airTrim": 2.0,
+        "airCommand": 52.0
+      },
+      "note": "恢复有效：o2 偏低 → 加风 +2",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q8",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": true,
+        "o2Valid": true,
+        "o2PV": 5.5,
+        "baseAir": 80.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "airTrim": -7.0,
+        "airCommand": 73.0
+      },
+      "note": "o2 偏高 → trim=-7，风门 73",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q9",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": true,
+        "o2Valid": true,
+        "o2PV": 8.0,
+        "baseAir": 95.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "airTrim": -10.0,
+        "airCommand": 85.0
+      },
+      "note": "【边界】原始 trim=2*(2-8)=-12，必须钳位到 -10",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q10",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": true,
+        "o2Valid": true,
+        "o2PV": 1.0,
+        "baseAir": 95.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "airTrim": 2.0,
+        "airCommand": 97.0
+      },
+      "note": "正修正：95+2=97，尚在范围内",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q11",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": true,
+        "o2Valid": true,
+        "o2PV": 0.0,
+        "baseAir": 99.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "airTrim": 4.0,
+        "airCommand": 100.0
+      },
+      "note": "【边界】99+4=103，风门命令必须钳位到 100",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q12",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": true,
+        "o2Valid": true,
+        "o2PV": 21.0,
+        "baseAir": 100.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "o2Fault": false,
+        "airTrim": -10.0,
+        "airCommand": 90.0
+      },
+      "note": "【边界】o2=21.0 仍属合法量程（<=21），trim 钳位 -10",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q13",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": true,
+        "o2Valid": true,
+        "o2PV": 21.1,
+        "baseAir": 100.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "o2Fault": true,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 100.0
+      },
+      "note": "【边界】o2=21.1 越界 → 判故障、切除修正",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q14",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": true,
+        "o2Valid": true,
+        "o2PV": -0.5,
+        "baseAir": 50.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "o2Fault": true,
+        "fuelPermit": true,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 50.0,
+        "tripLatched": false
+      },
+      "note": "o2Valid=TRUE 但 o2PV=-0.5 <0：同样判分析仪故障，切除修正但**不**切燃料",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q15",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": false,
+        "o2Valid": true,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 0.0,
+        "o2Fault": false
+      },
+      "note": "【非法复位】runRequest 仍为 TRUE 时按复位：即便有上升沿也不得清除跳闸",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q16",
+      "inputs": {
+        "runRequest": false,
+        "flameOK": false,
+        "o2Valid": true,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 0.0
+      },
+      "note": "【持续按住】条件虽已满足，但没有新的上升沿 → 跳闸保持",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q17",
+      "inputs": {
+        "runRequest": false,
+        "flameOK": false,
+        "o2Valid": true,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "airCommand": 0.0
+      },
+      "note": "【松开】复位键松开、无上升沿 → 跳闸仍保持",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q18",
+      "inputs": {
+        "runRequest": false,
+        "flameOK": false,
+        "o2Valid": true,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": false,
+        "fuelPermit": false,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 0.0,
+        "o2Fault": false
+      },
+      "note": "【合法复位】runRequest=FALSE 且 flameOK=FALSE 下的上升沿 → 清除跳闸",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q19",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": false,
+        "o2Valid": true,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 0.0,
+        "o2Fault": false
+      },
+      "note": "复位后再次运行中熄火 → 重新跳闸",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q20",
+      "inputs": {
+        "runRequest": false,
+        "flameOK": true,
+        "o2Valid": true,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 0.0
+      },
+      "note": "【非法复位】flameOK 仍为 TRUE（有火焰）时按复位 → 不得清除跳闸",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q21",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": false,
+        "o2Valid": false,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "o2Fault": true,
+        "fuelPermit": false,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 0.0
+      },
+      "note": "熄火 + 分析仪失效同时发生：跳闸优先，修正切除",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q22",
+      "inputs": {
+        "runRequest": false,
+        "flameOK": false,
+        "o2Valid": true,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": false,
+        "o2Fault": false,
+        "fuelPermit": false,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 0.0
+      },
+      "note": "【恢复路径】再次合法复位 → 跳闸清除、故障不残留",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q23",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": true,
+        "o2Valid": true,
+        "o2PV": 8.0,
+        "baseAir": 5.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "o2Fault": false,
+        "tripLatched": false,
+        "fuelPermit": true,
+        "trimEnable": true,
+        "airTrim": -10.0,
+        "airCommand": 0.0
+      },
+      "note": "【边界】风门下限：airTrim=-10 且 baseAir=5 → 合成 -5 钳位到 0，而 airTrim 本身仍是 -10（钳位作用在合成值上，不回写偏置）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q24",
+      "inputs": {
+        "runRequest": false,
+        "flameOK": false,
+        "o2Valid": false,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "o2Fault": true,
+        "tripLatched": false,
+        "fuelPermit": false,
+        "trimEnable": false,
+        "airTrim": 0.0,
+        "airCommand": 0.0
+      },
+      "note": "停机态下分析仪失效：只报故障，不产生燃料许可、不跳闸",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q25",
+      "inputs": {
+        "runRequest": true,
+        "flameOK": true,
+        "o2Valid": true,
+        "o2PV": 4.0,
+        "baseAir": 50.0,
+        "resetBtn": false
+      },
+      "expected": {
+        "o2Fault": false,
+        "tripLatched": false,
+        "fuelPermit": true,
+        "trimEnable": true,
+        "airTrim": -4.0,
+        "airCommand": 46.0
+      },
+      "note": "【恢复正常】o2 恢复 4.0、分析仪有效 → 修正重新投入，风门 46",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "队友评审草案改编（P01）",
+    "origin": "2026 CIMC 流程行业自动化初赛样题中的燃烧控制环节：熄火保护与烟气氧量修正同时存在，两者对风门的处置相反。",
+    "adaptation": "把原草案中的派生谓词（inAuto、o2TrimRaw 等）改为显式接口变量或写进规约正文；去掉未声明的中间量，保证规约可直接判定。",
+    "review": "已收到需修改意见；本版本已技术整改，人工复审未通过前不得标为通过。",
+    "human_process_review": {
+      "status": "corrected_pending_rereview",
+      "reviewer": "刘晏铭",
+      "reviewer_as_written": "lym",
+      "original_conclusion": "需修改",
+      "original_review_date": "11.2",
+      "source": "progress/evidence/review_20261108/inputs/复核记录.md",
+      "approved": false
+    },
+    "review_revision": "v1.3-review-r2",
+    "upstream_review_claim": "人工审核：接口全为标量，无外部依赖；钳位与边沿语义与 IEC 61131-3 一致。",
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r2",
+      "platform": "codesys",
+      "pid": "self-hard-05",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate"
+      ],
+      "adapted_source_sha256": "d4bb0c4b532904334c3269b337d547efcdd2b0e977fd563bb755962eefd13f17"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r2",
+      "kind": "platform_adapted",
+      "platform": "codesys",
+      "original_json": "progress/v13/upstream/selfmade/self-hard-05.json",
+      "original_sha256": "7ed4570dec491cc1537d52db6f87b3cfe63a29fa4db5fec2ebd95e96e5058f50",
+      "interface_changed": false,
+      "reference_source_sha256": "d4bb0c4b532904334c3269b337d547efcdd2b0e977fd563bb755962eefd13f17",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance"
+    }
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

@@ -20,15 +20,32 @@ CST = timezone(timedelta(hours=8))
 
 
 def offline_page():
-    root = REPO / 'progress/evidence/v13_review_20261108'
+    active = load(REPO / 'progress/active_experiment.json')
+    cfg = load(REPO / active.get('config', 'progress/v13/config.offline.json'))
+    root = (REPO / cfg['campaign_root']).resolve()
+    revision_root = (REPO / active.get('revision_root', 'progress/v13')).resolve()
+    scores_path = (REPO / active.get('rescore_path', 'progress/evidence/v13_rescore_20261108b/rescore.json')).resolve()
+    if not all(p.is_relative_to(REPO.resolve()) for p in (root, revision_root, scores_path)):
+        raise RuntimeError('Offline status paths must stay in this repository')
     offline = load(root / 'offline.json')
-    scores = load(REPO / 'progress/evidence/v13_rescore_20261108b/rescore.json')
+    scores = load(scores_path)
     ledger = load(Path('E:/PLC_Dev/evidence/dmxapi_budget_75.json'))
+    version = str(offline.get('version', 'v1.3'))
+    reused = bool(offline.get('native_results_reused'))
+    native_note = '已按同源码哈希及当前平台身份复用 r1 原生编译证据。' if reused else '参考解已执行真实平台编译。'
     native = []
     for label in ('codesys', 'openplc'):
-        rows = load(root / (label + '_references.json'))
+        if reused:
+            record = next((r for r in offline.get('native_evidence', []) if r['platform'] == label), {})
+            rows = record.get('entries', [])
+        else:
+            rows = load(root / (label + '_references.json'))
         rows = rows if isinstance(rows, list) else []
         native.append(f'<li>{escape(label.upper())}：{sum(r.get("status") == "passed" for r in rows)}/35 参考解编译通过</li>')
+    baseline_label = escape(str(scores.get('baseline_label', '旧版本地整题')))
+    current_label = escape(str(scores.get('current_label', '修订版本地整题')))
+    review_route = '/v13-r2-review.html' if version == 'v1.3-review-r2' else '/v13-review.html'
+    repo_revision_path = quote(revision_root.relative_to(REPO.resolve()).as_posix())
     table = []
     for r in scores.get('rows', []):
         cells = [r['group'], f'{r["old_solved"]}/35', f'{r["new_solved"]}/35',
@@ -39,14 +56,15 @@ def offline_page():
 body{{background:#f1f5fa;color:#203047;font:16px/1.7 system-ui,"Microsoft YaHei",sans-serif;margin:0}}
 main{{max-width:1100px;margin:auto;padding:28px 22px}}section{{background:white;border:1px solid #dce5ef;border-radius:12px;padding:20px;margin:18px 0}}
 table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{padding:10px;text-align:left;border-bottom:1px solid #e6ecf3}}a{{color:#155eab}}.scroll{{overflow:auto}}</style>
-<main><h1>v1.3 修订与免费验收</h1><p>当前没有付费模型实验运行。每 15 秒刷新本机证据。</p>
+<main><h1>{escape(version)} 修订与免费验收</h1><p>当前没有付费模型实验运行。每 15 秒刷新本机证据。</p>
 <section><h2>验收进度</h2><p>功能与严格接口：{offline.get('cases_passed', 0)}/{offline.get('cases', 531)} 条用例通过。</p><ul>{''.join(native)}</ul>
+<p>{native_note}本页结果属于平台适配口径，不代表原始 VARIANT 接口通过率。</p>
 <p>性质总数 {offline.get('total_properties', '—')}；原始 LTL {offline.get('raw_ltl', '—')}，运行期 LTL {offline.get('runtime_ltl', '—')}。测试轨迹检查不代表穷尽证明。</p></section>
-<section><h2>固定历史候选的事后评分</h2><div class="scroll"><table><tr><th>组别</th><th>旧版本地整题</th><th>修订版本地整题</th><th>修订版通过用例</th><th>新增失败题</th><th>工具未决</th></tr>{''.join(table)}</table></div>
+<section><h2>固定历史候选的事后评分</h2><div class="scroll"><table><tr><th>组别</th><th>{baseline_label}</th><th>{current_label}</th><th>修订版通过用例</th><th>新增失败题</th><th>工具未决</th></tr>{''.join(table)}</table></div>
 <p>两侧使用相同检查器及相同历史候选；不替换 R8 正式结果，不是新版提示的模型生成实验。</p></section>
-<section><h2>人工复审与费用</h2><p>刘晏铭（lym）的原结论为五题均需修改。当前技术整改后待复审，尚未标为通过。</p>
+<section><h2>人工复审与费用</h2><p>已收到上游复核记录2草稿：火焰题标批准，其余四题需修改；适用版本待确认。本修订版技术整改后待复审，未补造批准。</p>
 <p>本阶段模型费用 ¥0；共享账本累计 ¥{ledger.get('spent_cny', 0):.6f}/75，原诊断额度未增加。</p>
-<p><a href="/v13-review.html">查看修改后复审材料</a> · <a href="https://github.com/WtqMyou/plc-st-coding-agent/tree/main/progress/v13">GitHub 修订版</a></p></section></main></html>'''
+<p><a href="{review_route}">查看修改后复审材料</a> · <a href="https://github.com/WtqMyou/plc-st-coding-agent/tree/main/{repo_revision_path}">GitHub 修订版</a></p></section></main></html>'''
 
 
 def page():
@@ -144,6 +162,8 @@ class Handler(BaseHTTPRequestHandler):
             raw, mime = REVIEW.read_bytes(), 'text/html; charset=utf-8'
         elif path == '/v13-review.html':
             raw, mime = (REPO / 'progress/v13/复审材料.html').read_bytes(), 'text/html; charset=utf-8'
+        elif path == '/v13-r2-review.html':
+            raw, mime = (REPO / 'progress/v13_r2/复审材料.html').read_bytes(), 'text/html; charset=utf-8'
         elif path == '/review.zip':
             raw, mime = ZIP.read_bytes(), 'application/zip'
         else:

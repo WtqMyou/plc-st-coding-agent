@@ -1,0 +1,400 @@
+{
+  "pid": "public-medium-03",
+  "source": "public",
+  "difficulty": "medium",
+  "title": "Calculate Moving Average",
+  "requirements": "Write a function block FB that calculates and updates a moving arithmetic mean. The moving arithmetic mean is a method of averaging over consecutive data points, where each new data point replaces the oldest data point, and then the average is recalculated.\n\n1. When cyclicExecution is TRUE, a new data value is automatically read and the moving average average is updated every scan cycle.\n2. Provide an external trigger signal trigger, which reads a new data value and updates the moving average upon each rising edge.\n3. Provide a reset function reset, which resets the moving average calculation when the reset signal is TRUE. If the window size is less than 1 or greater than 100, output an error status and status code.\n\nThe status parameter indicates the execution status of the program:\n- 16#0000: Execution successful\n- 16#8200: Window length setting error, please set a value between 1 and 100.",
+  "variables": [
+    {
+      "name": "cyclicExecution",
+      "data_type": "BOOL",
+      "description": "When TRUE, periodic reading is performed, and trigger has no effect",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "trigger",
+      "data_type": "BOOL",
+      "description": "External trigger signal, reads value upon each rising edge",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "value",
+      "data_type": "LREAL",
+      "description": "Newly read data value",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "windowSize",
+      "data_type": "INT",
+      "description": "The window size for the moving average, which must be between 1 and 100",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "reset",
+      "data_type": "BOOL",
+      "description": "Reset signal, resets the moving average calculation when TRUE",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "average",
+      "data_type": "LREAL",
+      "description": "The moving average",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "windowSizeReached",
+      "data_type": "BOOL",
+      "description": "FALSE: Maximum window width not yet reached TRUE: Maximum window width has been reached",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "error",
+      "data_type": "BOOL",
+      "description": "FALSE: No error occurred TRUE: An error occurred during the execution of FB",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "status",
+      "data_type": "WORD",
+      "description": "Status code",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "窗口尺寸小于 1 或大于 100 时必须置 error=TRUE。",
+      "ltl": "G((windowSize < 1 | windowSize > 100) -> error)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "错误状态置位时状态码必须为 16#8200（33280）。",
+      "ltl": "G(error -> status = 33280)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "无错误时状态码必须为 16#0000。",
+      "ltl": "G(!error -> status = 0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "复位信号为 TRUE 时，移动平均必须清零。",
+      "ltl": "G(reset -> average = 0.0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "复位信号为 TRUE 时，窗口未满标志必须清除。",
+      "ltl": "G(reset -> !windowSizeReached)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "average 等于最近 min(累计样本数, windowSize) 个样本的算术平均；累计样本数小于 windowSize 时 windowSizeReached=FALSE，达到时 TRUE；重复值不合并，窗口变化后只保留最近 windowSize 个样本。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "s1",
+      "inputs": {
+        "cyclicExecution": true,
+        "trigger": false,
+        "value": 10.0,
+        "windowSize": 2,
+        "reset": false
+      },
+      "expected": {
+        "average": 10.0,
+        "windowSizeReached": false,
+        "error": false,
+        "status": 0
+      },
+      "note": "窗口=2、周期模式首个样本：窗口未满，平均=10、reached=FALSE、无错误",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s2",
+      "inputs": {
+        "cyclicExecution": true,
+        "trigger": false,
+        "value": 20.0,
+        "windowSize": 2,
+        "reset": false
+      },
+      "expected": {
+        "average": 15.0,
+        "windowSizeReached": true
+      },
+      "note": "第二个样本 20：窗口填满，平均=(10+20)/2=15、reached 置 TRUE",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s3",
+      "inputs": {
+        "cyclicExecution": true,
+        "trigger": false,
+        "value": 30.0,
+        "windowSize": 2,
+        "reset": false
+      },
+      "expected": {
+        "average": 25.0
+      },
+      "note": "第三个样本 30：FIFO 淘汰最旧 10，平均=(20+30)/2=25",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s4",
+      "inputs": {
+        "cyclicExecution": true,
+        "trigger": false,
+        "value": 30.0,
+        "windowSize": 2,
+        "reset": false
+      },
+      "expected": {
+        "average": 30.0
+      },
+      "note": "重复值 30：连续两次相同样本，平均=(30+30)/2=30（重复值不合并）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s5",
+      "inputs": {
+        "cyclicExecution": false,
+        "trigger": true,
+        "value": 40.0,
+        "windowSize": 2,
+        "reset": false
+      },
+      "expected": {
+        "average": 35.0
+      },
+      "note": "周期模式关、trigger 上升沿：本拍采一个样本，平均=(30+40)/2=35",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s6",
+      "inputs": {
+        "cyclicExecution": false,
+        "trigger": true,
+        "value": 50.0,
+        "windowSize": 2,
+        "reset": false
+      },
+      "expected": {
+        "average": 35.0
+      },
+      "note": "trigger 保持 TRUE 无新上升沿：不采样，平均保持 35（只认边沿）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s7",
+      "inputs": {
+        "cyclicExecution": true,
+        "trigger": true,
+        "value": 60.0,
+        "windowSize": 2,
+        "reset": false
+      },
+      "expected": {
+        "average": 50.0
+      },
+      "note": "cyclicExecution=TRUE 且 trigger 同时为 TRUE：周期模式优先且只采一次，平均=(40+60)/2=50",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s8",
+      "inputs": {
+        "cyclicExecution": true,
+        "trigger": false,
+        "value": 100.0,
+        "windowSize": 4,
+        "reset": false
+      },
+      "expected": {
+        "average": 57.5,
+        "windowSizeReached": true
+      },
+      "note": "窗口由 2 改为 4：取最近 4 个样本 30,40,60,100，平均=57.5；累计样本 7>=4 故 reached=TRUE",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s9",
+      "inputs": {
+        "cyclicExecution": true,
+        "trigger": false,
+        "value": 5.0,
+        "windowSize": 101,
+        "reset": false
+      },
+      "expected": {
+        "average": 57.5,
+        "windowSizeReached": true,
+        "error": true,
+        "status": 33280
+      },
+      "note": "窗口=101 越上界：error=TRUE、status=16#8200(33280)，不采样、统计值保持上一次 57.5",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s10",
+      "inputs": {
+        "cyclicExecution": true,
+        "trigger": false,
+        "value": 5.0,
+        "windowSize": 0,
+        "reset": false
+      },
+      "expected": {
+        "average": 57.5,
+        "windowSizeReached": true,
+        "error": true,
+        "status": 33280
+      },
+      "note": "窗口=0 越下界：同样报 error=TRUE、status=33280，统计值保持 57.5",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s11",
+      "inputs": {
+        "cyclicExecution": true,
+        "trigger": false,
+        "value": 7.0,
+        "windowSize": 2,
+        "reset": true
+      },
+      "expected": {
+        "average": 0.0,
+        "windowSizeReached": false,
+        "error": false,
+        "status": 0
+      },
+      "note": "reset=TRUE 复位：平均清零、reached=FALSE、错误清除、status=16#0000；复位当拍不采样（平均不为 7）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s12",
+      "inputs": {
+        "cyclicExecution": true,
+        "trigger": false,
+        "value": 8.0,
+        "windowSize": 2,
+        "reset": false
+      },
+      "expected": {
+        "average": 8.0,
+        "windowSizeReached": true,
+        "error": false,
+        "status": 0
+      },
+      "note": "复位后恢复运行：连续两拍同一值 8 填满窗口 2，平均=8、reached=TRUE、status=0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 2,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r2",
+      "platform": "openplc",
+      "pid": "public-medium-03",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate"
+      ],
+      "adapted_source_sha256": "211c924eb5517ade7439c4e877285acbdf38662d6e6763c1037b2d5d8a81b537"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r2",
+      "kind": "platform_adapted",
+      "platform": "openplc",
+      "original_json": "progress/v13/upstream/public/public-medium-03.json",
+      "original_sha256": "9687d7b7f64374ecfcb45ad05050c2a696b7fabbf4f90bfc3f6b6aa295c90be0",
+      "interface_changed": false,
+      "reference_source_sha256": "211c924eb5517ade7439c4e877285acbdf38662d6e6763c1037b2d5d8a81b537",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance"
+    }
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "# Calculate Moving Average\n\n- **Difficulty:** Medium (medium)\n\n## Requirements\n\nWrite a function block FB that calculates and updates a moving arithmetic mean. The moving arithmetic mean is a method of averaging over consecutive data points, where each new data point replaces the oldest data point, and then the average is recalculated.\n\n1. When cyclicExecution is TRUE, a new data value is automatically read and the moving average average is updated every scan cycle.\n2. Provide an external trigger signal trigger, which reads a new data value and updates the moving average upon each rising edge.\n3. Provide a reset function reset, which resets the moving average calculation when the reset signal is TRUE. If the window size is less than 1 or greater than 100, output an error status and status code.\n\nThe status parameter indicates the execution status of the program:\n- 16#0000: Execution successful\n- 16#8200: Window length setting error, please set a value between 1 and 100.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `cyclicExecution` | `BOOL` | When TRUE, periodic reading is performed, and trigger has no effect |\n| Input | `trigger` | `BOOL` | External trigger signal, reads value upon each rising edge |\n| Input | `value` | `LREAL` | Newly read data value |\n| Input | `windowSize` | `INT` | The window size for the moving average, which must be between 1 and 100 |\n| Input | `reset` | `BOOL` | Reset signal, resets the moving average calculation when TRUE |\n| Output | `average` | `LREAL` | The moving average |\n| Output | `windowSizeReached` | `BOOL` | FALSE: Maximum window width not yet reached TRUE: Maximum window width has been reached |\n| Output | `error` | `BOOL` | FALSE: No error occurred TRUE: An error occurred during the execution of FB |\n| Output | `status` | `WORD` | Status code |",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

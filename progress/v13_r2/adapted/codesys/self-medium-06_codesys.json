@@ -1,0 +1,604 @@
+{
+  "pid": "self-medium-06",
+  "source": "selfmade",
+  "difficulty": "medium",
+  "title": "温度模糊控制与输出钳位（重心法 + 历史误差清除）",
+  "requirements": "写一个功能块 FB，用九条规则的温度模糊控制器计算加热功率。\n控制要求：\n1. e = setpoint - temperature；de = (e - ePrev) / scanSeconds，**首拍**或历史被清除时 de = 0；\n2. x = clamp(e / 10.0, -1, 1)，y = clamp(de / 2.0, -1, 1)。量程说明：±10 ℃ 与 ±2 ℃/s 是本演示的满量程假设（对应温度回路约 ±10 ℃、变化率 ±2 ℃/s 的振荡工况；按幅值 ±10 ℃、周期 31.4 s 估算，变化率峰值约 2.0 ℃/s，该假设在演示工况下自洽），换到真实装置应按实际量程重新整定；\n3. 隶属度：μN(z)=max(-z,0)、μZ(z)=1-|z|、μP(z)=max(z,0)；\n4. 九条规则的单点输出：N×N=-30、N×Z=-20、N×P=-10、Z×N=-10、Z×Z=0、Z×P=10、P×N=10、P×Z=20、P×P=30；correction = Σ(w·c)/Σw（重心法），Σw=0 时 correction=0；\n5. power = clamp(bias + correction, 0, 100)，**correction 不钳位**；\n6. fault = NOT sensorValid OR scanSeconds <= 0.0 OR scanSeconds > 10.0；fault、enable=FALSE 或 resetBtn **上升沿**时：power=0、correction=0，并清除历史（ePrev=0、历史标志=FALSE）。复位是边沿命令、不是停机保持命令：按住的时长不影响判定，每拍只认有没有新的上升沿；按住复位期间输出的 0 只在上升沿那一拍成立，之后回到正常模糊计算（历史已清除，所以恢复后的首拍按 de=0 处理）。“首拍/复位后/故障或禁用后恢复的首拍”指历史标志为 FALSE 的那一拍，该拍 ePrev 不参与，de 一律取 0；下一拍起才用正常差分。\n平台适配：原接口 dt（IEC 日期时间类型别名）统一重命名为 scanSeconds；单位秒、类型及原数字断言不变。",
+  "variables": [
+    {
+      "name": "enable",
+      "data_type": "BOOL",
+      "description": "自动投入",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "resetBtn",
+      "data_type": "BOOL",
+      "description": "复位（上升沿清除历史误差）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "sensorValid",
+      "data_type": "BOOL",
+      "description": "温度传感器数据有效",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "setpoint",
+      "data_type": "REAL",
+      "description": "温度设定值（℃）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "temperature",
+      "data_type": "REAL",
+      "description": "温度测量值（℃）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "scanSeconds",
+      "data_type": "REAL",
+      "description": "本周期时长（s），合法 0 < dt <= 10",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "bias",
+      "data_type": "REAL",
+      "description": "基础输出（%）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "power",
+      "data_type": "REAL",
+      "description": "加热功率输出（%），钳位 0..100",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "correction",
+      "data_type": "REAL",
+      "description": "模糊修正量（%）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "fault",
+      "data_type": "BOOL",
+      "description": "传感器或参数故障",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "加热功率恒在 0..100 之间。",
+      "ltl": "G((power >= 0.0) & (power <= 100.0))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "模糊修正量恒在 ±30 之间（九个单点输出量的极值）。",
+      "ltl": "G((correction >= -30.0) & (correction <= 30.0))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "未投入、复位上升沿或故障时，输出与修正必须归零。",
+      "ltl": "G((!enable | rising(resetBtn) | fault) -> (power = 0.0 & correction = 0.0))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "故障判据：传感器无效或 scanSeconds 越界。",
+      "ltl": "G(fault <-> (!sensorValid | scanSeconds <= 0.0 | scanSeconds > 10.0))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "传感器无效必然判故障（不允许用坏数据继续闭环）。",
+      "ltl": "G(!sensorValid -> fault)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S7",
+      "text": "故障/禁用之后重新计算的首拍，历史必须已清除：误差为正且超过满量程时只踩 P×Z 一条规则，修正恰为 +20（若历史未清，de 会带出别的值）。",
+      "ltl": "G(((prev(fault) | prev(!enable)) & enable & !fault & !rising(resetBtn) & setpoint - temperature >= 10.0) -> correction = 20.0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S8",
+      "text": "故障/禁用之后重新计算的首拍，误差为 0 时修正必须为 0（历史未清则会因 de≠0 给出非零修正）。",
+      "ltl": "G(((prev(fault) | prev(!enable)) & enable & !fault & !rising(resetBtn) & setpoint = temperature) -> correction = 0.0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S9",
+      "text": "复位不是保持命令：按住复位（无新上升沿）时不得继续强制清零，必须按正常模糊逻辑出功率。",
+      "ltl": "G((resetBtn & prev(resetBtn) & !fault & enable & (bias > 0.0) & setpoint - temperature >= 10.0) -> power > 0.0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S10",
+      "text": "功率为基础输出与修正合成后的钳位；故障、停用或复位上升沿当拍为零。",
+      "ltl": "G(((NOT enable OR fault OR (resetBtn AND NOT prev(resetBtn))) -> power = 0.0) AND (NOT (NOT enable OR fault OR (resetBtn AND NOT prev(resetBtn))) -> ABS(power - LIMIT(0.0, bias + correction, 100.0)) <= 0.000001))",
+      "kind": "data",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "q1",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 90.0,
+        "bias": 50.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "fault": false,
+        "correction": 20.0,
+        "power": 70.0
+      },
+      "note": "首拍无历史：de=0，e=10 → x=1.0/y=0 → 只踩 P×Z 规则（单点输出 20），修正 +20",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q2",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 92.0,
+        "bias": 50.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "correction": 6.0,
+        "power": 56.0
+      },
+      "note": "e=8、de=(8-10)/1=-2 → x=0.8/y=-1：命中 Z×N(-10) 与 P×N(+10)，重心 = (-2+8)/1 = +6",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q3",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 100.0,
+        "bias": 50.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "correction": -10.0,
+        "power": 40.0
+      },
+      "note": "e=0、de=-8 → 命中 Z×N，修正 -10（误差为零也要抑制负向趋势）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q4",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 98.0,
+        "bias": 50.0,
+        "scanSeconds": 2.0
+      },
+      "expected": {
+        "correction": 9.0,
+        "power": 59.0
+      },
+      "note": "四条规则同时激活，其中 Z×Z 的单点输出为零：e=2、de=1、dt=2 → x=0.2/y=0.5；隶属度 μZ(x)=0.8、μP(x)=0.2、μZ(y)=0.5、μP(y)=0.5 → Z×Z(0.8×0.5×0=0)、Z×P(0.8×0.5×10=4)、P×Z(0.2×0.5×20=2)、P×P(0.2×0.5×30=3)，权重和 0.4+0.4+0.1+0.1=1 → 修正 (0+4+2+3)/1 = 9.0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q5",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": false,
+        "setpoint": 100.0,
+        "temperature": 98.0,
+        "bias": 50.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "fault": true,
+        "power": 0.0,
+        "correction": 0.0
+      },
+      "note": "传感器故障：功率与修正都归零，并清除历史误差",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q6",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 100.0,
+        "bias": 50.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "fault": false,
+        "correction": 0.0,
+        "power": 50.0
+      },
+      "note": "故障恢复首拍：历史已清除，按 de=0 处理，只出基础输出",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q7",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 90.0,
+        "bias": 95.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "correction": 30.0,
+        "power": 100.0
+      },
+      "note": "【边界】上界：e=10、de=10 → x=1/y=1 → 只踩 P×P(30)；95+30=125 → power 钳位 100，而 correction 仍如实报 30",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q8",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 110.0,
+        "bias": 5.0,
+        "scanSeconds": 10.0
+      },
+      "expected": {
+        "correction": -30.0,
+        "power": 0.0
+      },
+      "note": "【边界】下界：e=-10、de=(-10-10)/10=-2 → x=-1/y=-1 → N×N(-30)；5-30=-25 → power 钳位 0；同时 dt=10.0 恰好是合法上界",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q9",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 110.0,
+        "bias": 5.0,
+        "scanSeconds": 11.0
+      },
+      "expected": {
+        "fault": true,
+        "power": 0.0,
+        "correction": 0.0
+      },
+      "note": "【边界】dt=11 超出上限 → 故障、输出归零、清除历史",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q10",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 110.0,
+        "bias": 50.0,
+        "scanSeconds": 0.0
+      },
+      "expected": {
+        "fault": true,
+        "power": 0.0,
+        "correction": 0.0
+      },
+      "note": "【边界】dt=0 → 故障（既不能除零，也不允许按 0 周期积分）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q11",
+      "inputs": {
+        "enable": false,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 90.0,
+        "bias": 50.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "fault": false,
+        "power": 0.0,
+        "correction": 0.0
+      },
+      "note": "未投入自动：输出归零并清除历史",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q12",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 110.0,
+        "bias": 30.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "fault": false,
+        "correction": -20.0,
+        "power": 10.0
+      },
+      "note": "【恢复】禁用后重新投入的首拍：历史已清除 → de=0，x=-1/y=0 → 只踩 N×Z(-20)，30-20=10",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q13",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 110.0,
+        "bias": 5.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "correction": -20.0,
+        "power": 0.0
+      },
+      "note": "下限钳位：e=-10、de=0 → N×Z(-20)，bias=5，5-20=-15<0，因此 power 钳为0，correction 保持-20。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q14",
+      "inputs": {
+        "enable": true,
+        "resetBtn": true,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 90.0,
+        "bias": 50.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "fault": false,
+        "power": 0.0,
+        "correction": 0.0
+      },
+      "note": "复位上升沿：输出与修正归零并清除历史",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q15",
+      "inputs": {
+        "enable": true,
+        "resetBtn": true,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 90.0,
+        "bias": 50.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "correction": 20.0,
+        "power": 70.0
+      },
+      "note": "【持续按住】复位是边沿命令：没有新上升沿 → 不清零，恢复正常计算（历史已清 → de=0，只踩 P×Z=20）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q16",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 90.0,
+        "bias": 50.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "correction": 20.0,
+        "power": 70.0
+      },
+      "note": "【松开】复位键松开 → 继续按正常逻辑计算（e=10、de=0 → +20）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q17",
+      "inputs": {
+        "enable": true,
+        "resetBtn": true,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 90.0,
+        "bias": 50.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "power": 0.0,
+        "correction": 0.0
+      },
+      "note": "【重新按下】松开后再按出上升沿 → 再次清零",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q18",
+      "inputs": {
+        "enable": true,
+        "resetBtn": false,
+        "sensorValid": true,
+        "setpoint": 100.0,
+        "temperature": 100.0,
+        "bias": 50.0,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "fault": false,
+        "correction": 0.0,
+        "power": 50.0
+      },
+      "note": "【复位后恢复】历史确已清除：e=0、de=0（若历史未清则 de=(0-10)/1=-10 → -10） → 只踩 Z×Z=0，功率=基础给定 50",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "队友评审草案改编（P03）",
+    "origin": "温控回路里用模糊修正替代固定 PID 微调，是流程行业常见的低成本改造；难点在重心法与历史误差的清除时机。",
+    "adaptation": "原草案把 ABS/MAX 写成派生函数，改为标准库函数调用；补充 dt 越界与钳位边界用例。",
+    "review": "已收到需修改意见；本版本已技术整改，人工复审未通过前不得标为通过。",
+    "human_process_review": {
+      "status": "corrected_pending_rereview",
+      "reviewer": "刘晏铭",
+      "reviewer_as_written": "lym",
+      "original_conclusion": "需修改",
+      "original_review_date": "11.1",
+      "source": "progress/evidence/review_20261108/inputs/复核记录.md",
+      "approved": false
+    },
+    "review_revision": "v1.3-review-r2",
+    "upstream_review_claim": "人工审核：九条规则的权重和恒为 1（z=0 时退化），重心法在边界上连续；已用参考解逐拍核对。",
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r2",
+      "platform": "codesys",
+      "pid": "self-medium-06",
+      "rules": [
+        "Reserved input dt -> scanSeconds in interface, tests and LTL; same seconds and numeric behavior",
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate"
+      ],
+      "adapted_source_sha256": "2d85c9c94c3eddc7e995615461eaf30e327a3c0d51fb1365aee480a44f8c8426"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r2",
+      "kind": "platform_adapted",
+      "platform": "codesys",
+      "original_json": "progress/v13/upstream/selfmade/self-medium-06.json",
+      "original_sha256": "8df37b36d3c78d272c7882ae1c0d87ace4ebf3f318562ef3532c2b26d14ec2aa",
+      "interface_changed": true,
+      "reference_source_sha256": "2d85c9c94c3eddc7e995615461eaf30e327a3c0d51fb1365aee480a44f8c8426",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance"
+    }
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

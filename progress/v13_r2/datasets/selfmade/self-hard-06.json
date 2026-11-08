@@ -1,0 +1,1323 @@
+{
+  "pid": "self-hard-06",
+  "source": "selfmade",
+  "difficulty": "hard",
+  "title": "蒸汽母管超压联锁与故障线索诊断（按位编码 + 足迹保留）",
+  "requirements": "写一个功能块 FB，实现母管超压联锁，并在跳闸时记录**故障线索**。\n控制要求：\n1. 压力有效判据 pressureValid；>= 4500.0 kPa 判超压；\n2. 跳闸条件（任一成立）：runRequest 且 pressureValid 且 pressure >= 4500.0；runRequest 且 NOT pressureValid（数据失效按最坏情况处理）；跳闸与本拍线索同拍生效；\n3. tripLatched 自保持；清除条件：resetBtn 上升沿 且 NOT runRequest 且 pressureValid 且 pressure <= 4200.0。4500 与 4200 之间的 300 kPa 是**滞环**：复位门槛比跳闸门槛低 300 kPa，防止压力在阈值附近抖动导致反复跳闸/复位；\n4. 线索位（currentCauseMask，WORD 的**低 4 位**，本拍重新计算）：\n   bit0=1 变送器失效（runRequest 且 NOT pressureValid）；\n   bit1=2 减温减压阀卡滞：outletCmd>=50 且 outletFeedback<=10 **连续 3 个执行周期及以上**；\n   bit2=4 燃烧过剩：fuelFlow >= 4.0 且 steamFlow <= 10.0（比较的是接口流量数值，单位 t/h；两个边界都含等于）；\n   bit1/bit2 只在「runRequest 且 pressureValid 且 pressure >= 4500.0」的超压工况下评估；若超压但以上线索都不成立，置 bit3=8（未定位）；\n   NOT runRequest 时线索为 0；\n5. 卡滞判据必须是**连续扫描周期**：中途反馈恢复、压力回落到 4500 以下、变送器失效或 runRequest=FALSE，都要把 3 拍计数清零——计数不清零就会把历史误当成“连续”；\n6. latchedCauseMask：tripLatched 为 TRUE 时把 currentCauseMask **按位或**并入。注意 WORD 是 **16 位**（DWORD 才是 32 位），本题只用低 4 位（最大 15），16 位足够、不会溢出。该掩码保存的是“本次跳闸期间**全部历史线索的累积**”，**不是**跳闸瞬间的原因快照——跳闸后新出现的线索也会并入，只有合法复位才清零；因此它回答的是“这次跳闸期间一共观察到过哪些现象”，不能把它直接当成唯一的跳闸原因；\n7. fuelPermit = runRequest AND NOT tripLatched；diagnosticActive = (currentCauseMask <> 0)。\n取数与整定说明：\n- 本块每个扫描周期执行一次，题目不定义扫描周期时长：“连续 3 拍”指连续3 个执行周期，不承诺固定秒数；\n- 4500/4200 kPa 与 300 kPa 滞环是该算例的整定值（不据此推定具体装置额定压力或安全阀整定值），只用于考核联锁逻辑，不代表具体机组的最终整定；工程整定须依据母管设计压力与安全阀铭牌；\n- 燃烧过剩判据 4.0/10.0 t/h 是“燃料流量偏高而蒸汽流量偏低”的算例阈值，同样只作算例参数，不是机组保护定值。",
+  "variables": [
+    {
+      "name": "runRequest",
+      "data_type": "BOOL",
+      "description": "运行请求",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "pressure",
+      "data_type": "REAL",
+      "description": "母管压力（kPa）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "pressureValid",
+      "data_type": "BOOL",
+      "description": "压力变送器数据有效",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "fuelFlow",
+      "data_type": "REAL",
+      "description": "燃料流量（t/h）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "steamFlow",
+      "data_type": "REAL",
+      "description": "蒸汽流量（t/h）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "outletCmd",
+      "data_type": "INT",
+      "description": "减温减压阀开度命令（%）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "outletFeedback",
+      "data_type": "INT",
+      "description": "减温减压阀开度反馈（%）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "resetBtn",
+      "data_type": "BOOL",
+      "description": "复位按钮（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "tripLatched",
+      "data_type": "BOOL",
+      "description": "超压跳闸自保持",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "fuelPermit",
+      "data_type": "BOOL",
+      "description": "燃料许可",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "currentCauseMask",
+      "data_type": "WORD",
+      "description": "本周期诊断线索位掩码",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "latchedCauseMask",
+      "data_type": "WORD",
+      "description": "跳闸期间线索累积掩码（全历史足迹）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "diagnosticActive",
+      "data_type": "BOOL",
+      "description": "存在有效诊断线索",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "压力变送器失效且仍在运行时，必须当拍跳闸并切除燃料。",
+      "ltl": "G((runRequest & !pressureValid) -> (tripLatched & !fuelPermit))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S2",
+      "text": "母管压力达到 4500 kPa（数据有效）时必须当拍跳闸。",
+      "ltl": "G((runRequest & pressureValid & pressure >= 4500.0) -> tripLatched)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S3",
+      "text": "跳闸状态下绝不允许燃料许可。",
+      "ltl": "G(tripLatched -> !fuelPermit)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S4",
+      "text": "跳闸自保持：没有复位上升沿时不得自行解锁。",
+      "ltl": "G((prev(tripLatched) & !rising(resetBtn)) -> tripLatched)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S4b",
+      "text": "存在复位上升沿但复位许可条件（停机 + 数据有效 + 压力 <= 4200）不满足时，跳闸也不得解锁。",
+      "ltl": "G((prev(tripLatched) & rising(resetBtn) & (runRequest OR !pressureValid OR pressure > 4200.0)) -> tripLatched)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S5",
+      "text": "无运行请求时本周期线索掩码必须为 0。",
+      "ltl": "G(!runRequest -> currentCauseMask = 0)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S6",
+      "text": "压力未越限且数据有效时不产生线索。",
+      "ltl": "G((runRequest & pressureValid & pressure < 4500.0) -> currentCauseMask = 0)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S7",
+      "text": "诊断有效位与线索掩码一致。",
+      "ltl": "G(diagnosticActive <-> currentCauseMask <> 0)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S8",
+      "text": "合法复位（上升沿 + 停机 + 数据有效 + 压力 <= 4200）必须同时清除跳闸与线索足迹。",
+      "ltl": "G((rising(resetBtn) & !runRequest & pressureValid & pressure <= 4200.0) -> (!tripLatched & latchedCauseMask = 0))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S9",
+      "text": "bit3（未定位，掩码恰为 8）只出现在运行中的超压工况。",
+      "ltl": "G(currentCauseMask = 8 -> (runRequest & pressureValid & pressure >= 4500.0))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S10",
+      "text": "bit2（燃烧过剩）成立时必然满足燃料流量偏高、蒸汽流量偏低的判据。",
+      "ltl": "G((currentCauseMask = 4 OR currentCauseMask = 6 OR currentCauseMask = 12 OR currentCauseMask = 14) -> (fuelFlow >= 4.0 & steamFlow <= 10.0))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S11",
+      "text": "bit1（阀卡滞）成立时必然满足阀命令/反馈的卡滞判据。",
+      "ltl": "G((currentCauseMask = 2 OR currentCauseMask = 6 OR currentCauseMask = 10 OR currentCauseMask = 14) -> (outletCmd >= 50 & outletFeedback <= 10))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S12",
+      "text": "bit0 只在运行中变送器失效时出现，且失效当拍掩码恰为 1。",
+      "ltl": "G((runRequest & !pressureValid) -> currentCauseMask = 1)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S13",
+      "text": "跳闸期间逐位精确累积：每一历史位等于上一拍历史位或本拍线索位，且仅使用低四位。",
+      "ltl": "G((latchedCauseMask >= 0 AND latchedCauseMask <= 15 AND currentCauseMask >= 0 AND currentCauseMask <= 15) AND (tripLatched -> (((latchedCauseMask = 1 OR latchedCauseMask = 3 OR latchedCauseMask = 5 OR latchedCauseMask = 7 OR latchedCauseMask = 9 OR latchedCauseMask = 11 OR latchedCauseMask = 13 OR latchedCauseMask = 15) <-> (prev((latchedCauseMask = 1 OR latchedCauseMask = 3 OR latchedCauseMask = 5 OR latchedCauseMask = 7 OR latchedCauseMask = 9 OR latchedCauseMask = 11 OR latchedCauseMask = 13 OR latchedCauseMask = 15)) OR (currentCauseMask = 1 OR currentCauseMask = 3 OR currentCauseMask = 5 OR currentCauseMask = 7 OR currentCauseMask = 9 OR currentCauseMask = 11 OR currentCauseMask = 13 OR currentCauseMask = 15))) AND ((latchedCauseMask = 2 OR latchedCauseMask = 3 OR latchedCauseMask = 6 OR latchedCauseMask = 7 OR latchedCauseMask = 10 OR latchedCauseMask = 11 OR latchedCauseMask = 14 OR latchedCauseMask = 15) <-> (prev((latchedCauseMask = 2 OR latchedCauseMask = 3 OR latchedCauseMask = 6 OR latchedCauseMask = 7 OR latchedCauseMask = 10 OR latchedCauseMask = 11 OR latchedCauseMask = 14 OR latchedCauseMask = 15)) OR (currentCauseMask = 2 OR currentCauseMask = 3 OR currentCauseMask = 6 OR currentCauseMask = 7 OR currentCauseMask = 10 OR currentCauseMask = 11 OR currentCauseMask = 14 OR currentCauseMask = 15))) AND ((latchedCauseMask = 4 OR latchedCauseMask = 5 OR latchedCauseMask = 6 OR latchedCauseMask = 7 OR latchedCauseMask = 12 OR latchedCauseMask = 13 OR latchedCauseMask = 14 OR latchedCauseMask = 15) <-> (prev((latchedCauseMask = 4 OR latchedCauseMask = 5 OR latchedCauseMask = 6 OR latchedCauseMask = 7 OR latchedCauseMask = 12 OR latchedCauseMask = 13 OR latchedCauseMask = 14 OR latchedCauseMask = 15)) OR (currentCauseMask = 4 OR currentCauseMask = 5 OR currentCauseMask = 6 OR currentCauseMask = 7 OR currentCauseMask = 12 OR currentCauseMask = 13 OR currentCauseMask = 14 OR currentCauseMask = 15))) AND ((latchedCauseMask = 8 OR latchedCauseMask = 9 OR latchedCauseMask = 10 OR latchedCauseMask = 11 OR latchedCauseMask = 12 OR latchedCauseMask = 13 OR latchedCauseMask = 14 OR latchedCauseMask = 15) <-> (prev((latchedCauseMask = 8 OR latchedCauseMask = 9 OR latchedCauseMask = 10 OR latchedCauseMask = 11 OR latchedCauseMask = 12 OR latchedCauseMask = 13 OR latchedCauseMask = 14 OR latchedCauseMask = 15)) OR (currentCauseMask = 8 OR currentCauseMask = 9 OR currentCauseMask = 10 OR currentCauseMask = 11 OR currentCauseMask = 12 OR currentCauseMask = 13 OR currentCauseMask = 14 OR currentCauseMask = 15))))))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S14",
+      "text": "线索位含义、卡滞连续 3 拍判据（中断/压力回落/失效/停机均清零）、足迹累积与复位清零的完整行为。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "q1",
+      "inputs": {
+        "runRequest": false,
+        "pressure": 4000.0,
+        "pressureValid": true,
+        "fuelFlow": 1.0,
+        "steamFlow": 20.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": false,
+        "fuelPermit": false,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 0,
+        "diagnosticActive": false
+      },
+      "note": "停机初始：无跳闸、无线索",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q2",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4200.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 60,
+        "outletFeedback": 60,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": false,
+        "fuelPermit": true,
+        "currentCauseMask": 0
+      },
+      "note": "压力 4200 未达 4500：允许燃料，无线索",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q3",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 60,
+        "outletFeedback": 60,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "currentCauseMask": 8,
+        "latchedCauseMask": 8,
+        "diagnosticActive": true
+      },
+      "note": "超压但阀位正常、燃烧正常 → 线索=8（未定位）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q4",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 80,
+        "outletFeedback": 0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "currentCauseMask": 8,
+        "latchedCauseMask": 8
+      },
+      "note": "阀卡滞第 1 拍（计数 1，未达 3 拍判据）仍只报 8",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q5",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 4.5,
+        "steamFlow": 5.0,
+        "outletCmd": 80,
+        "outletFeedback": 0,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 4,
+        "latchedCauseMask": 12
+      },
+      "note": "阀计数 2 + 燃烧过剩 → 位2 已置（8|4=12）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q6",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 4.5,
+        "steamFlow": 5.0,
+        "outletCmd": 80,
+        "outletFeedback": 0,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 6,
+        "latchedCauseMask": 14
+      },
+      "note": "阀计数达 3 → 位1 置；与位2 合并得 6（14=8|4|2）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q7",
+      "inputs": {
+        "runRequest": false,
+        "pressure": 4000.0,
+        "pressureValid": true,
+        "fuelFlow": 0.0,
+        "steamFlow": 0.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 14,
+        "diagnosticActive": false
+      },
+      "note": "停机后本拍无线索，但**已累积**的足迹必须保留（供事后诊断）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q8",
+      "inputs": {
+        "runRequest": false,
+        "pressure": 4000.0,
+        "pressureValid": true,
+        "fuelFlow": 0.0,
+        "steamFlow": 0.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": false,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 0
+      },
+      "note": "复位：runRequest=FALSE、压力已回落到 <=4200 → 跳闸与足迹一起清",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q9",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 4.5,
+        "steamFlow": 5.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "currentCauseMask": 4,
+        "latchedCauseMask": 4
+      },
+      "note": "阀命令未达 50 → 不计卡滞；只剩燃烧过剩线索",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q10",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": false,
+        "fuelFlow": 4.5,
+        "steamFlow": 5.0,
+        "outletCmd": 90,
+        "outletFeedback": 0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "currentCauseMask": 1,
+        "latchedCauseMask": 5
+      },
+      "note": "变送器失效：线索=1（优先于压力判据），并入累积 5",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q11",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4000.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 60,
+        "outletFeedback": 60,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 5,
+        "diagnosticActive": false
+      },
+      "note": "变送器恢复、压力回落到 4000：本拍线索清零，历史足迹 5 仍保留",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q12",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4100.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 60,
+        "outletFeedback": 60,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 5
+      },
+      "note": "非法复位：有上升沿但 runRequest 仍为 TRUE → 不得清除",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q13",
+      "inputs": {
+        "runRequest": false,
+        "pressure": 4100.0,
+        "pressureValid": true,
+        "fuelFlow": 0.0,
+        "steamFlow": 0.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": true,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 5
+      },
+      "note": "复位持续按住、条件（停机）后来才满足但没有新的上升沿 → 仍不得清除",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q14",
+      "inputs": {
+        "runRequest": false,
+        "pressure": 4100.0,
+        "pressureValid": true,
+        "fuelFlow": 0.0,
+        "steamFlow": 0.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 5,
+        "diagnosticActive": false
+      },
+      "note": "松开复位：跳闸保持，足迹不变",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q15",
+      "inputs": {
+        "runRequest": false,
+        "pressure": 4201.0,
+        "pressureValid": true,
+        "fuelFlow": 0.0,
+        "steamFlow": 0.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": true,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 5
+      },
+      "note": "【边界】新上升沿但压力 4201 > 4200 → 复位许可不满足，不得清除",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q16",
+      "inputs": {
+        "runRequest": false,
+        "pressure": 4200.0,
+        "pressureValid": true,
+        "fuelFlow": 0.0,
+        "steamFlow": 0.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 5
+      },
+      "note": "松开复位、压力回到 4200：仍保持（清除只认上升沿）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q17",
+      "inputs": {
+        "runRequest": false,
+        "pressure": 4200.0,
+        "pressureValid": true,
+        "fuelFlow": 0.0,
+        "steamFlow": 0.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": false,
+        "fuelPermit": false,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 0,
+        "diagnosticActive": false
+      },
+      "note": "【边界】恰好 4200（含端点）+ 新上升沿 → 跳闸与足迹一起清",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q18",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4499.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 60,
+        "outletFeedback": 60,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": false,
+        "fuelPermit": true,
+        "currentCauseMask": 0,
+        "diagnosticActive": false
+      },
+      "note": "【边界】4499 < 4500 → 不跳闸、无线索、燃料许可",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q19",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4500.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 60,
+        "outletFeedback": 60,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "currentCauseMask": 8,
+        "latchedCauseMask": 8,
+        "diagnosticActive": true
+      },
+      "note": "【边界】恰好 4500（含端点）→ 当拍跳闸，线索=8",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q20",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "currentCauseMask": 8,
+        "latchedCauseMask": 8
+      },
+      "note": "【边界】outletCmd=50、outletFeedback=10 都含端点 → 计 1 拍，未达 3 拍仍报 8",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q21",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 8,
+        "latchedCauseMask": 8
+      },
+      "note": "卡滞第 2 拍（连续）→ 计数 2，仍未达判据",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q22",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 30,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 8,
+        "latchedCauseMask": 8
+      },
+      "note": "中途反馈恢复（10→30）：连续 3 拍被打破 → 计数清零，仍只报 8",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q23",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 8,
+        "latchedCauseMask": 8
+      },
+      "note": "重新计第 1 拍（清零后从头算）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q24",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 8,
+        "latchedCauseMask": 8
+      },
+      "note": "重新计第 2 拍",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q25",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 2,
+        "latchedCauseMask": 10
+      },
+      "note": "第 3 拍达标 → **单独出现 bit1=2**（有线索故不置 bit3），足迹 8|2=10",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q26",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 2,
+        "latchedCauseMask": 10
+      },
+      "note": "连续第 4 拍（超过 3 拍）：仍只报 2，计数饱和不溢出",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q27",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4400.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 10,
+        "diagnosticActive": false
+      },
+      "note": "压力回落到 4400（不再超压）→ 卡滞计数清零、本拍无线索，跳闸与足迹保持",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q28",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "currentCauseMask": 8,
+        "latchedCauseMask": 10
+      },
+      "note": "再次超压 + 卡滞第 1 拍：若压力回落时没清零会误报 2，这里只报 8",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q29",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 8,
+        "latchedCauseMask": 10
+      },
+      "note": "卡滞第 2 拍（连续）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q30",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": false,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "currentCauseMask": 1,
+        "latchedCauseMask": 11,
+        "diagnosticActive": true
+      },
+      "note": "变送器失效打断卡滞计数：线索=1，足迹 10|1=11，跳闸保持",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q31",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 8,
+        "latchedCauseMask": 11
+      },
+      "note": "变送器恢复后卡滞从第 1 拍重新计数（失效期间的中断已被清零）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q32",
+      "inputs": {
+        "runRequest": false,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 0.0,
+        "steamFlow": 0.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 11,
+        "diagnosticActive": false
+      },
+      "note": "停止运行打断计数：本拍线索=0、计数清零，跳闸与足迹保持",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q33",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 8,
+        "latchedCauseMask": 11
+      },
+      "note": "重新运行 + 卡滞第 1 拍：计数从 0 起（停机期间已清零）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q34",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 8,
+        "latchedCauseMask": 11
+      },
+      "note": "卡滞第 2 拍",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q35",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 2,
+        "latchedCauseMask": 11
+      },
+      "note": "卡滞第 3 拍 → bit1 置；足迹 11 本来就含位1，按位或后仍是 11",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q36",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 4.0,
+        "steamFlow": 10.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 6,
+        "latchedCauseMask": 15
+      },
+      "note": "【边界】fuelFlow=4.0、steamFlow=10.0 都含端点 → 燃烧过剩成立，6=2|4，足迹 15",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q37",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 3.9,
+        "steamFlow": 10.0,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 2,
+        "latchedCauseMask": 15
+      },
+      "note": "【边界】fuelFlow=3.9 < 4.0 → 不判燃烧过剩，只剩 bit1",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q38",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 4.0,
+        "steamFlow": 10.1,
+        "outletCmd": 50,
+        "outletFeedback": 10,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 2,
+        "latchedCauseMask": 15
+      },
+      "note": "【边界】steamFlow=10.1 > 10.0 → 不判燃烧过剩",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q39",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 5.0,
+        "steamFlow": 5.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 4,
+        "latchedCauseMask": 15
+      },
+      "note": "只有燃烧过剩（阀命令未达 50）→ 4；足迹 15|4 仍为 15",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q40",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4600.0,
+        "pressureValid": true,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 60,
+        "outletFeedback": 60,
+        "resetBtn": false
+      },
+      "expected": {
+        "currentCauseMask": 8,
+        "latchedCauseMask": 15
+      },
+      "note": "超压但一切正常 → 未定位 8；累积时 15|8 仍为 15",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q41",
+      "inputs": {
+        "runRequest": false,
+        "pressure": 4000.0,
+        "pressureValid": true,
+        "fuelFlow": 0.0,
+        "steamFlow": 0.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": false,
+        "fuelPermit": false,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 0,
+        "diagnosticActive": false
+      },
+      "note": "停机 + 合法复位 → 跳闸与全部足迹清零",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q42",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4000.0,
+        "pressureValid": false,
+        "fuelFlow": 2.0,
+        "steamFlow": 20.0,
+        "outletCmd": 60,
+        "outletFeedback": 60,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "currentCauseMask": 1,
+        "latchedCauseMask": 1,
+        "diagnosticActive": true
+      },
+      "note": "**从未跳闸的干净状态**起：压力本身只有 4000 kPa，仅靠 pressureValid=FALSE 就独立触发跳闸（线索=1），证明失效路径不依赖压力判据",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q43",
+      "inputs": {
+        "runRequest": false,
+        "pressure": 4000.0,
+        "pressureValid": true,
+        "fuelFlow": 0.0,
+        "steamFlow": 0.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": false,
+        "fuelPermit": false,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 0,
+        "diagnosticActive": false
+      },
+      "note": "收尾：停机 + 合法复位 → 清零",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q44",
+      "inputs": {
+        "runRequest": true,
+        "pressure": 4200.0,
+        "pressureValid": false,
+        "fuelFlow": 0.0,
+        "steamFlow": 0.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": false
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "currentCauseMask": 1,
+        "latchedCauseMask": 1,
+        "diagnosticActive": true
+      },
+      "note": "压力 4200 本不越限，但**变送器失效**按最坏情况处理 → 独立跳闸（线索=1）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q45",
+      "inputs": {
+        "runRequest": false,
+        "pressure": 4200.0,
+        "pressureValid": false,
+        "fuelFlow": 0.0,
+        "steamFlow": 0.0,
+        "outletCmd": 0,
+        "outletFeedback": 0,
+        "resetBtn": true
+      },
+      "expected": {
+        "tripLatched": true,
+        "fuelPermit": false,
+        "currentCauseMask": 0,
+        "latchedCauseMask": 1,
+        "diagnosticActive": false
+      },
+      "note": "独立非法复位：停机且压力4200，存在新复位上升沿，但pressureValid=FALSE；仅因数据无效拒绝复位，跳闸及历史足迹1保持。本拍无运行请求，线索0、诊断FALSE。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "队友评审草案改编（P04）",
+    "origin": "2026 CIMC 初赛超压联锁题：跳闸后要能事后回答'为什么跳'，线索位编码是赛场实现方式。",
+    "adaptation": "把原草案的派生谓词 tripCause1/2/3 改为显式位掩码 + 滞环复位；补充变送器失效优先、足迹保留两条边界。",
+    "review": "人工审核（lym 11.2 复核后修订）：WORD 位宽与“足迹≠瞬间快照”写进题面；补 4500/4499、4200/4201、outletCmd=50/outletFeedback=10、fuelFlow=4.0/steamFlow=10.0 边界；补卡滞计数四种清零途径、非法复位与“条件后满足但无新上升沿”；S4 加强为“有上升沿但许可不满足也不得解锁”，并补 bit0~bit3 的位编码性质与足迹单调性。",
+    "human_process_review": {
+      "status": "corrected_pending_rereview",
+      "reviewer": "刘晏铭",
+      "reviewer_as_written": "lym",
+      "original_conclusion": "需修改",
+      "original_review_date": "11.2",
+      "source": "progress/evidence/review_20261108/inputs/复核记录.md",
+      "approved": false
+    },
+    "review_revision": "v1.3-review-r2"
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_inputs": {}
+}

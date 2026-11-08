@@ -1,0 +1,299 @@
+{
+  "pid": "public-medium-08",
+  "source": "public",
+  "difficulty": "medium",
+  "title": "IPv4 Parsing with Format and Range Checks",
+  "requirements": "Design a PLC function block in Structured Text (ST) that parses a dotted-decimal IPv4 string into a 32-bit unsigned integer.\n\n1. ipText must contain four nonempty decimal-digit segments separated by periods. Each segment must have a value from 0 through 255.\n2. Assemble the address in network byte order: the first segment occupies the most significant 8 bits and the fourth occupies the least significant 8 bits. Write the result to ipValue.\n3. Set ipValue to 0 for malformed input, a nondigit segment, an incorrect segment count or any out-of-range segment. The valid address 0.0.0.0 also produces 0.\n平台约定：内部字符串临时变量避免使用单字母 s；当前平台对原写法报告词法冲突，接口保持原样。 字符提取使用 MID(text,1,index) 返回单字符字符串；地址拼装保持 UDINT 无符号运算。\nR9 明确原有用例采用的文本约定：每段允许单个 0，其他段须以 1..9 开头；多位前导零非法。原用例期望不变。",
+  "variables": [
+    {
+      "name": "ipText",
+      "data_type": "STRING(254)",
+      "description": "IPv4 text to parse, with a capacity of 254 characters. A valid dotted-decimal address requires at most 15 characters.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "ipValue",
+      "data_type": "UDINT",
+      "description": "32-bit address in network byte order; zero for invalid input.",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "非法 IPv4 输入必须输出 0，合法性由公开输入计算。",
+      "ltl": "G(NOT __spec_ip_valid -> ipValue = 0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "合法四段 IPv4 按网络字节序输出；不约束候选内部计数器。",
+      "ltl": "G(__spec_ip_valid -> ipValue = __spec_ip_value)",
+      "kind": "data",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "只有四段全 255 的合法输入才允许输出最大地址。",
+      "ltl": "G(ipValue = 4294967295 -> __spec_ip_valid AND __spec_ip_value = 4294967295)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "对输入文本的合法/非法映射逐扫描比较；观察量来自公开输入。",
+      "ltl": "G(ipValue = __spec_ip_value)",
+      "kind": "data",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "M08-01",
+      "inputs": {
+        "ipText": "192.168.1.10"
+      },
+      "expected": {
+        "ipValue": 3232235786
+      },
+      "note": "合法地址：验证网络字节序拼装（192 占最高 8 位）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M08-02",
+      "inputs": {
+        "ipText": "0.0.0.0"
+      },
+      "expected": {
+        "ipValue": 0
+      },
+      "note": "合法全 0 地址：结果同样是 0（与非法输入的 0 不可区分，需求明确允许）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M08-03",
+      "inputs": {
+        "ipText": "255.255.255.255"
+      },
+      "expected": {
+        "ipValue": 4294967295
+      },
+      "note": "合法上界：四段全 255 → 4294967295",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M08-04",
+      "inputs": {
+        "ipText": "10.0.0.1"
+      },
+      "expected": {
+        "ipValue": 167772161
+      },
+      "note": "合法地址：低字节非 0，验证第 4 段权重 256^0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M08-05",
+      "inputs": {
+        "ipText": "1.2.3.4"
+      },
+      "expected": {
+        "ipValue": 16909060
+      },
+      "note": "合法短地址：验证四段权重 256^3/256^2/256^1/256^0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M08-06",
+      "inputs": {
+        "ipText": "172.16.254.1"
+      },
+      "expected": {
+        "ipValue": 2886794753
+      },
+      "note": "合法私有网段地址：中段 254 不越界",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M08-07",
+      "inputs": {
+        "ipText": "256.1.1.1"
+      },
+      "expected": {
+        "ipValue": 0
+      },
+      "note": "负例：首段 256 超出 0~255 → ipValue=0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M08-08",
+      "inputs": {
+        "ipText": "1.2.3"
+      },
+      "expected": {
+        "ipValue": 0
+      },
+      "note": "负例：只有 3 段（段数不足）→ 0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M08-09",
+      "inputs": {
+        "ipText": "1.2.3.4.5"
+      },
+      "expected": {
+        "ipValue": 0
+      },
+      "note": "负例：5 段（段数过多）→ 0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M08-10",
+      "inputs": {
+        "ipText": "1.2.3.a"
+      },
+      "expected": {
+        "ipValue": 0
+      },
+      "note": "负例：段内含非数字字符 → 0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M08-11",
+      "inputs": {
+        "ipText": "1..2.3"
+      },
+      "expected": {
+        "ipValue": 0
+      },
+      "note": "负例：空段（连续点）→ 0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M08-12",
+      "inputs": {
+        "ipText": "01.2.3.4"
+      },
+      "expected": {
+        "ipValue": 0
+      },
+      "note": "负例：段内前导 0（非规范写法）→ 0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "single",
+      "cycles": 1,
+      "expect_full": true
+    }
+  ],
+  "provenance": {
+    "r9_spec_policy": {
+      "observer": "ipv4",
+      "changes": [
+        {
+          "sid": "S1",
+          "original_ltl": "G(ok = FALSE -> ipValue = 0)",
+          "original_text": "当解析被判为非法时，ipValue 必须为 0",
+          "original_verified_by": "plcverif"
+        },
+        {
+          "sid": "S2",
+          "original_ltl": "G(ok = TRUE -> segCount = 4)",
+          "original_text": "当解析被判为合法时，收到的段计数必须恰好为 4",
+          "original_verified_by": "plcverif"
+        },
+        {
+          "sid": "S3",
+          "original_ltl": "G(ipValue = 4294967295 -> ok = TRUE)",
+          "original_text": "只有合法解析才可能得到 4294967295（全 255 地址）",
+          "original_verified_by": "plcverif"
+        },
+        {
+          "sid": "S4",
+          "original_ltl": "",
+          "original_text": "合法/非法文本样例到 ipValue 的映射表（格式、范围、段数、前导 0）：由用例验证的数据性质",
+          "original_verified_by": "simulation"
+        }
+      ],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r2",
+      "platform": "codesys",
+      "pid": "public-medium-08",
+      "rules": [
+        "Internal string temporary s -> scanText after native CODESYS token diagnostics; no interface change",
+        "String character extraction uses MID; IPv4 assembly uses explicit UDINT operands",
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate"
+      ],
+      "adapted_source_sha256": "aced33ee90dcf46869dbea866b7791abed72d33056bd9d9c2b918268904ab24d"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r2",
+      "kind": "platform_adapted",
+      "platform": "codesys",
+      "original_json": "progress/v13/upstream/public/public-medium-08.json",
+      "original_sha256": "0c373571de7f219f6bee4ea0ef409a33fde5027fa48b4440509c75de80036b22",
+      "interface_changed": false,
+      "reference_source_sha256": "aced33ee90dcf46869dbea866b7791abed72d33056bd9d9c2b918268904ab24d",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance"
+    }
+  },
+  "language": "en",
+  "case_mode": "single",
+  "raw_text": "# IPv4 Parsing with Format and Range Checks\n\n- **Difficulty:** Medium (medium)\n\n## Requirements\n\nDesign a PLC function block in Structured Text (ST) that parses a dotted-decimal IPv4 string into a 32-bit unsigned integer.\n\n1. ipText must contain four nonempty decimal-digit segments separated by periods. Each segment must have a value from 0 through 255.\n2. Assemble the address in network byte order: the first segment occupies the most significant 8 bits and the fourth occupies the least significant 8 bits. Write the result to ipValue.\n3. Set ipValue to 0 for malformed input, a nondigit segment, an incorrect segment count or any out-of-range segment. The valid address 0.0.0.0 also produces 0.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `ipText` | `STRING(254)` | IPv4 text to parse, with a capacity of 254 characters. A valid dotted-decimal address requires at most 15 characters. |\n| Output | `ipValue` | `UDINT` | 32-bit address in network byte order; zero for invalid input. |",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

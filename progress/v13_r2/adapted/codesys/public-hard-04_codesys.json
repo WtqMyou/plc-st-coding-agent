@@ -1,0 +1,649 @@
+{
+  "pid": "public-hard-04",
+  "source": "public",
+  "difficulty": "hard",
+  "title": "FIFO First-In-First-Out Queue",
+  "requirements": "Write a function block FB implementing a First-In-First-Out (FIFO) circular queue. Derive the queue capacity and element type from the caller-supplied buffer.\n\n1. Each rising edge of enqueue requests one enqueue operation. If the queue is not full, append the current item value to its tail.\n2. Each rising edge of dequeue requests one dequeue operation. If the queue is not empty, remove its front element and write that value back to item. The caller must not request enqueue and dequeue in the same invocation.\n3. When reset is TRUE, empty the queue and set elementCount to zero. Reset takes priority over enqueue and dequeue; stored buffer values need not be overwritten.\n4. Output the current number of valid elements through elementCount. Zero means the queue is empty; a count equal to the actual buffer array length means it is full.\n5. Reject a dequeue request on an empty queue or an enqueue request on a full queue. Leave the queue and item unchanged and report the reason through status.\n6. The queue is empty on its first invocation. Define head and tail positions and other internal state within the implementation; do not expose them as interface parameters.\n\nStatus codes:\n\n- 16#0000: No error in this invocation, including idle, reset and successful operations.\n- 16#8001: The dequeue request was rejected because the queue is empty.\n- 16#8002: The enqueue request was rejected because the queue is full.\n平台适配：item 固定为 DINT，buffer 是固定容量 DINT 数组；capacity 输入给定本次绑定的有效容量。算法仍须支持两种容量，复位/上下沿和状态码规则保持。 每次绑定后 capacity 在本次运行中保持不变；分别支持不同容量的运行，不要求运行中缩容或切换缓冲区。",
+  "variables": [
+    {
+      "name": "enqueue",
+      "data_type": "BOOL",
+      "description": "Enqueue request; one operation per rising edge.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "dequeue",
+      "data_type": "BOOL",
+      "description": "Dequeue request; one operation per rising edge.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "reset",
+      "data_type": "BOOL",
+      "description": "TRUE resets the queue to empty; takes priority over enqueue and dequeue.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "elementCount",
+      "data_type": "DINT",
+      "description": "Current number of valid elements, from zero through the queue capacity.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "status",
+      "data_type": "WORD",
+      "description": "Invocation status: 16#0000 no error, 16#8001 dequeue from an empty queue, 16#8002 enqueue into a full queue.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "item",
+      "data_type": "DINT",
+      "description": "Mutable scalar reference: read its value when enqueuing; write the removed front value on successful dequeue. Its concrete type must match the array element type.",
+      "direction": "inout",
+      "fields": []
+    },
+    {
+      "name": "buffer",
+      "data_type": "ARRAY[1..4] OF DINT",
+      "description": "Reference to a nonempty one-dimensional array with a single concrete element type, used as queue storage. Capacity is the actual array length.",
+      "direction": "inout",
+      "fields": []
+    },
+    {
+      "name": "capacity",
+      "data_type": "DINT",
+      "description": "Logical storage capacity; 1..4",
+      "direction": "input",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "有效元素个数永远落在 0..容量 之间，不会越界。",
+      "ltl": "G(elementCount >= 0 AND elementCount <= capacity)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "reset=TRUE 的那一拍队列必须为空（复位优先于入队/出队）。",
+      "ltl": "G(reset -> elementCount = 0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "报 16#8001（空队出队被拒）的那一拍队列必须真的是空的。",
+      "ltl": "G(status = 32769 -> elementCount = 0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "报 16#8002（满队入队被拒）的那一拍队列必须真的是满的。",
+      "ltl": "G(status = 32770 -> elementCount = capacity)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "FIFO 顺序、环形回绕、出队写回 item、容量随调用方数组长度变化这几条由用例逐拍验证（buffer/item 是 inout 的 VARIANT，模型检查器无法为它们取初值，可达状态里容量恒为 0，因而这些性质只能靠仿真覆盖）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "h04-1",
+      "inputs": {},
+      "expected": {
+        "status": 0,
+        "elementCount": 0
+      },
+      "note": "首次调用且容量为 4 的空队列 → elementCount=0、status=16#0000",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {
+        "buffer": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-2",
+      "inputs": {
+        "enqueue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 1
+      },
+      "note": "入队 10 → elementCount=1",
+      "const_inputs": {
+        "item": 10,
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-3",
+      "inputs": {},
+      "expected": {
+        "status": 0,
+        "elementCount": 1
+      },
+      "note": "松手后再扫描一拍 → 不重复入队，elementCount 仍为 1（负例）",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-4",
+      "inputs": {
+        "enqueue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 2
+      },
+      "note": "入队 21 → elementCount=2",
+      "const_inputs": {
+        "item": 21,
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-5",
+      "inputs": {},
+      "expected": {
+        "status": 0,
+        "elementCount": 2
+      },
+      "note": "松手一拍 → elementCount 仍为 2（负例）",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-6",
+      "inputs": {
+        "enqueue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 3
+      },
+      "note": "入队 32 → elementCount=3",
+      "const_inputs": {
+        "item": 32,
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-7",
+      "inputs": {},
+      "expected": {
+        "status": 0,
+        "elementCount": 3
+      },
+      "note": "松手一拍 → elementCount 仍为 3（负例）",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-8",
+      "inputs": {
+        "enqueue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 4
+      },
+      "note": "入队 43 → 队列已满，elementCount=4（等于容量）",
+      "const_inputs": {
+        "item": 43,
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-9",
+      "inputs": {},
+      "expected": {
+        "status": 0,
+        "elementCount": 4
+      },
+      "note": "满队列空闲一拍 → elementCount 保持 4（负例）",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-10",
+      "inputs": {
+        "enqueue": true
+      },
+      "expected": {
+        "status": 32770,
+        "elementCount": 4
+      },
+      "note": "队列已满时入队 54 → status=16#8002、elementCount 仍为 4、队列不变（负例，上边界）",
+      "const_inputs": {
+        "item": 54,
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-11",
+      "inputs": {
+        "dequeue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 3,
+        "item": 10
+      },
+      "note": "出队 → 被移除的队首 10 写回 item、elementCount=3",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-12",
+      "inputs": {
+        "enqueue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 4
+      },
+      "note": "入队 54 → 复用刚腾空的槽位，队列重新变满",
+      "const_inputs": {
+        "item": 54,
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-13",
+      "inputs": {
+        "dequeue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 3,
+        "item": 21
+      },
+      "note": "再出队 → 取出的是 21（先进先出，不是刚入队的 54）",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-14",
+      "inputs": {
+        "enqueue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 4
+      },
+      "note": "入队 65 → 队列又满，队首仍然是 32",
+      "const_inputs": {
+        "item": 65,
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-15",
+      "inputs": {
+        "dequeue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 3,
+        "item": 32
+      },
+      "note": "再出队 → 取出 32，证明队头下标已正确回绕",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-16",
+      "inputs": {
+        "reset": true,
+        "dequeue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 0
+      },
+      "note": "reset=TRUE 与出队请求同时到来 → 复位优先：队列清空、elementCount=0、不报错（优先级用例）",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-17",
+      "inputs": {},
+      "expected": {
+        "status": 0,
+        "elementCount": 0
+      },
+      "note": "复位后空闲一拍 → elementCount 保持 0",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-18",
+      "inputs": {
+        "dequeue": true
+      },
+      "expected": {
+        "status": 32769,
+        "elementCount": 0
+      },
+      "note": "空队列出队 → status=16#8001、elementCount=0、item 不变（负例）",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-19",
+      "inputs": {
+        "enqueue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 1
+      },
+      "note": "空队列入队 7 → elementCount=1",
+      "const_inputs": {
+        "item": 7,
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-20",
+      "inputs": {
+        "reset": true,
+        "enqueue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 0
+      },
+      "note": "reset=TRUE 与入队请求同时到来 → 复位优先：入队被丢弃、elementCount=0（优先级用例）",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-21",
+      "inputs": {},
+      "expected": {
+        "status": 0,
+        "elementCount": 0
+      },
+      "note": "复位后空闲一拍 → elementCount 保持 0",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-22",
+      "inputs": {
+        "dequeue": true
+      },
+      "expected": {
+        "status": 32769,
+        "elementCount": 0
+      },
+      "note": "被复位丢弃的那次入队不会在之后补做 → 空队列出队仍报 16#8001（负例）",
+      "const_inputs": {
+        "capacity": 4
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-23",
+      "inputs": {
+        "enqueue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 1
+      },
+      "note": "把 buffer 换成只有 2 个元素的数组后再入队 5 → elementCount=1（容量=数组实际长度）",
+      "const_inputs": {
+        "item": 5,
+        "capacity": 2
+      },
+      "init": {
+        "buffer": [
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-24",
+      "inputs": {},
+      "expected": {
+        "status": 0,
+        "elementCount": 1
+      },
+      "note": "松手一拍 → elementCount 仍为 1（负例）",
+      "const_inputs": {
+        "capacity": 2
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-25",
+      "inputs": {
+        "enqueue": true
+      },
+      "expected": {
+        "status": 0,
+        "elementCount": 2
+      },
+      "note": "入队 6 → 容量为 2 的队列已满",
+      "const_inputs": {
+        "item": 6,
+        "capacity": 2
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-26",
+      "inputs": {},
+      "expected": {
+        "status": 0,
+        "elementCount": 2
+      },
+      "note": "满队列空闲一拍 → elementCount 仍为 2（负例）",
+      "const_inputs": {
+        "capacity": 2
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h04-27",
+      "inputs": {
+        "enqueue": true
+      },
+      "expected": {
+        "status": 32770,
+        "elementCount": 2
+      },
+      "note": "容量 2 的队列满后再入队 7 → status=16#8002（负例，证明容量确实跟着数组长度走）",
+      "const_inputs": {
+        "item": 7,
+        "capacity": 2
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r2",
+      "platform": "codesys",
+      "pid": "public-hard-04",
+      "rules": [
+        "VARIANT -> bounded DINT FIFO, logical capacity input; not a proof for arbitrary element types",
+        "FIFO LTL cap -> explicit capacity input; independent of reference-local variable names",
+        "Capacity binding is fixed within each trace; enumerate both original capacities across traces, no dynamic-resize claim",
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate"
+      ],
+      "adapted_source_sha256": "48c310264e4ce28f3b89c8db9a57258f5816e3dacb5de600b151cbf58b79dfb6"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r2",
+      "kind": "platform_adapted",
+      "platform": "codesys",
+      "original_json": "progress/v13/upstream/public/public-hard-04.json",
+      "original_sha256": "3e5d8469ee03b844f386259d2f82a111b4fdc0aa7ca84dc5e0eab69cf85d3c91",
+      "interface_changed": true,
+      "reference_source_sha256": "48c310264e4ce28f3b89c8db9a57258f5816e3dacb5de600b151cbf58b79dfb6",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance"
+    }
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "# FIFO First-In-First-Out Queue\n\n- **Difficulty:** Hard (hard)\n\n## Requirements\n\nWrite a function block FB implementing a First-In-First-Out (FIFO) circular queue. Derive the queue capacity and element type from the caller-supplied buffer.\n\n1. Each rising edge of enqueue requests one enqueue operation. If the queue is not full, append the current item value to its tail.\n2. Each rising edge of dequeue requests one dequeue operation. If the queue is not empty, remove its front element and write that value back to item. The caller must not request enqueue and dequeue in the same invocation.\n3. When reset is TRUE, empty the queue and set elementCount to zero. Reset takes priority over enqueue and dequeue; stored buffer values need not be overwritten.\n4. Output the current number of valid elements through elementCount. Zero means the queue is empty; a count equal to the actual buffer array length means it is full.\n5. Reject a dequeue request on an empty queue or an enqueue request on a full queue. Leave the queue and item unchanged and report the reason through status.\n6. The queue is empty on its first invocation. Define head and tail positions and other internal state within the implementation; do not expose them as interface parameters.\n\nStatus codes:\n\n- 16#0000: No error in this invocation, including idle, reset and successful operations.\n- 16#8001: The dequeue request was rejected because the queue is empty.\n- 16#8002: The enqueue request was rejected because the queue is full.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `enqueue` | `BOOL` | Enqueue request; one operation per rising edge. |\n| Input | `dequeue` | `BOOL` | Dequeue request; one operation per rising edge. |\n| Input | `reset` | `BOOL` | TRUE resets the queue to empty; takes priority over enqueue and dequeue. |\n| Output | `elementCount` | `DINT` | Current number of valid elements, from zero through the queue capacity. |\n| Output | `status` | `WORD` | Invocation status: 16#0000 no error, 16#8001 dequeue from an empty queue, 16#8002 enqueue into a full queue. |\n| Input/Output | `item` | `VARIANT` | Mutable scalar reference: read its value when enqueuing; write the removed front value on successful dequeue. Its concrete type must match the array element type. |\n| Input/Output | `buffer` | `VARIANT` | Reference to a nonempty one-dimensional array with a single concrete element type, used as queue storage. Capacity is the actual array length. |\n\nAssociate buffer with a nonempty, homogeneous one-dimensional array and item with a writable scalar of the same element type. Keep the buffer association fixed for each function-block instance. Derive capacity from the actual array length; it must fit in a positive DINT.",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {
+    "capacity": [
+      2,
+      4
+    ]
+  },
+  "mc_fixed_inputs": [
+    "capacity"
+  ]
+}

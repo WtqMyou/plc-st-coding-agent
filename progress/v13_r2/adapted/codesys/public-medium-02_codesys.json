@@ -1,0 +1,1568 @@
+{
+  "pid": "public-medium-02",
+  "source": "public",
+  "difficulty": "medium",
+  "title": "Analog Batch Processing",
+  "requirements": "Write a PLC function block that processes analog inputs in batches and converts them into engineering values.\n\n1. analogValues supplies the raw-value array. channels supplies per-channel settings and receives conversion results. count specifies how many channels to process from the beginning of the arrays. The caller must provide count from zero through the smaller of the two array lengths. Match channels by ordinal position starting at each array's own lower bound. Read analogValues without modifying it.\n2. Each channel is enabled by its enable field and converted according to measuringMode. Read configuration fields without modifying them; write only retVal and outputValue.\n3. For measuringMode 0, perform non-temperature linear scaling: when bipolar is FALSE, map raw values 0..27648 to loLIM..hiLIM; when TRUE, map -27648..27648 to loLIM..hiLIM.\n4. For measuringMode 1, perform standard-temperature conversion: outputValue is one tenth of the raw analog value.\n5. For measuringMode 2, perform climatic-temperature conversion: outputValue is one hundredth of the raw analog value.\n6. If measuringMode is not 0, 1 or 2, set that channel's retVal to 16#8001 and skip its conversion.\n7. If hiLIM is less than or equal to loLIM, set that channel's retVal to 16#8002 and skip its conversion.",
+  "variables": [
+    {
+      "name": "count",
+      "data_type": "DINT",
+      "description": "Number of channels to be converted",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "analogValues",
+      "data_type": "ARRAY[1..8] OF INT",
+      "description": "Variable-length analog array passed by reference to preserve its bounds. Read-only to the function block; no element may be modified. 容量上限 8（平台不解析 ARRAY[*] 的运行时长度）；实际有效通道数由 count 给出，按 1..count 取值。",
+      "direction": "inout",
+      "fields": []
+    },
+    {
+      "name": "channels",
+      "data_type": "ARRAY[1..8] OF ST_AnalogChannel",
+      "description": "Channel records passed by reference. Configuration fields are read-only; write only retVal and outputValue. 容量上限 8（平台不解析 ARRAY[*] 的运行时长度）；实际有效通道数由 count 给出，按 1..count 取值。",
+      "direction": "inout",
+      "fields": [
+        {
+          "name": "enable",
+          "data_type": "BOOL",
+          "description": "Channel conversion enable. Read-only to the function block. |",
+          "direction": "input",
+          "fields": []
+        },
+        {
+          "name": "hiLIM",
+          "data_type": "REAL",
+          "description": "Upper engineering-unit limit. Read-only to the function block. |",
+          "direction": "input",
+          "fields": []
+        },
+        {
+          "name": "loLIM",
+          "data_type": "REAL",
+          "description": "Lower engineering-unit limit. Read-only to the function block. |",
+          "direction": "input",
+          "fields": []
+        },
+        {
+          "name": "bipolar",
+          "data_type": "BOOL",
+          "description": "FALSE selects unipolar and TRUE selects bipolar operation. Read-only to the function block. |",
+          "direction": "input",
+          "fields": []
+        },
+        {
+          "name": "measuringMode",
+          "data_type": "INT",
+          "description": "0 non-temperature, 1 standard temperature, 2 climatic temperature. Read-only to the function block. |",
+          "direction": "input",
+          "fields": []
+        },
+        {
+          "name": "retVal",
+          "data_type": "WORD",
+          "description": "Per-channel status code written by the function block. |",
+          "direction": "output",
+          "fields": []
+        },
+        {
+          "name": "outputValue",
+          "data_type": "REAL",
+          "description": "Converted value written by the function block. |",
+          "direction": "output",
+          "fields": []
+        }
+      ]
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S5",
+      "text": "count 小于 1 时不得处理任何通道，channels 的 retVal/outputValue 必须保持上一拍的值。",
+      "ltl": "G(count < 1 -> (channels[1].retVal = prev(channels[1].retVal) & channels[1].outputValue = prev(channels[1].outputValue) & channels[8].retVal = prev(channels[8].retVal)))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "未使能通道的 retVal 不得被改写（enable=FALSE 的通道整条跳过）。",
+      "ltl": "G(!channels[1].enable -> channels[1].retVal = prev(channels[1].retVal))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S1",
+      "text": "analogValues 是只读输入量，任何周期都不得被改写；未使能通道的 retVal/outputValue 必须保持原值。",
+      "ltl": "",
+      "kind": "safety",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "S2",
+      "text": "measuringMode 不在 0/1/2 时该通道 retVal=16#8001 且跳过转换；hiLIM<=loLIM 时 retVal=16#8002 且跳过转换。",
+      "ltl": "",
+      "kind": "safety",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "S3",
+      "text": "mode0 线性标定：bipolar=FALSE 时 0..27648 线性映射到 loLIM..hiLIM，bipolar=TRUE 时 -27648..27648 映射到 loLIM..hiLIM。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "S4",
+      "text": "mode1 标准温度 outputValue=raw/10，mode2 气候温度 outputValue=raw/100；count 指定从各数组下界起处理的通道数并按序号对应（容量上限 8）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "s1",
+      "inputs": {
+        "count": 1
+      },
+      "expected": {
+        "channels": [
+          {
+            "retVal": 0,
+            "outputValue": 50.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ],
+        "analogValues": [
+          13824,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "count=1、mode0 单极 0..27648→0..100：raw=13824（半量程）→ outputValue=50.0、retVal=0，analogValues 不得被改写",
+      "const_inputs": {},
+      "init": {
+        "analogValues": [
+          13824,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "channels": [
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s2",
+      "inputs": {
+        "count": 1
+      },
+      "expected": {
+        "channels": [
+          {
+            "retVal": 0,
+            "outputValue": -25.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      },
+      "note": "count=1、mode0 双极 -27648..27648→-50..50：raw=-13824（负半量程一半）→ outputValue=-25.0",
+      "const_inputs": {},
+      "init": {
+        "analogValues": [
+          -13824,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "channels": [
+          {
+            "enable": true,
+            "hiLIM": 50.0,
+            "loLIM": -50.0,
+            "bipolar": true,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s3",
+      "inputs": {
+        "count": 1
+      },
+      "expected": {
+        "channels": [
+          {
+            "retVal": 0,
+            "outputValue": 123.4
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      },
+      "note": "mode1 标准温度 raw/10：raw=1234 → 123.4",
+      "const_inputs": {},
+      "init": {
+        "analogValues": [
+          1234,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "channels": [
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 1,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s4",
+      "inputs": {
+        "count": 1
+      },
+      "expected": {
+        "channels": [
+          {
+            "retVal": 0,
+            "outputValue": 25.67
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      },
+      "note": "mode2 气候温度 raw/100：raw=2567 → 25.67",
+      "const_inputs": {},
+      "init": {
+        "analogValues": [
+          2567,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "channels": [
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 2,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s5",
+      "inputs": {
+        "count": 1
+      },
+      "expected": {
+        "channels": [
+          {
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      },
+      "note": "enable=FALSE 的通道必须整条跳过：retVal/outputValue 保持初值 16#7777/-999.0，不被转换覆盖",
+      "const_inputs": {},
+      "init": {
+        "analogValues": [
+          13824,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "channels": [
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s6",
+      "inputs": {
+        "count": 1
+      },
+      "expected": {
+        "channels": [
+          {
+            "retVal": 32769,
+            "outputValue": -999.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      },
+      "note": "measuringMode=3 非法 → retVal=16#8001(32769) 并跳过，outputValue 保持 -999.0",
+      "const_inputs": {},
+      "init": {
+        "analogValues": [
+          13824,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "channels": [
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 3,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s7",
+      "inputs": {
+        "count": 1
+      },
+      "expected": {
+        "channels": [
+          {
+            "retVal": 32770,
+            "outputValue": -999.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      },
+      "note": "hiLIM(10) < loLIM(20) 量程非法 → retVal=16#8002(32770) 并跳过，outputValue 保持 -999.0",
+      "const_inputs": {},
+      "init": {
+        "analogValues": [
+          13824,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "channels": [
+          {
+            "enable": true,
+            "hiLIM": 10.0,
+            "loLIM": 20.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s8",
+      "inputs": {
+        "count": 1
+      },
+      "expected": {
+        "channels": [
+          {
+            "retVal": 32770,
+            "outputValue": -999.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      },
+      "note": "边界：hiLIM == loLIM(20) 也属于 hiLIM<=loLIM → retVal=16#8002 并跳过",
+      "const_inputs": {},
+      "init": {
+        "analogValues": [
+          13824,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "channels": [
+          {
+            "enable": true,
+            "hiLIM": 20.0,
+            "loLIM": 20.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s9",
+      "inputs": {
+        "count": 2
+      },
+      "expected": {
+        "channels": [
+          {
+            "retVal": 0,
+            "outputValue": 100.0
+          },
+          {
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      },
+      "note": "count=2：通道1 满量程 raw=27648→100.0；通道2 未使能保持初值，说明按序号一一对应且禁用通道不写",
+      "const_inputs": {},
+      "init": {
+        "analogValues": [
+          27648,
+          500,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "channels": [
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 1,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s10",
+      "inputs": {
+        "count": 8
+      },
+      "expected": {
+        "channels": [
+          {
+            "retVal": 0,
+            "outputValue": 10.0
+          },
+          {
+            "retVal": 0,
+            "outputValue": 20.0
+          },
+          {
+            "retVal": 0,
+            "outputValue": 30.0
+          },
+          {
+            "retVal": 0,
+            "outputValue": 40.0
+          },
+          {
+            "retVal": 0,
+            "outputValue": 50.0
+          },
+          {
+            "retVal": 0,
+            "outputValue": 60.0
+          },
+          {
+            "retVal": 0,
+            "outputValue": 70.0
+          },
+          {
+            "retVal": 0,
+            "outputValue": 80.0
+          }
+        ]
+      },
+      "note": "容量上限：count=8 全部使能，mode1 依次 raw=100..800 → outputValue=10.0..80.0，验证逐通道序号对应",
+      "const_inputs": {},
+      "init": {
+        "analogValues": [
+          100,
+          200,
+          300,
+          400,
+          500,
+          600,
+          700,
+          800
+        ],
+        "channels": [
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 1,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 1,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 1,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 1,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 1,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 1,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 1,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 1,
+            "retVal": 30583,
+            "outputValue": -999.0
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s11",
+      "inputs": {
+        "count": 0
+      },
+      "expected": {
+        "channels": [
+          {
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "retVal": 30583,
+            "outputValue": -999.0
+          }
+        ]
+      },
+      "note": "count=0 → 一个通道都不处理，8 个通道全部保持初值（retVal=16#7777、outputValue=-999.0）",
+      "const_inputs": {},
+      "init": {
+        "analogValues": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "channels": [
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s12",
+      "inputs": {
+        "count": 3
+      },
+      "expected": {
+        "channels": [
+          {
+            "retVal": 0,
+            "outputValue": 100.0
+          },
+          {
+            "retVal": 32769,
+            "outputValue": -999.0
+          },
+          {
+            "retVal": 32770,
+            "outputValue": -999.0
+          },
+          {},
+          {},
+          {},
+          {},
+          {}
+        ]
+      },
+      "note": "count=3 混合：通道1 正常换算、通道2 模式非法 16#8001、通道3 量程非法 16#8002，三种结果互不串扰",
+      "const_inputs": {},
+      "init": {
+        "analogValues": [
+          27648,
+          100,
+          100,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "channels": [
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": true,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 3,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": true,
+            "hiLIM": 5.0,
+            "loLIM": 5.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          },
+          {
+            "enable": false,
+            "hiLIM": 100.0,
+            "loLIM": 0.0,
+            "bipolar": false,
+            "measuringMode": 0,
+            "retVal": 30583,
+            "outputValue": -999.0
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r2",
+      "platform": "codesys",
+      "pid": "public-medium-02",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate"
+      ],
+      "adapted_source_sha256": "b2c9948a66c6e46900d9addbd996d1370510d546b7404078c7998997211de88a"
+    },
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r2",
+      "kind": "platform_adapted",
+      "platform": "codesys",
+      "original_json": "progress/v13/upstream/public/public-medium-02.json",
+      "original_sha256": "20487d7ff752594e24824fca6b4b814c24134ba50228a9b8c29148ab02c74d79",
+      "interface_changed": false,
+      "reference_source_sha256": "b2c9948a66c6e46900d9addbd996d1370510d546b7404078c7998997211de88a",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance"
+    }
+  },
+  "language": "en",
+  "case_mode": "single",
+  "raw_text": "# Analog Batch Processing\n\n- **Difficulty:** Medium (medium)\n\n## Requirements\n\nWrite a PLC function block that processes analog inputs in batches and converts them into engineering values.\n\n1. analogValues supplies the raw-value array. channels supplies per-channel settings and receives conversion results. count specifies how many channels to process from the beginning of the arrays. The caller must provide count from zero through the smaller of the two array lengths. Match channels by ordinal position starting at each array's own lower bound. Read analogValues without modifying it.\n2. Each channel is enabled by its enable field and converted according to measuringMode. Read configuration fields without modifying them; write only retVal and outputValue.\n3. For measuringMode 0, perform non-temperature linear scaling: when bipolar is FALSE, map raw values 0..27648 to loLIM..hiLIM; when TRUE, map -27648..27648 to loLIM..hiLIM.\n4. For measuringMode 1, perform standard-temperature conversion: outputValue is one tenth of the raw analog value.\n5. For measuringMode 2, perform climatic-temperature conversion: outputValue is one hundredth of the raw analog value.\n6. If measuringMode is not 0, 1 or 2, set that channel's retVal to 16#8001 and skip its conversion.\n7. If hiLIM is less than or equal to loLIM, set that channel's retVal to 16#8002 and skip its conversion.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `count` | `DINT` | Number of channels to be converted |\n| Input/Output | `analogValues` | `ARRAY[*] OF INT` | Variable-length analog array passed by reference to preserve its bounds. Read-only to the function block; no element may be modified. |\n| Input/Output | `channels` | `ARRAY[*] OF ST_AnalogChannel` | Channel records passed by reference. Configuration fields are read-only; write only retVal and outputValue. |\n| Input field | `channels[].enable` | `BOOL` | Channel conversion enable. Read-only to the function block. |\n| Input field | `channels[].hiLIM` | `REAL` | Upper engineering-unit limit. Read-only to the function block. |\n| Input field | `channels[].loLIM` | `REAL` | Lower engineering-unit limit. Read-only to the function block. |\n| Input field | `channels[].bipolar` | `BOOL` | FALSE selects unipolar and TRUE selects bipolar operation. Read-only to the function block. |\n| Input field | `channels[].measuringMode` | `INT` | 0 non-temperature, 1 standard temperature, 2 climatic temperature. Read-only to the function block. |\n| Output field | `channels[].retVal` | `WORD` | Per-channel status code written by the function block. |\n| Output field | `channels[].outputValue` | `REAL` | Converted value written by the function block. |\n\nRows named `channels[].fieldName` describe the element fields of ST_AnalogChannel, rather than additional function-block parameters.",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

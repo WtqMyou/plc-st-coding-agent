@@ -1,0 +1,589 @@
+{
+  "pid": "self-medium-01",
+  "source": "selfmade",
+  "difficulty": "medium",
+  "title": "配料配方装载与校验（数组越界与浮点区间）",
+  "requirements": "写一个功能块 FB，从配方库中按槽位装载配方并校验。\n控制要求：\n1. recipe 是 8 个槽位的配方数组，槽位 recipeID = 0 表示空槽；\n2. selSlot 是操作员选中的槽位，合法范围 1..8；**越界时必须判为非法，不得访问数组外**；\n3. loadCmd 的**上升沿**触发一次装载；按住不放不得重复装载；\n4. 校验规则（**全部满足**才算 valid）：槽位非空；totalRatio 在 99.0..101.0 之间（含端点）；temperature 在 30.0..180.0 之间（含端点）；\n5. 校验通过时 valid := TRUE 且 loadedID 更新为该槽位的 recipeID；校验失败时 valid := FALSE 且 loadedID 归 0；\n6. running 为 TRUE 表示正在生产，此时装载命令无效，loadedID 保持原值。\n平台约定：内部结构体临时变量避免使用单字母 r；当前平台对原写法报告词法冲突，接口保持原样。",
+  "variables": [
+    {
+      "name": "recipe",
+      "data_type": "ARRAY[1..8] OF ST_Recipe",
+      "description": "配方槽位 1..8，槽位 recipeID=0 表示空",
+      "direction": "input",
+      "fields": [
+        {
+          "name": "recipeID",
+          "data_type": "INT",
+          "description": "配方号，0 表示空槽",
+          "direction": "input",
+          "fields": []
+        },
+        {
+          "name": "totalRatio",
+          "data_type": "REAL",
+          "description": "配方总比例，合法 99.0..101.0",
+          "direction": "input",
+          "fields": []
+        },
+        {
+          "name": "temperature",
+          "data_type": "REAL",
+          "description": "工艺温度，合法 30.0..180.0",
+          "direction": "input",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "selSlot",
+      "data_type": "INT",
+      "description": "操作员选中的槽位，合法范围 1..8",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "loadCmd",
+      "data_type": "BOOL",
+      "description": "装载命令（上升沿触发一次装载）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "running",
+      "data_type": "BOOL",
+      "description": "当前是否处于生产状态",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "valid",
+      "data_type": "BOOL",
+      "description": "配方校验通过",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "loadedID",
+      "data_type": "INT",
+      "description": "已装载的配方号，无配方时为 0",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "选中的槽位为空（recipeID = 0）时，装载必须判为非法，且不得改变已装载的 loadedID。",
+      "ltl": "G(!running & rising(loadCmd) & (selSlot >= 1) & (selSlot <= 8) & (recipe[selSlot].recipeID = 0) -> !valid)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "总配比越界（totalRatio < 99 或 > 101）时装载必须判为非法。",
+      "ltl": "G(!running & rising(loadCmd) & (selSlot >= 1) & (selSlot <= 8) & (recipe[selSlot].totalRatio < 99.0) -> !valid)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "温度越界（temperature < 30 或 > 180）时装载必须判为非法。",
+      "ltl": "G(!running & rising(loadCmd) & (selSlot >= 1) & (selSlot <= 8) & (recipe[selSlot].temperature > 180.0) -> !valid)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "生产运行中（running），装载命令不得改变 loadedID。注意必须要求 running 在相邻两拍都成立——只要求起始拍成立的话，下一拍 running 撤销、装载被接受，就是合法行为。",
+      "ltl": "G(running & X(running) -> X(loadedID = prev(loadedID)))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "槽位越界（selSlot < 1 或 > 8）时必须判为非法，不得访问数组外内存。",
+      "ltl": "G(!running & rising(loadCmd) & ((selSlot < 1) | (selSlot > 8)) -> !valid)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "装载命令只在上升沿生效，电平保持期间不得重复装载。",
+      "ltl": "G(loadCmd & prev(loadCmd) -> loadedID = prev(loadedID))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "c1",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": true,
+        "loadedID": 101
+      },
+      "note": "槽 1 配方合法 → valid",
+      "const_inputs": {
+        "selSlot": 1,
+        "running": false,
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c2",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "槽 3 是空槽（recipeID=0）→ 无效",
+      "const_inputs": {
+        "selSlot": 3,
+        "running": false,
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c3",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "总比例 98.9 超差 → 无效",
+      "const_inputs": {
+        "selSlot": 2,
+        "running": false,
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 102,
+            "totalRatio": 98.9,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c4",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": true,
+        "loadedID": 202
+      },
+      "note": "温度正好 180.0 属合法边界",
+      "const_inputs": {
+        "selSlot": 4,
+        "running": false,
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 100.0,
+            "temperature": 180.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c5",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "温度 180.1 超上限 → 无效",
+      "const_inputs": {
+        "selSlot": 5,
+        "running": false,
+        "recipe": [
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 303,
+            "totalRatio": 99.5,
+            "temperature": 180.1
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c6",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "运行中不接受装载命令：保持原值",
+      "const_inputs": {
+        "selSlot": 1,
+        "running": true,
+        "recipe": [
+          {
+            "recipeID": 202,
+            "totalRatio": 100.0,
+            "temperature": 180.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c7",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "槽号越界 → 不得访问数组，判无效",
+      "const_inputs": {
+        "selSlot": 9,
+        "running": false,
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "自主构思 / 行业经验改编",
+    "origin": "流程行业多产品罐装线按配方切换：赛题里常见'配方号 + 比例和 + 工艺温度'三元组，需要操作员选槽位后校验再投产。",
+    "adaptation": "把配方库简化为固定 8 槽数组，把'组分比例和必须为 100%'变成带容差的闭区间判定，从而把浮点边界与数组下标两类易错点放在同一题里。",
+    "review": "人工审核：所有边界（99.0 / 101.0 / 30.0 / 180.0）都写成闭区间并各有正反两个用例；槽位越界单独成用例 c7。",
+    "review_revision": "v1.3-review-r2",
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r2",
+      "platform": "openplc",
+      "pid": "self-medium-01",
+      "rules": [
+        "Internal recipe temporary r -> selectedRecipe after native CODESYS token diagnostics",
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate"
+      ],
+      "adapted_source_sha256": "5fe354e4d246ef2e251f011c0092a49345563ab557737879962f02bab105dc22"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r2",
+      "kind": "platform_adapted",
+      "platform": "openplc",
+      "original_json": "progress/v13/upstream/selfmade/self-medium-01.json",
+      "original_sha256": "c287137a2e54dcc3042f3a1c1e07bb8d91511a48071801b41d7d76d40e72cba6",
+      "interface_changed": false,
+      "reference_source_sha256": "5fe354e4d246ef2e251f011c0092a49345563ab557737879962f02bab105dc22",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance"
+    }
+  },
+  "language": "en",
+  "case_mode": "single",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

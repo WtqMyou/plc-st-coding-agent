@@ -1,0 +1,1213 @@
+{
+  "pid": "self-hard-07",
+  "source": "selfmade",
+  "difficulty": "hard",
+  "title": "串级 PI 温控回路的手/自动无扰切换（bumpless transfer）",
+  "requirements": "写一个功能块 FB，实现**串级 PI 控制回路**的手/自动无扰切换。\n1. 串级结构：外环以温度偏差驱动流量设定，内环以流量偏差驱动阀门开度；\n2. 模式：0=手动（操作员直接给定流量设定与阀门开度，两者都跟随手动值）；1=自动（手动给定流量设定 manualFlowSP，内环 PI 自动算阀门）；2=串级（温度环 PI 算流量设定，流量环 PI 算阀门）；\n3. 每个扫描周期只执行一次，scanSeconds 为本次周期时长（秒）；控制器系数按**秒**计算：外环 KiT=0.2 (t/h)/(℃·s)、内环 KiF=0.5 %/((t/h)·s)；温度偏差 eT=tempSP-tempPV（℃），流量偏差 eF=flowSP-flowPV（t/h），阀门开度单位 %，因此积分项 accT 的单位是t/h、accF 的单位是 %，增益 1.0 与 2.0 分别对应 ℃→t/h 与 t/h→% 的折算：\n   外环 trial = accT + 0.2*eT*scanSeconds；flowSP = 1.0*eT + trial；限幅 0..50（t/h）；accT = flowSP - 1.0*eT；\n   内环 trial = accF + 0.5*eF*scanSeconds；valveCommand = 2.0*eF + trial；限幅 0..100（%）；accF = valveCommand - 2.0*eF；\n   抗积分饱和用**回算**：acc 取限幅后的实际输出反算，因此限幅期间积分不会越积越多、解除饱和后立即恢复；\n4. 模式切换当拍不执行正常 PI 积分，normalMode=FALSE。切到串级 mode=2 时，flowSP 与 valveCommand 均保持上一拍值；切到自动/手动 mode=1/0 时，flowSP 跟随 manualFlowSP，valveCommand 保持上一拍值。连续两拍切换也必须逐拍识别。首次执行与复位、故障拍按初始化/复位/故障规则处理，不适用上一拍输出保持。手动接管后的正常拍允许操作员给定引起阀位突变。\n5. 复位 resetBtn 上升沿：整个回路回到初值——预置积分器、输出跟手动值、当拍不运算；按住不放不重复动作；\n6. 故障安全：mode 不在 0/1/2，或 scanSeconds<=0.0（时标丢失），或 scanSeconds>10.0（超过 10 s 的扫描周期视为时基异常）→ fault 置位，输出**立即**跟手动值、不积分，并预置积分器；故障期间允许阀位跳变（安全优先，与“无扰切换”区分）；\n7. 复位/故障优先于正常运算：同一拍既有复位上升沿又有故障时，按复位处理（两者输出相同，均跟手动值）；\n8. normalMode 表示“本拍处于正常运算”，即既不在复位拍也不在故障、也不在模式切换/首次执行拍；\n9. 模式可以任意跳转（不要求 0→1→2 依次投入；直接 0→2 合法）；但工程上一般建议先投入内环（1）再投入外环（2），这样温度环 PI 的积分器在切换时已有较接近的初值、可减少切换瞬态——这是操作建议，不是本块强制的算法约束。\n扫描周期与单位约定：scanSeconds 以秒给出，积分增益按秒定义，算法已显式乘 scanSeconds，不得再次折算。KpT=1.0 (t/h)/℃，KiT=0.2 (t/h)/(℃·s)，KpF=2.0 %/(t/h)，KiF=0.5 %/((t/h)·s)。离散采样周期会影响近似误差与闭环表现，不据此重复调整 Ki。输入契约：所有数值为有限值，manualFlowSP 在 0..50 t/h，manualValve 在 0..100%。\n平台适配：原接口 dt（IEC 日期时间类型别名）统一重命名为 scanSeconds；单位秒、类型及原数字断言不变。",
+  "variables": [
+    {
+      "name": "mode",
+      "data_type": "INT",
+      "description": "0=手动 1=自动 2=串级（其它值为故障回退）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "resetBtn",
+      "data_type": "BOOL",
+      "description": "复位（上升沿回到初值）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "scanSeconds",
+      "data_type": "REAL",
+      "description": "本次扫描周期（秒）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "tempSP",
+      "data_type": "REAL",
+      "description": "温度设定值（℃）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "tempPV",
+      "data_type": "REAL",
+      "description": "温度测量值（℃）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "flowPV",
+      "data_type": "REAL",
+      "description": "流量测量值（t/h）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "manualFlowSP",
+      "data_type": "REAL",
+      "description": "手动流量设定值（t/h）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "manualValve",
+      "data_type": "REAL",
+      "description": "手动阀门开度取值（%）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "flowSP",
+      "data_type": "REAL",
+      "description": "流量设定值输出（t/h，限幅 0..50）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "valveCommand",
+      "data_type": "REAL",
+      "description": "阀门开度指令（%，限幅 0..100）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "fault",
+      "data_type": "BOOL",
+      "description": "故障（模式越界或 dt 越界）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "normalMode",
+      "data_type": "BOOL",
+      "description": "本拍处于正常运算（非复位/故障/切换/首次拍）",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "流量设定值始终在 0..50 t/h 之间。",
+      "ltl": "G((flowSP >= 0.0) & (flowSP <= 50.0))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "阀门指令始终在 0..100 % 之间。",
+      "ltl": "G((valveCommand >= 0.0) & (valveCommand <= 100.0))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "故障周期必须立即回退到手动：跟手操值且本拍非正常运算。",
+      "ltl": "G(fault -> ((flowSP = manualFlowSP) & (valveCommand = manualValve) & !normalMode))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "复位上升沿必须让回路回到初值：跟手操值且本拍非正常运算。",
+      "ltl": "G(rising(resetBtn) -> ((flowSP = manualFlowSP) & (valveCommand = manualValve) & !normalMode))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "手动正常运算周期两个输出分别跟随手动给定。",
+      "ltl": "G((normalMode & (mode = 0)) -> ((flowSP = manualFlowSP) & (valveCommand = manualValve)))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "自动正常运算周期流量设定跟随 manualFlowSP。",
+      "ltl": "G((normalMode & (mode = 1)) -> (flowSP = manualFlowSP))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S7",
+      "text": "非首次、无复位/故障的模式切换到自动或手动：流量跟手操，阀位保持，且本拍不正常运算；含连续切换。",
+      "ltl": "G(((prev(TRUE) AND mode <> prev(mode) AND NOT fault AND NOT (resetBtn AND NOT prev(resetBtn))) AND mode <> 2) -> (flowSP = manualFlowSP AND valveCommand = prev(valveCommand) AND NOT normalMode))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S8",
+      "text": "非首次、无复位/故障的模式切换到串级：两输出保持上一拍且不正常运算；不依赖上一拍 normalMode。",
+      "ltl": "G(((prev(TRUE) AND mode <> prev(mode) AND NOT fault AND NOT (resetBtn AND NOT prev(resetBtn))) AND mode = 2) -> (flowSP = prev(flowSP) AND valveCommand = prev(valveCommand) AND NOT normalMode))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S9",
+      "text": "串级/自动 PI 的积分预置、抗积分饱和回算、scanSeconds 校验与手动保持的完整行为。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "q1",
+      "inputs": {
+        "mode": -1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 5.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 5.0,
+        "valveCommand": 20.0,
+        "fault": true,
+        "normalMode": false
+      },
+      "note": "首次执行即 mode=-1：故障回退跟手操，accT=5-(100-98)=3、accF=20-2*(5-20)=50",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q2",
+      "inputs": {
+        "mode": 0,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 5.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 5.0,
+        "valveCommand": 20.0,
+        "fault": false,
+        "normalMode": false
+      },
+      "note": "mode 由 -1 切到 0：切换当拍预置积分器、输出保持手动值，不运算",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q3",
+      "inputs": {
+        "mode": 0,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 5.0,
+        "manualValve": 35.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 5.0,
+        "valveCommand": 35.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "手动正常运算：flowSP 跟 manualFlowSP=5、valveCommand 跟 manualValve=35",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q4",
+      "inputs": {
+        "mode": 1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 5.0,
+        "manualValve": 35.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 5.0,
+        "valveCommand": 35.0,
+        "fault": false,
+        "normalMode": false
+      },
+      "note": "切到自动：当拍预置 accF=35-2*(5-10)=45，输出仍保持 35",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q5",
+      "inputs": {
+        "mode": 1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 5.0,
+        "manualValve": 35.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 5.0,
+        "valveCommand": 32.5,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "自动正常运算：eF=5-10=-5，trial=45-2.5=42.5，valve=2*(-5)+42.5=32.5，accF=32.5+10=42.5",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q6",
+      "inputs": {
+        "mode": 1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 5.0,
+        "manualValve": 35.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 5.0,
+        "valveCommand": 30.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "自动第 2 拍：trial=42.5-2.5=40，valve=-10+40=30，accF=40",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q7",
+      "inputs": {
+        "mode": 1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 35.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 40.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "自动模式下manualFlowSP从5变10：流量偏差从-5变0，比例项变化；积分增量为0，阀位从上一拍30%变为40%，并非阀位不变。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q8",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 35.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 40.0,
+        "fault": false,
+        "normalMode": false
+      },
+      "note": "切到串级：当拍不运算，flowSP/valveCommand 均保持上一拍（10/40）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q9",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 35.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.4,
+        "valveCommand": 41.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "串级正常运算：eT=2，外环 trial=8+0.4=8.4，flowSP=2+8.4=10.4；eF=0.4，内环 trial=40+0.2=40.2，valve=0.8+40.2=41",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q10",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 35.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.8,
+        "valveCommand": 42.2,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "串级第 2 拍：外环 accT=8.4 → trial 8.8 → flowSP 10.8；内环 valve 42.2",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q11",
+      "inputs": {
+        "mode": 1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 35.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 42.2,
+        "fault": false,
+        "normalMode": false
+      },
+      "note": "串级切回自动：flowSP 跟 manualFlowSP=10，valveCommand 保持 42.2",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q12",
+      "inputs": {
+        "mode": 1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 35.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 42.2,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "自动正常运算：eF=0，valve 保持 42.2",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q13",
+      "inputs": {
+        "mode": 3,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 99.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 99.0,
+        "fault": true,
+        "normalMode": false
+      },
+      "note": "mode=3 越界 → 故障回退：输出立即跟手操（允许阀位跳变）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q14",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 99.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 99.0,
+        "fault": false,
+        "normalMode": false
+      },
+      "note": "故障恢复后切到串级：当拍预置积分器、输出保持 99",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q15",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 99.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.4,
+        "valveCommand": 100.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "串级正常运算：内环输出 100.8 被上限 100 截断（accF 回算 99.2）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q16",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 99.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.8,
+        "valveCommand": 76.2,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "flowPV 升到 20：eF=-9.2，valve 从饱和 100 立刻回到 76.2（回算未积压）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q17",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 40.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 99.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 11.2,
+        "valveCommand": 22.6,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "flowPV=40：eF=-28.8，valve 22.6",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q18",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 40.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 99.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 11.6,
+        "valveCommand": 9.2,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "串级继续：valve 9.2",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q19",
+      "inputs": {
+        "mode": 0,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 40.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 99.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 9.2,
+        "fault": false,
+        "normalMode": false
+      },
+      "note": "串级→手动（连续切换第 1 拍）：flowSP 跟手操 10，valve 保持 9.2",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q20",
+      "inputs": {
+        "mode": 1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 40.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 99.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 9.2,
+        "fault": false,
+        "normalMode": false
+      },
+      "note": "手→自动（连续切换第 2 拍）：当拍仍不运算，输出保持",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q21",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 40.0,
+        "manualFlowSP": 30.0,
+        "manualValve": 99.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 9.2,
+        "fault": false,
+        "normalMode": false
+      },
+      "note": "自动→串级（连续切换第 3 拍）：manualFlowSP=30 也不得被采用，flowSP 保持上一拍 10.0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q22",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 40.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 99.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.4,
+        "valveCommand": 0.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "串级正常运算：eF=-29.6，valve 算出 -4.8 被下限 0 截断",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q23",
+      "inputs": {
+        "mode": 1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 50.0,
+        "resetBtn": true,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 50.0,
+        "fault": false,
+        "normalMode": false
+      },
+      "note": "复位上升沿：回初值（跟 manualFlowSP=10 / manualValve=50），当拍不运算",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q24",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 50.0,
+        "resetBtn": true,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 50.0,
+        "fault": false,
+        "normalMode": false
+      },
+      "note": "复位按住不放 + 切模式：没有新上升沿不再复位，按切换处理，输出保持",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q25",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 50.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.4,
+        "valveCommand": 46.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "松开复位后串级正常运算：valve 46",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q26",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": true,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 20.0,
+        "fault": false,
+        "normalMode": false
+      },
+      "note": "复位后松手再按：重新出现上升沿 → 再次回初值",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q27",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": true,
+        "scanSeconds": 10.0
+      },
+      "expected": {
+        "flowSP": 14.0,
+        "valveCommand": 0.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "复位按住 + dt=10.0（允许上限）：不重复复位，按串级运算，外环 8+0.2*2*10=12 → flowSP 14；内环 eF=-6 → valve 10-12=-2 截断 0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q28",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 10.1
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 20.0,
+        "fault": true,
+        "normalMode": false
+      },
+      "note": "dt=10.1 > 10.0 → 时基异常故障：跟手操",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q29",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 0.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 20.0,
+        "fault": true,
+        "normalMode": false
+      },
+      "note": "dt=0 → 故障",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q30",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": -1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 20.0,
+        "fault": true,
+        "normalMode": false
+      },
+      "note": "dt=-1 → 故障（负时标不允许）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q31",
+      "inputs": {
+        "mode": 1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 20.0,
+        "fault": false,
+        "normalMode": false
+      },
+      "note": "故障消失后切到自动：当拍预置积分器、输出保持",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q32",
+      "inputs": {
+        "mode": 1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 15.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "自动正常运算：eF=-10，trial=40-5=35，valve=-20+35=15",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q33",
+      "inputs": {
+        "mode": 1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 20.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 10.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "自动第 2 拍：valve 10",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q34",
+      "inputs": {
+        "mode": 1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 0.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 55.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "flowPV=0：eF=10，trial=30+5=35，valve=20+35=55",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q35",
+      "inputs": {
+        "mode": 1,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 0.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 60.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "自动第 2 拍：valve 60",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q36",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 98.0,
+        "flowPV": 0.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 10.0,
+        "valveCommand": 60.0,
+        "fault": false,
+        "normalMode": false
+      },
+      "note": "切到串级：valve 保持 60，积分器按当前偏差重算",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q37",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 30.0,
+        "tempPV": 100.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 0.0,
+        "valveCommand": 15.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "外环下限：eT=-70，trial=8-14=-6，flowSP=-76 截断 0（accT 回算 70）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q38",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 30.0,
+        "tempPV": 100.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 0.0,
+        "valveCommand": 10.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "继续：valve 10",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q39",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 400.0,
+        "tempPV": 100.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 50.0,
+        "valveCommand": 100.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "外环上限：eT=300，flowSP 430 截断 50；内环 eF=40 → valve 130 截断 100",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q40",
+      "inputs": {
+        "mode": 2,
+        "tempSP": 100.0,
+        "tempPV": 80.0,
+        "flowPV": 10.0,
+        "manualFlowSP": 10.0,
+        "manualValve": 20.0,
+        "resetBtn": false,
+        "scanSeconds": 1.0
+      },
+      "expected": {
+        "flowSP": 0.0,
+        "valveCommand": 0.0,
+        "fault": false,
+        "normalMode": true
+      },
+      "note": "上下限解除：外环 8→accT=-20，flowSP 截断 0；内环 accF=20，valve 截断 0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "队友评审草案改编（P05）",
+    "origin": "2026 CIMC 决赛串级温控题：上位机可切手/自动/串级，切换不允许扰动阀门。",
+    "adaptation": "把原草案的单环 PI 扩成温度-流量串级；补充复位、故障安全、抗积分饱和与模式任意跳转的边界。",
+    "review": "已收到需修改意见；本版本已技术整改，人工复审未通过前不得标为通过。",
+    "human_process_review": {
+      "status": "corrected_pending_rereview",
+      "reviewer": "刘晏铭",
+      "reviewer_as_written": "lym",
+      "original_conclusion": "需修改",
+      "original_review_date": "11.2",
+      "source": "progress/evidence/review_20261108/inputs/复核记录.md",
+      "approved": false
+    },
+    "review_revision": "v1.3-review-r2",
+    "upstream_review_claim": "人工审核（lym 11.2 复核后修订）：q13 注释补积分更新步骤；q5 手操值改 30 以验证串级切换当拍不偷用 manualFlowSP；说明自动→手动是预置型切换（当拍保持、允许接管后突变）；补充 PI 系数量纲与按秒计算；明确故障回退允许阀位跳变（安全优先）且不要求 0→1→2 依次投入；新增复位、连续两拍切换、dt 边界、上下限幅与解除饱和的用例，并把切换性质写成 S7/S8 两条规约。",
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r2",
+      "platform": "openplc",
+      "pid": "self-hard-07",
+      "rules": [
+        "Reserved input dt -> scanSeconds in interface, tests and LTL; same seconds and numeric behavior",
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate"
+      ],
+      "adapted_source_sha256": "7d16a2e79cd9b6ddb88897f317cc7dea3cc4690d2c128c3fce74c8b12cdaf0cc"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r2",
+      "kind": "platform_adapted",
+      "platform": "openplc",
+      "original_json": "progress/v13/upstream/selfmade/self-hard-07.json",
+      "original_sha256": "cf6a6ac3636469b86a2b42778aad965729c316576771363ceece4606fdf653b6",
+      "interface_changed": true,
+      "reference_source_sha256": "7d16a2e79cd9b6ddb88897f317cc7dea3cc4690d2c128c3fce74c8b12cdaf0cc",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance"
+    }
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

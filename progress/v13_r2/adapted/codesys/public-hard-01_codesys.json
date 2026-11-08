@@ -1,0 +1,610 @@
+{
+  "pid": "public-hard-01",
+  "source": "public",
+  "difficulty": "hard",
+  "title": "Material Proportioning Process Control",
+  "requirements": "Design a PLC program to control a material proportioning process that requires mixing three types of materials according to specific requirements and then delivering them to the next process through valve D. The system needs to support both manual and automatic operation modes and be able to safely stop all equipment when an emergency stop signal is triggered.\nControl requirements:\nEmergency Stop Logic: The estop(=FALSE) signal is used for emergency stopping of all equipment.\nManual Mode: opeMode=false, manually control the start/stop of valves A, B, C, D, and the mixing motor.\nAutomatic Mode: opeMode=true, equipment operates automatically according to the process flow.\nImplement the emergency stop logic to ensure that all equipment stops immediately when the emergency stop signal is triggered.\nIn manual mode, manually control the start/stop of valves and the mixing motor.\nFor example, pressing the valve A start button valveAStart (triggering a rising edge) causes valve A to run (valveARun=TRUE); pressing the valve A start button valveAStart again (triggering a rising edge) stops valve A (valveARun=FALSE).\nIn automatic mode, implement the following control logic based on the process flow:\nPress the autoStart button to start the automatic process, first opening valve A.\nWhen the liquid level sensor levelSensor reaches 50cm, close valve A and open valve B.\nWhen the liquid level sensor reaches 80cm, close valve B.\nBased on processMode:\nIf processMode=false, start the mixing motor; after receiving the mixing complete signal, stop the mixing motor, open valve D, and the automatic process ends.\nIf processMode=true, open valve C; when the liquid level sensor reaches 100cm, close valve C, start the mixing motor; after receiving the mixing complete signal, stop the mixing motor, open valve D, and the automatic process ends.",
+  "variables": [
+    {
+      "name": "estop",
+      "data_type": "BOOL",
+      "description": "Emergency Stop Signal<br>FALSE: Emergency stop triggered<br>TRUE: No emergency stop triggered",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "opeMode",
+      "data_type": "BOOL",
+      "description": "Operation Mode<br>FALSE: Manual Operation Mode<br>TRUE: Automatic Operation Mode",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "valveAStart",
+      "data_type": "BOOL",
+      "description": "Valve A Start Button",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "valveBStart",
+      "data_type": "BOOL",
+      "description": "Valve B Start Button",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "valveCStart",
+      "data_type": "BOOL",
+      "description": "Valve C Start Button",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "valveDStart",
+      "data_type": "BOOL",
+      "description": "Valve D Start Button",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "mixMotorStart",
+      "data_type": "BOOL",
+      "description": "Mixing Motor Start Button",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "autoStart",
+      "data_type": "BOOL",
+      "description": "Automatic Start Button",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "processMode",
+      "data_type": "BOOL",
+      "description": "Process Mode",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "levelSensor",
+      "data_type": "INT",
+      "description": "Liquid Level Sensor (unit cm)",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "mixMotorComplete",
+      "data_type": "BOOL",
+      "description": "Mixing Complete Signal",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "valveARun",
+      "data_type": "BOOL",
+      "description": "Valve A Run Command",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "valveBRun",
+      "data_type": "BOOL",
+      "description": "Valve B Run Command",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "valveCRun",
+      "data_type": "BOOL",
+      "description": "Valve C Run Command",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "valveDRun",
+      "data_type": "BOOL",
+      "description": "Valve D Run Command",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "mixMotorRun",
+      "data_type": "BOOL",
+      "description": "Mixing Motor Run Command",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "当急停触发（estop=FALSE）时，阀 A/B/C/D 与混合电机必须全部停止",
+      "ltl": "G(estop = FALSE -> (valveARun = FALSE AND valveBRun = FALSE AND valveCRun = FALSE AND valveDRun = FALSE AND mixMotorRun = FALSE))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "自动模式下阀 A、B、C 两两不得同时运行（进料同一时刻只有一个）",
+      "ltl": "G(opeMode = TRUE -> (NOT (valveARun = TRUE AND valveBRun = TRUE) AND NOT (valveARun = TRUE AND valveCRun = TRUE) AND NOT (valveBRun = TRUE AND valveCRun = TRUE)))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "自动模式下阀 D 运行时，阀 A/B/C 与混合电机必须停止（出料与前序设备互斥）",
+      "ltl": "G(opeMode = TRUE AND valveDRun = TRUE -> (valveARun = FALSE AND valveBRun = FALSE AND valveCRun = FALSE AND mixMotorRun = FALSE))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "自动模式下混合电机运行时，阀 A/B/C 必须关闭",
+      "ltl": "G(opeMode = TRUE AND mixMotorRun = TRUE -> (valveARun = FALSE AND valveBRun = FALSE AND valveCRun = FALSE))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "自动模式下混合完成信号的上升沿必须使混合电机停止并打开阀 D",
+      "ltl": "G(rising(mixMotorComplete) AND opeMode = TRUE AND mixMotorRun = TRUE -> (mixMotorRun = FALSE AND valveDRun = TRUE))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "手动按钮的边沿翻转记忆、换模式与急停时的复位、自动步序的推进顺序：由用例验证的时序/数据性质",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "H01",
+      "inputs": {
+        "estop": true,
+        "opeMode": false,
+        "valveAStart": true,
+        "valveBStart": false,
+        "valveCStart": false,
+        "valveDStart": false,
+        "mixMotorStart": false,
+        "autoStart": false,
+        "processMode": false,
+        "levelSensor": 0,
+        "mixMotorComplete": false
+      },
+      "expected": {
+        "valveARun": true,
+        "valveBRun": false,
+        "valveCRun": false,
+        "valveDRun": false,
+        "mixMotorRun": false
+      },
+      "note": "手动：按下阀 A 按钮（上升沿）→ 阀 A 运行，其余全停",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "H02",
+      "inputs": {
+        "estop": true,
+        "opeMode": false,
+        "valveAStart": true,
+        "valveBStart": false,
+        "valveCStart": false,
+        "valveDStart": false,
+        "mixMotorStart": false,
+        "autoStart": false,
+        "processMode": false,
+        "levelSensor": 0,
+        "mixMotorComplete": false
+      },
+      "expected": {
+        "valveARun": true,
+        "valveBRun": false,
+        "valveCRun": false,
+        "valveDRun": false,
+        "mixMotorRun": false
+      },
+      "note": "承接上一条：阀 A 按钮按住 2 拍不重复翻转，仍保持运行（只认上升沿）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 2,
+      "expect_full": true
+    },
+    {
+      "tc_id": "H03",
+      "inputs": {
+        "estop": true,
+        "opeMode": false,
+        "valveAStart": false,
+        "valveBStart": false,
+        "valveCStart": false,
+        "valveDStart": false,
+        "mixMotorStart": false,
+        "autoStart": false,
+        "processMode": false,
+        "levelSensor": 0,
+        "mixMotorComplete": false
+      },
+      "expected": {
+        "valveARun": true,
+        "valveBRun": false,
+        "valveCRun": false,
+        "valveDRun": false,
+        "mixMotorRun": false
+      },
+      "note": "承接上一条：松开阀 A 按钮，手动记忆保持运行",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "H04",
+      "inputs": {
+        "estop": true,
+        "opeMode": false,
+        "valveAStart": true,
+        "valveBStart": false,
+        "valveCStart": false,
+        "valveDStart": false,
+        "mixMotorStart": false,
+        "autoStart": false,
+        "processMode": false,
+        "levelSensor": 0,
+        "mixMotorComplete": false
+      },
+      "expected": {
+        "valveARun": false,
+        "valveBRun": false,
+        "valveCRun": false,
+        "valveDRun": false,
+        "mixMotorRun": false
+      },
+      "note": "承接上一条：再次按下阀 A 按钮（第二个上升沿）→ 阀 A 停止",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "H05",
+      "inputs": {
+        "estop": true,
+        "opeMode": false,
+        "valveAStart": false,
+        "valveBStart": true,
+        "valveCStart": true,
+        "valveDStart": true,
+        "mixMotorStart": true,
+        "autoStart": false,
+        "processMode": false,
+        "levelSensor": 0,
+        "mixMotorComplete": false
+      },
+      "expected": {
+        "valveARun": false,
+        "valveBRun": true,
+        "valveCRun": true,
+        "valveDRun": true,
+        "mixMotorRun": true
+      },
+      "note": "手动：同时按下 B/C/D/混合按钮，各自上升沿独立翻转 → 四个设备全部启动",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "H06",
+      "inputs": {
+        "estop": false,
+        "opeMode": false,
+        "valveAStart": false,
+        "valveBStart": false,
+        "valveCStart": false,
+        "valveDStart": false,
+        "mixMotorStart": false,
+        "autoStart": false,
+        "processMode": false,
+        "levelSensor": 0,
+        "mixMotorComplete": false
+      },
+      "expected": {
+        "valveARun": false,
+        "valveBRun": false,
+        "valveCRun": false,
+        "valveDRun": false,
+        "mixMotorRun": false
+      },
+      "note": "急停：estop=FALSE → B/C/D/混合电机立即全停，保持 2 拍仍全停（负例）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 2,
+      "expect_full": true
+    },
+    {
+      "tc_id": "H07",
+      "inputs": {
+        "estop": true,
+        "opeMode": true,
+        "valveAStart": false,
+        "valveBStart": false,
+        "valveCStart": true,
+        "valveDStart": false,
+        "mixMotorStart": false,
+        "autoStart": true,
+        "processMode": true,
+        "levelSensor": 0,
+        "mixMotorComplete": false
+      },
+      "expected": {
+        "valveARun": true,
+        "valveBRun": false,
+        "valveCRun": false,
+        "valveDRun": false,
+        "mixMotorRun": false
+      },
+      "note": "自动：autoStart 上升沿启动流程先开阀 A；自动模式下按阀 C 按钮无效（负例）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "H08",
+      "inputs": {
+        "estop": true,
+        "opeMode": true,
+        "valveAStart": false,
+        "valveBStart": false,
+        "valveCStart": false,
+        "valveDStart": false,
+        "mixMotorStart": false,
+        "autoStart": false,
+        "processMode": true,
+        "levelSensor": 60,
+        "mixMotorComplete": false
+      },
+      "expected": {
+        "valveARun": false,
+        "valveBRun": true,
+        "valveCRun": false,
+        "valveDRun": false,
+        "mixMotorRun": false
+      },
+      "note": "承接上一条：液位到 60cm（>=50）→ 关 A 开 B",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "H09",
+      "inputs": {
+        "estop": true,
+        "opeMode": true,
+        "valveAStart": false,
+        "valveBStart": false,
+        "valveCStart": false,
+        "valveDStart": false,
+        "mixMotorStart": false,
+        "autoStart": false,
+        "processMode": true,
+        "levelSensor": 85,
+        "mixMotorComplete": false
+      },
+      "expected": {
+        "valveARun": false,
+        "valveBRun": false,
+        "valveCRun": true,
+        "valveDRun": false,
+        "mixMotorRun": false
+      },
+      "note": "承接上一条：液位到 85cm（>=80）→ 关 B；processMode=TRUE → 开 C 继续进料",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "H10",
+      "inputs": {
+        "estop": true,
+        "opeMode": true,
+        "valveAStart": false,
+        "valveBStart": false,
+        "valveCStart": false,
+        "valveDStart": false,
+        "mixMotorStart": false,
+        "autoStart": false,
+        "processMode": true,
+        "levelSensor": 105,
+        "mixMotorComplete": false
+      },
+      "expected": {
+        "valveARun": false,
+        "valveBRun": false,
+        "valveCRun": false,
+        "valveDRun": false,
+        "mixMotorRun": true
+      },
+      "note": "承接上一条：液位到 105cm（>=100）→ 关 C 启动混合电机",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "H11",
+      "inputs": {
+        "estop": true,
+        "opeMode": true,
+        "valveAStart": false,
+        "valveBStart": false,
+        "valveCStart": false,
+        "valveDStart": false,
+        "mixMotorStart": false,
+        "autoStart": false,
+        "processMode": true,
+        "levelSensor": 105,
+        "mixMotorComplete": true
+      },
+      "expected": {
+        "valveARun": false,
+        "valveBRun": false,
+        "valveCRun": false,
+        "valveDRun": true,
+        "mixMotorRun": false
+      },
+      "note": "承接上一条：收到混合完成信号 → 停电机开 D，自动流程结束（D 保持开启）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "H12",
+      "inputs": {
+        "estop": true,
+        "opeMode": true,
+        "valveAStart": false,
+        "valveBStart": false,
+        "valveCStart": false,
+        "valveDStart": false,
+        "mixMotorStart": false,
+        "autoStart": true,
+        "processMode": false,
+        "levelSensor": 0,
+        "mixMotorComplete": false
+      },
+      "expected": {
+        "valveARun": true,
+        "valveBRun": false,
+        "valveCRun": false,
+        "valveDRun": false,
+        "mixMotorRun": false
+      },
+      "note": "承接上一条：再次 autoStart → 关 D 开 A，开始新一周期（processMode=FALSE 分支）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "H13",
+      "inputs": {
+        "estop": true,
+        "opeMode": true,
+        "valveAStart": false,
+        "valveBStart": false,
+        "valveCStart": false,
+        "valveDStart": false,
+        "mixMotorStart": false,
+        "autoStart": false,
+        "processMode": false,
+        "levelSensor": 85,
+        "mixMotorComplete": false
+      },
+      "expected": {
+        "valveARun": false,
+        "valveBRun": false,
+        "valveCRun": false,
+        "valveDRun": false,
+        "mixMotorRun": true
+      },
+      "note": "承接上一条：液位到 85cm，2 拍内走完 50cm 关 A 开 B、80cm 关 B；processMode=FALSE → 直接启动混合电机",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 2,
+      "expect_full": true
+    },
+    {
+      "tc_id": "H14",
+      "inputs": {
+        "estop": true,
+        "opeMode": true,
+        "valveAStart": false,
+        "valveBStart": false,
+        "valveCStart": false,
+        "valveDStart": false,
+        "mixMotorStart": false,
+        "autoStart": false,
+        "processMode": false,
+        "levelSensor": 85,
+        "mixMotorComplete": true
+      },
+      "expected": {
+        "valveARun": false,
+        "valveBRun": false,
+        "valveCRun": false,
+        "valveDRun": true,
+        "mixMotorRun": false
+      },
+      "note": "承接上一条：混合完成 → 停电机开 D，流程结束",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    }
+  ],
+  "provenance": {
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r2",
+      "platform": "codesys",
+      "pid": "public-hard-01",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate"
+      ],
+      "adapted_source_sha256": "b4f6ee24e38a854127555e75cfbe03d47c7f370a0e20c0569684db160153667a"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r2",
+      "kind": "platform_adapted",
+      "platform": "codesys",
+      "original_json": "progress/v13/upstream/public/public-hard-01.json",
+      "original_sha256": "2d7b606fdd55d7521f316eef3d80d87b1aff1c0fb6993fab9977c8b70cee8170",
+      "interface_changed": false,
+      "reference_source_sha256": "b4f6ee24e38a854127555e75cfbe03d47c7f370a0e20c0569684db160153667a",
+      "comparison_scope": "Compare only within the same dataset, adaptation and judge version; not raw VARIANT conformance"
+    }
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "# Material Proportioning Process Control\n\n- **Difficulty:** Hard (hard)\n\n## Requirements\n\nDesign a PLC program to control a material proportioning process that requires mixing three types of materials according to specific requirements and then delivering them to the next process through valve D. The system needs to support both manual and automatic operation modes and be able to safely stop all equipment when an emergency stop signal is triggered.\nControl requirements:\nEmergency Stop Logic: The estop(=FALSE) signal is used for emergency stopping of all equipment.\nManual Mode: opeMode=false, manually control the start/stop of valves A, B, C, D, and the mixing motor.\nAutomatic Mode: opeMode=true, equipment operates automatically according to the process flow.\nImplement the emergency stop logic to ensure that all equipment stops immediately when the emergency stop signal is triggered.\nIn manual mode, manually control the start/stop of valves and the mixing motor.\nFor example, pressing the valve A start button valveAStart (triggering a rising edge) causes valve A to run (valveARun=TRUE); pressing the valve A start button valveAStart again (triggering a rising edge) stops valve A (valveARun=FALSE).\nIn automatic mode, implement the following control logic based on the process flow:\nPress the autoStart button to start the automatic process, first opening valve A.\nWhen the liquid level sensor levelSensor reaches 50cm, close valve A and open valve B.\nWhen the liquid level sensor reaches 80cm, close valve B.\nBased on processMode:\nIf processMode=false, start the mixing motor; after receiving the mixing complete signal, stop the mixing motor, open valve D, and the automatic process ends.\nIf processMode=true, open valve C; when the liquid level sensor reaches 100cm, close valve C, start the mixing motor; after receiving the mixing complete signal, stop the mixing motor, open valve D, and the automatic process ends.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `estop` | `BOOL` | Emergency Stop Signal<br>FALSE: Emergency stop triggered<br>TRUE: No emergency stop triggered |\n| Input | `opeMode` | `BOOL` | Operation Mode<br>FALSE: Manual Operation Mode<br>TRUE: Automatic Operation Mode |\n| Input | `valveAStart` | `BOOL` | Valve A Start Button |\n| Input | `valveBStart` | `BOOL` | Valve B Start Button |\n| Input | `valveCStart` | `BOOL` | Valve C Start Button |\n| Input | `valveDStart` | `BOOL` | Valve D Start Button |\n| Input | `mixMotorStart` | `BOOL` | Mixing Motor Start Button |\n| Input | `autoStart` | `BOOL` | Automatic Start Button |\n| Input | `processMode` | `BOOL` | Process Mode |\n| Input | `levelSensor` | `INT` | Liquid Level Sensor (unit cm) |\n| Input | `mixMotorComplete` | `BOOL` | Mixing Complete Signal |\n| Output | `valveARun` | `BOOL` | Valve A Run Command |\n| Output | `valveBRun` | `BOOL` | Valve B Run Command |\n| Output | `valveCRun` | `BOOL` | Valve C Run Command |\n| Output | `valveDRun` | `BOOL` | Valve D Run Command |\n| Output | `mixMotorRun` | `BOOL` | Mixing Motor Run Command |",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}
