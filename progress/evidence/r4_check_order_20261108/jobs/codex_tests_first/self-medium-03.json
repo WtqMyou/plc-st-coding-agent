@@ -1,0 +1,548 @@
+{
+  "pid": "self-medium-03",
+  "model": "MiniMax-M2.7",
+  "provider": "codex-cli",
+  "setting": "iterative",
+  "max_iters": 2,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    openBtn   : BOOL;\n    closeBtn  : BOOL;\n    openLimit : BOOL;\n    closeLimit: BOOL;\n    obstacle  : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    motorUp   : BOOL := FALSE;\n    motorDown : BOOL := FALSE;\n    errorFlag : BOOL := FALSE;\nEND_VAR\n\nVAR\n    state         : INT := 0;  // 0=IDLE, 1=OPENING, 2=CLOSING, 3=FAULT\n    prevOpenBtn   : BOOL := FALSE;\n    prevCloseBtn  : BOOL := FALSE;\n    obstacleSeen  : BOOL := FALSE;  // Latch: obstacle detected since last valid command\nEND_VAR\n\nVAR\n    openBtnRising  : BOOL;\n    closeBtnRising : BOOL;\nEND_VAR\n\n// Rising edge detection\nopenBtnRising  := openBtn AND NOT prevOpenBtn;\ncloseBtnRising := closeBtn AND NOT prevCloseBtn;\n\n// Update button history for next scan\nprevOpenBtn  := openBtn;\nprevCloseBtn := closeBtn;\n\n// State machine\nCASE state OF\n    0:  // IDLE\n        motorUp   := FALSE;\n        motorDown := FALSE;\n        \n        // Clear obstacle latch when valid command starts\n        IF openBtnRising THEN\n            obstacleSeen := FALSE;\n        END_IF\n        IF closeBtnRising THEN\n            obstacleSeen := FALSE;\n        END_IF\n        \n        // Transitions: only if no obstacle seen since last valid command\n        IF openBtnRising AND NOT openLimit AND NOT obstacleSeen THEN\n            state := 1;  // -> OPENING\n        ELSIF closeBtnRising AND NOT closeLimit AND NOT obstacleSeen THEN\n            state := 2;  // -> CLOSING\n        END_IF\n        \n    1:  // OPENING\n        motorUp   := TRUE;\n        motorDown := FALSE;\n        \n        // Latch obstacle detection\n        IF obstacle THEN\n            obstacleSeen := TRUE;\n        END_IF\n        \n        // Check for openLimit OR obstacle\n        IF openLimit THEN\n            motorUp := FALSE;\n            state := 0;  // -> IDLE\n        ELSIF obstacle THEN\n            motorUp := FALSE;\n            errorFlag := TRUE;\n            state := 3;  // -> FAULT\n        END_IF\n        \n    2:  // CLOSING\n        motorUp   := FALSE;\n        motorDown := TRUE;\n        \n        // Check for obstacle\n        IF obstacle THEN\n            motorDown := FALSE;\n            state := 1;  // -> OPENING (reverse)\n        ELSIF closeLimit THEN\n            motorDown := FALSE;\n            state := 0;  // -> IDLE\n        END_IF\n        \n    3:  // FAULT\n        motorUp   := FALSE;\n        motorDown := FALSE;\n        // errorFlag remains latched\n        \n        // Manual reset: both buttons pressed simultaneously\n        IF openBtnRising AND closeBtnRising THEN\n            obstacleSeen := FALSE;\n            errorFlag := FALSE;\n            state := 0;  // -> IDLE\n        END_IF\nEND_CASE\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 7,
+      "tests_total": 10,
+      "feedback": "自动测试：7/10。\n用例 m1，模式 sequence，行为不匹配，请检查 motorUp。\n用例 m4，模式 sequence，行为不匹配，请检查 motorDown。\n用例 m10，模式 sequence，行为不匹配，请检查 motorUp。\nLTL 检查：not_run。",
+      "prompt_tokens": 7466,
+      "completion_tokens": 3534,
+      "latency_s": 85.15600000000268,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 17.828000000008615,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-medium-03_af63a4a189",
+          "source_sha256": "f3d8ccc23daaf080a63a794406040d1a6373d43f3bb5f303d713fbc6c510db70",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "f3d8ccc23daaf080a63a794406040d1a6373d43f3bb5f303d713fbc6c510db70",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 10,
+        "tests_passed": 7,
+        "pass_rate": 0.7,
+        "failure_summary": "m1: motorUp 期望 True，实际 False",
+        "cases": [
+          {
+            "tc_id": "m1",
+            "passed": false,
+            "mode": "sequence",
+            "message": "motorUp 期望 True，实际 False",
+            "expected": {
+              "motorUp": true
+            },
+            "actual": {
+              "motorUp": false
+            },
+            "hint": "m1（点开 → 上升）：motorUp 期望 True，实际 False"
+          },
+          {
+            "tc_id": "m2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": true
+            },
+            "actual": {
+              "motorUp": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m4",
+            "passed": false,
+            "mode": "sequence",
+            "message": "motorDown 期望 True，实际 False",
+            "expected": {
+              "motorDown": true
+            },
+            "actual": {
+              "motorDown": false
+            },
+            "hint": "m4（点关 → 下降；上限仍为真也不影响（方向由命令决定））：motorDown 期望 True，实际 False"
+          },
+          {
+            "tc_id": "m5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorDown": false,
+              "motorUp": false,
+              "errorFlag": false
+            },
+            "actual": {
+              "motorDown": false,
+              "motorUp": false,
+              "errorFlag": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false,
+              "errorFlag": true
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false,
+              "errorFlag": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false,
+              "errorFlag": false
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false,
+              "errorFlag": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m10",
+            "passed": false,
+            "mode": "sequence",
+            "message": "motorUp 期望 True，实际 False",
+            "expected": {
+              "motorUp": true
+            },
+            "actual": {
+              "motorUp": false
+            },
+            "hint": "m10（复位并松开后可重新开）：motorUp 期望 True，实际 False"
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 17.828000000008615,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-medium-03_af63a4a189",
+            "source_sha256": "f3d8ccc23daaf080a63a794406040d1a6373d43f3bb5f303d713fbc6c510db70",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "judge_version": "r4-isolated-groups-and-properties-v1",
+          "test_contract_valid": true,
+          "static_profile": "codesys",
+          "string_guard_sha256": "62472a0a26589af02747bee88663e6a1f285cc6cdea3513ce0986eb716aac112",
+          "data_version": "v1.3-review-r4",
+          "group_counts": {
+            "sequence": 10
+          },
+          "group_policy": "fresh function-block instance per sequence group; single cases each fresh",
+          "judge_sha256": "053d75c26fa38669c51ccf491df5f881fe99ab240e0ba38a09152d4808d42de3",
+          "cache_used": false
+        }
+      },
+      "cost_cny": 0.035837718,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    },
+    {
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    openBtn   : BOOL;\n    closeBtn  : BOOL;\n    openLimit : BOOL;\n    closeLimit: BOOL;\n    obstacle  : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    motorUp   : BOOL := FALSE;\n    motorDown : BOOL := FALSE;\n    errorFlag : BOOL := FALSE;\nEND_VAR\n\nVAR\n    state         : INT := 0;  // 0=IDLE, 1=OPENING, 2=CLOSING, 3=FAULT\n    prevOpenBtn   : BOOL := FALSE;\n    prevCloseBtn  : BOOL := FALSE;\n    obstacleSeen  : BOOL := FALSE;\n    nextState     : INT := 0;\nEND_VAR\n\nVAR\n    openBtnRising  : BOOL;\n    closeBtnRising : BOOL;\nEND_VAR\n\nopenBtnRising  := openBtn AND NOT prevOpenBtn;\ncloseBtnRising := closeBtn AND NOT prevCloseBtn;\n\nprevOpenBtn  := openBtn;\nprevCloseBtn := closeBtn;\n\nnextState := state;\n\nCASE state OF\n    0:  // IDLE\n        motorUp   := FALSE;\n        motorDown := FALSE;\n        \n        IF openBtnRising THEN\n            obstacleSeen := FALSE;\n        END_IF\n        IF closeBtnRising THEN\n            obstacleSeen := FALSE;\n        END_IF\n        \n        IF openBtnRising AND NOT openLimit AND NOT obstacleSeen THEN\n            nextState := 1;\n        ELSIF closeBtnRising AND NOT closeLimit AND NOT obstacleSeen THEN\n            nextState := 2;\n        END_IF\n        \n    1:  // OPENING\n        motorUp   := TRUE;\n        motorDown := FALSE;\n        \n        IF obstacle THEN\n            obstacleSeen := TRUE;\n        END_IF\n        \n        IF openLimit THEN\n            motorUp := FALSE;\n            nextState := 0;\n        ELSIF obstacle THEN\n            motorUp := FALSE;\n            errorFlag := TRUE;\n            nextState := 3;\n        END_IF\n        \n    2:  // CLOSING\n        motorUp   := FALSE;\n        motorDown := TRUE;\n        \n        IF obstacle THEN\n            motorDown := FALSE;\n            nextState := 1;\n        ELSIF closeLimit THEN\n            motorDown := FALSE;\n            nextState := 0;\n        END_IF\n        \n    3:  // FAULT\n        motorUp   := FALSE;\n        motorDown := FALSE;\n        \n        IF openBtnRising AND closeBtnRising THEN\n            obstacleSeen := FALSE;\n            errorFlag := FALSE;\n            nextState := 0;\n        END_IF\nEND_CASE\n\nstate := nextState;\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 7,
+      "tests_total": 10,
+      "feedback": "自动测试：7/10。\n用例 m1，模式 sequence，行为不匹配，请检查 motorUp。\n用例 m4，模式 sequence，行为不匹配，请检查 motorDown。\n用例 m10，模式 sequence，行为不匹配，请检查 motorUp。\nLTL 检查：not_run。",
+      "prompt_tokens": 8218,
+      "completion_tokens": 3332,
+      "latency_s": 80.31299999999464,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 19.76600000000326,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-medium-03_dc7cdaee1f",
+          "source_sha256": "021595fe0154be7b38d0a45be480d40f9ab70c91f2a3bc181b552df097b06aa6",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "021595fe0154be7b38d0a45be480d40f9ab70c91f2a3bc181b552df097b06aa6",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 10,
+        "tests_passed": 7,
+        "pass_rate": 0.7,
+        "failure_summary": "m1: motorUp 期望 True，实际 False",
+        "cases": [
+          {
+            "tc_id": "m1",
+            "passed": false,
+            "mode": "sequence",
+            "message": "motorUp 期望 True，实际 False",
+            "expected": {
+              "motorUp": true
+            },
+            "actual": {
+              "motorUp": false
+            },
+            "hint": "m1（点开 → 上升）：motorUp 期望 True，实际 False"
+          },
+          {
+            "tc_id": "m2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": true
+            },
+            "actual": {
+              "motorUp": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m4",
+            "passed": false,
+            "mode": "sequence",
+            "message": "motorDown 期望 True，实际 False",
+            "expected": {
+              "motorDown": true
+            },
+            "actual": {
+              "motorDown": false
+            },
+            "hint": "m4（点关 → 下降；上限仍为真也不影响（方向由命令决定））：motorDown 期望 True，实际 False"
+          },
+          {
+            "tc_id": "m5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorDown": false,
+              "motorUp": false,
+              "errorFlag": false
+            },
+            "actual": {
+              "motorDown": false,
+              "motorUp": false,
+              "errorFlag": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false,
+              "errorFlag": true
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false,
+              "errorFlag": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false,
+              "errorFlag": false
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false,
+              "errorFlag": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "actual": {
+              "motorUp": false,
+              "motorDown": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "m10",
+            "passed": false,
+            "mode": "sequence",
+            "message": "motorUp 期望 True，实际 False",
+            "expected": {
+              "motorUp": true
+            },
+            "actual": {
+              "motorUp": false
+            },
+            "hint": "m10（复位并松开后可重新开）：motorUp 期望 True，实际 False"
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 19.76600000000326,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-medium-03_dc7cdaee1f",
+            "source_sha256": "021595fe0154be7b38d0a45be480d40f9ab70c91f2a3bc181b552df097b06aa6",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "judge_version": "r4-isolated-groups-and-properties-v1",
+          "test_contract_valid": true,
+          "static_profile": "codesys",
+          "string_guard_sha256": "62472a0a26589af02747bee88663e6a1f285cc6cdea3513ce0986eb716aac112",
+          "data_version": "v1.3-review-r4",
+          "group_counts": {
+            "sequence": 10
+          },
+          "group_policy": "fresh function-block instance per sequence group; single cases each fresh",
+          "judge_sha256": "053d75c26fa38669c51ccf491df5f881fe99ab240e0ba38a09152d4808d42de3",
+          "cache_used": false
+        }
+      },
+      "cost_cny": 0.035744814,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1794137936.2247965,
+  "finished_at": 1794138101.6891096,
+  "error": "",
+  "stop_reason": "max_candidates",
+  "run_signature": "36cdf594c5433cb2f5189d36a9baae0638ae3cbdf2f5862ed91500b4a869339f",
+  "experiment_kind": "live",
+  "tests_total": 10,
+  "request_window_seconds": 450,
+  "prompt_version": "v2.5-task-specific-reset",
+  "solved": false,
+  "first_try": false,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 22550,
+  "total_latency_s": 165.46899999999732,
+  "n_attempts": 2,
+  "study_plan_sha256": "ac62b5502778a5bff5218518a9f8cb518587cfa2b1f9673e32ee65ded7c80414",
+  "r4_snapshot_sha256": "15a36207ead8823c9ae9f09fa3640a61902b53b2818e13a49b882c694a363879"
+}

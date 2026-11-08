@@ -163,7 +163,7 @@ code{{overflow-wrap:anywhere;background:#f2f6fa;padding:3px 6px}}.attention{{col
 <section class="panel"><h2>当前执行</h2><p><code>{escape(current)}</code>{escape(elapsed)}</p>{attention}
 <p class="muted">运行依赖这台笔记本保持开机联网。页面关闭不停止实验；实验停止后会显示结束或需检查。</p></section>
 <section class="panel"><h2>各条件进度与结果</h2><div class="scroll"><table><thead><tr>
-<th>框架</th><th>单题预算</th><th>功能失败后的 LTL</th><th>已尝试</th><th>首轮通过</th><th>最终通过</th><th>修复新增成功</th><th>两次尝试</th><th>请求数</th><th>形式检查次数</th><th>耗时秒</th>
+<th>框架</th><th>单题预算</th><th>功能失败后的 LTL</th><th>已尝试</th><th>首轮通过</th><th>最终通过</th><th>第二轮新增成功</th><th>两次尝试</th><th>请求数</th><th>形式检查次数</th><th>耗时秒</th>
 </tr></thead><tbody>{''.join(rows)}</tbody></table></div>
 <p class="muted">结果表按实验检查点更新：{escape(str(summary.get('updated_at', '尚无记录')))}。两题小样本不能证明稳定优势；费用按本次页面读取时的账本展示，包含预留，并非供应商实际账单。</p></section>
 <section class="panel"><h2>GitHub 与人工复核</h2><p>{sync_text} · 提交 {escape(str(sync.get('commit', ''))[:8])}

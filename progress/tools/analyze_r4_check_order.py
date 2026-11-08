@@ -54,8 +54,23 @@ def main():
             attempts=len(record['attempts']),actual_requests=len(traces),
             mc_executed=sum(bool(a.get('judge',{}).get('model_check',{}).get('executed')) for a in record['attempts']),
             first_code_sha256=record['attempts'][0].get('code_hash') if record['attempts'] else None,
+            code_repair_solved=bool(record['solved'] and not record['first_try'] and record['attempts'] and record['attempts'][0].get('code')),
+            empty_regeneration_solved=bool(record['solved'] and not record['first_try'] and record['attempts'] and not record['attempts'][0].get('code')),
             best_tests_passed=best['tests_passed'] if best else 0,tests_total=record['tests_total'],outputs=outputs))
+        details[-1]['attempt_findings']=[dict(idx=a['idx'],code_characters=len(a.get('code') or ''),
+            provider_error=a.get('provider_error'),tests_passed=a.get('tests_passed'),tests_total=a.get('tests_total'),
+            verification_status=a.get('verification_status'),
+            first_failure=(a.get('judge') or {}).get('failure_summary'),
+            compile_error_codes=[d.get('code') for d in (a.get('judge') or {}).get('compile_errors',[])],
+            native_status={name:row.get('status') for name,row in a.get('platform_results',{}).items()},
+            violated_properties=[s.get('id') for s in (a.get('judge') or {}).get('model_check',{}).get('violations',[])])
+            for a in record['attempts']]
     assert sum(d['actual_requests'] for d in details)==len(events)
+    for row in summary['rows']:
+        arm=[d for d in details if d['job_id'].startswith(row['condition']+'/')]
+        row['code_repair_solved']=sum(d['code_repair_solved'] for d in arm)
+        row['empty_regeneration_solved']=sum(d['empty_regeneration_solved'] for d in arm)
+        assert row['repaired']==row['code_repair_solved']+row['empty_regeneration_solved']
     pairs=[]
     for fw in ('custom','codex'):
         for pid in study.PIDS:
@@ -75,10 +90,10 @@ def main():
     study.atomic_json(root/'analysis.json',result)
     lines=['# r4检查顺序小试验结果分析','',
         '8/8题次完成。两题、MiniMax、两框架、两个形式检查条件。候选全部重新生成；不替换R8正式四组结果，也不与旧答案混作同一轮。','',
-        '| 条件 | 首轮通过 | 最终通过 | 用例通过 | 修复新增 | 请求数 | 形式检查数 | 墙钟秒 |',
-        '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |']
+        '| 条件 | 首轮通过 | 最终通过 | 用例通过 | 第二轮新增 | 其中代码修复 | 空回复重生成 | 请求数 | 形式检查数 | 墙钟秒 |',
+        '| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |']
     for r in summary['rows']:
-        lines.append(f"| {r['condition']} | {r['first_solved']}/2 | {r['solved']}/2 | {r['tests_passed']}/{r['tests_total']} | {r['repaired']} | {r['calls']} | {r['mc_executed']} | {r['wall_seconds']} |")
+        lines.append(f"| {r['condition']} | {r['first_solved']}/2 | {r['solved']}/2 | {r['tests_passed']}/{r['tests_total']} | {r['repaired']} | {r['code_repair_solved']} | {r['empty_regeneration_solved']} | {r['calls']} | {r['mc_executed']} | {r['wall_seconds']} |")
     lines += ['',f"实际模型请求{len(events)}/16次，本轮计入{charged:.6f}元，累计{ledger['spent_cny']:.6f}元；旧423条账本事件及恢复记录保持。未扩大费用上限，旧未知预留未冲销。",'',
         '各条件实际回复可能不同。下表核对首候选代码及真实上游消息是否相同，避免把候选差异当作检查顺序的收益。Codex CLI还可能带入不同的隔离工作目录等环境上下文。','',
         '| 框架 | 题号 | 持续检查通过 | 后置检查通过 | 首候选相同 | 实际首请求消息相同 |','| --- | --- | --- | --- | --- | --- |']
@@ -86,6 +101,7 @@ def main():
         lines.append(f"| {p['framework']} | {p['pid']} | {p['always_solved']} | {p['tests_first_solved']} | {p['first_code_identical']} | {p['first_actual_upstream_messages_identical']} |")
     lines += ['','输出观测分类：'+json.dumps(dict(output),ensure_ascii=False)+'。',
         'length_empty_with_reasoning仅表示返回在长度上限处结束、正文为空而推理字段非空；不声称已证明提供方内部原因，不从推理字段拼装候选代码。',
+        '第二轮新增分成“第一轮已有代码后修复成功”和“第一轮空回复后重新生成成功”；后者不能充当真实代码修复能力的证据。',
         '','未执行形式检查、发生预算截断、存在反例、工具未判定分别保留。功能通过不等于形式性质全部通过。',
         '','本轮可确认新r4入口、受控CLI、计费保护与两轮修复流程是否跑通；13项离线检查已经用同一坏候选证明后置条件确实跳过形式检查。两题单次生成不能确认准确率或耗时的稳定因果收益。',
         '','下一步优先分析具体失败和输出截断。保留同一题库/裁判，后续只改变一个生成或调度参数；不得仅凭本轮通过数扩大成全量对照，也不自动追加预算。']
