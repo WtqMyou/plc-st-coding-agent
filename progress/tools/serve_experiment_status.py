@@ -136,6 +136,13 @@ def page():
     repo_url = 'https://github.com/WtqMyou/plc-st-coding-agent'
     review_route = escape(active.get('review_route','/review.html'),quote=True)
     handout_route = escape(active.get('handout_route','/review.zip'),quote=True)
+    result_note = ''
+    acceptance = load(root / 'acceptance.json')
+    if 'posthoc_language_modeling_inconclusive_jobs' in acceptance:
+        result_url = repo_url + '/blob/main/' + quote('progress/evidence/r4_check_order_20261108/结论与调整建议.md')
+        result_note = f'''<section class="panel"><h2>本轮结论</h2><p>8/8题次结束，15次模型请求，本轮计入¥{acceptance['study_charged_cny']:.6f}。两框架后置条件各通过1/2，持续检查条件各为0/2；各条件实际形式检查均为1次，未证实稳定准确率收益。</p>
+<p>事后复核发现1个语言建模未决：TO_INT原候选在CODESYS和OpenPLC都接受编译，本地裁判尚不支持。不能把它当作已确认的模型语法错误，也不能仅凭编译通过补算功能成功。原r4分数保留。</p>
+<p><a href="{result_url}" target="_blank" rel="noopener">查看结果分析与下一步调整</a></p></section>'''
     status_url = repo_url + '/blob/main/' + quote(active.get('status_path','progress/evidence/r9_repair_policy_20261101/实验状态.md'))
     sync_text = ('已同步至 GitHub' if sync.get('state') == 'synced' else '同步状态需检查')
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
@@ -166,6 +173,7 @@ code{{overflow-wrap:anywhere;background:#f2f6fa;padding:3px 6px}}.attention{{col
 <th>框架</th><th>单题预算</th><th>功能失败后的 LTL</th><th>已尝试</th><th>首轮通过</th><th>最终通过</th><th>第二轮新增成功</th><th>两次尝试</th><th>请求数</th><th>形式检查次数</th><th>耗时秒</th>
 </tr></thead><tbody>{''.join(rows)}</tbody></table></div>
 <p class="muted">结果表按实验检查点更新：{escape(str(summary.get('updated_at', '尚无记录')))}。两题小样本不能证明稳定优势；费用按本次页面读取时的账本展示，包含预留，并非供应商实际账单。</p></section>
+{result_note}
 <section class="panel"><h2>GitHub 与人工复核</h2><p>{sync_text} · 提交 {escape(str(sync.get('commit', ''))[:8])}
 <span class="muted"> · {escape(str(sync.get('at', '')))}</span></p>
 <p>刘晏铭：r4工艺复审待确认，材料包含五道工业题和三道本次修订题。</p><div class="links">

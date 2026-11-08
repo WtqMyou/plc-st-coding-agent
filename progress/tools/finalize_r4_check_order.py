@@ -1,0 +1,92 @@
+"""Publish completed pilot evidence without rewriting frozen result artifacts."""
+from collections import Counter
+import json
+from pathlib import Path
+import sys
+
+sys.path.insert(0,str(Path(__file__).resolve().parent))
+import r4_check_order as study
+
+
+def main():
+    cfg=study.configuration(str(study.CONFIG));root=Path(cfg['campaign_root']);study.verify_frozen(root)
+    result=study.load(root/'analysis.json');native=study.load(root/'posthoc_native_boundary.json')
+    extraction=study.load(root/'extraction_audit.json');prior=study.load(root/'result_manifest.json')
+    assert result['complete'] and native['complete'] and study.load(root/'study_state.json')['state']=='completed'
+    for name,expected in prior['files'].items():assert study.sha(root/name)==expected,name
+    assert result['analyzer_sha256']==study.sha(REPO/'progress/tools/analyze_r4_check_order.py')
+    assert native['source_sha256']==study.sha(REPO/'progress/tools/audit_r4_order_boundaries.py')
+    assert not (root/'release_manifest.json').exists(),'Final publication is immutable'
+    ledger=study.load(cfg['budget_ledger_path']);plan=study.load(root/'study_plan.json')
+    assert study.sha(Path(cfg['budget_ledger_path']))==result['ledger_sha256']
+    events=ledger['events'][plan['initial_event_count']:]
+    study.atomic_json(root/'本轮费用明细.json',dict(version='r4-check-order-20261108',events=events,
+        charged_cny=result['study_charged_cny'],total_accounted_cny=ledger['spent_cny'],
+        basis='configured public-price upper estimate; original unknown reserves retained; not a supplier statement'))
+    unresolved=sorted({r['job_id'] for r in native['rows'] if r['kind']=='original_candidate'
+        and r['platform']=='codesys' and r['result']['status']=='passed'})
+    assert unresolved==['codex_always_mc/public-hard-04']
+    assert all(r['status']!='mismatch_requires_review' for r in extraction['rows'])
+    stop=Counter(d['stop_reason'] for d in result['details'])
+    acceptance=dict(version='r4-check-order-20261108',completed=True,planned=8,recorded=8,
+        actual_model_requests=15,maximum_requests=16,study_charged_cny=result['study_charged_cny'],
+        total_accounted_cny=result['total_accounted_cny'],new_events=len(events),
+        all_new_events_settled=all(e['status']=='settled' for e in events),all_original_events_preserved=True,
+        observed_r4_pipeline_passes=sum(r['solved'] for r in result['rows']),
+        posthoc_language_modeling_inconclusive_jobs=unresolved,
+        native_audit_observations=len(native['rows']),native_audit_model_calls=0,
+        extraction_records=len(extraction['rows']),extraction_mismatches=0,
+        insufficient_request_window_stops=stop.get('insufficient_request_window',0),
+        evidence_complete=True,accuracy_gain_established=False,
+        interpretation='Two confirmed functional passes; one original candidate native-accepted but not locally modeled. Keep frozen r4 outcomes and disclose uncertainty; no revised model success claimed.')
+    study.atomic_json(root/'acceptance.json',acceptance)
+    text='''# r4小试验结论与下一步
+
+2026-11-08，本轮8/8题次已经结束，实际15次模型请求；新增计入0.653414元，累计38.409603元、438条费用事件。全部新事件已结算，原423条事件及恢复记录保持，原未知预留没有冲销。没有扩大4.50元本轮上限、44.011998元原诊断累计上限或75元总授权。
+
+## 是否达到目标
+
+本轮完成了r4新裁判接入、受控Codex CLI、两轮修复与计费保护的真实运行验证。没有证实“形式检查后置能提高准确率”。两题单次生成不能支持稳定优势，原R8正式四组结果不替换。
+
+| 框架 | 持续检查条件的r4流水线结果 | 后置检查条件的r4流水线结果 | 两条件形式检查次数 |
+| --- | --- | --- | --- |
+| 自研 MiniMax | 0/2 | 1/2，FIFO首轮通过 | 各1次 |
+| Codex MiniMax | 0/2，其中FIFO存在语言建模未决 | 1/2，FIFO第二轮修复通过 | 各1次 |
+
+门控四题次均未整题通过；两个已确认通过均为FIFO。七个首轮未通过题次都获得了第二次请求机会，停止原因中没有窗口不足或单题时间耗尽。本轮没有观察到检查后置增加修复机会，也没有观察到四条件间形式检查执行次数的差异。
+
+自研两个条件的首请求消息逐字相同，但首候选不同。Codex真实上游消息也不同，包含不同运行上下文；源任务与系统提示在两个条件中保持一致。墙钟时间还包括模型生成、编译和框架时间，不能把耗时差全部归因于检查顺序。
+
+## 暴露的问题
+
+15次请求中，3次在长度上限结束、正文为空而reasoning_content非空；其余12次正常结束且有正文，这不代表12份完整或正确ST。原始正文的提取与保存候选匹配，没有发现本批提取器漏掉END_FUNCTION_BLOCK。观察到的缺少结尾来自原始正文；另一份代码把VAR声明放在可执行语句后，属于不同问题。
+
+还存在未声明openRising/closeRising、到位后电机未及时关断、状态切换与扫描末输出顺序等失败。空回复后重生成与已有代码后的修复已分开：本轮唯一第二轮新增通过是Codex后置条件的FIFO，第一轮已有代码，属于真实代码修复；不把空回复当成功代码。
+
+TO_INT暴露了新的检查器缺口：Codex持续检查条件的FIFO第二轮候选，被r4本地检查器以E_UNKNOWN_FUNC拒绝。原候选保持不变，CODESYS与OpenPLC均接受；DINT到INT的最小TO_INT程序也在两平台接受，共4项新原生观察、模型调用0。该候选应标为本地语言建模未决，不能当作已确认的模型语法错误。原生编译通过仍不能推出27条功能用例通过。
+
+原r4实验记录、选中轮次与分数保留，事后审计单独记录，不借原生通过补造功能成功，也不将某一框架的修订分数混入另一框架的旧分数。
+
+## 下一步调整
+
+先另立裁判版本补TO_INT等通用转换的类型推断和本地执行语义，保留原候选字节，并用固定答卷免费复验。不能只把函数名字符串替换后就声称等价，也不能把所有未知函数一律放行。
+
+生成侧优先解决空正文和基础代码缺陷。后续需要核实提供方支持的生成控制，冻结一个参数做小规模对照；不直接把输出上限加倍，也不同时调整请求窗口。门控重点验证状态转移后同拍输出和安全优先级，声明错误与逻辑错误分别反馈。
+
+当前1200秒及两次请求的限制下，本轮没有时间窗口瓶颈证据，继续盲目调检查顺序的优先级低于补齐转换建模及生成诊断。未自动启动更多付费请求。刘晏铭的r4工艺确认仍待填写，原531例Word继续作为历史材料。
+'''
+    (root/'结论与调整建议.md').write_bytes(text.encode())
+    files={name:study.sha(root/name) for name in prior['files']}
+    for name in ('result_manifest.json','extraction_audit.json','posthoc_native_boundary.json','本轮费用明细.json','acceptance.json','结论与调整建议.md','offline_tests.log'):
+        files[name]=study.sha(root/name)
+    release=dict(version='r4-check-order-20261108',files=files,finalizer_sha256=study.sha(Path(__file__)),
+        ledger_sha256=result['ledger_sha256'],frozen_r4_unchanged=True)
+    study.atomic_json(root/'release_manifest.json',release)
+    for name in list(files)+['release_manifest.json']:
+        target=study.MIRROR/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes((root/name).read_bytes())
+    for name,expected in files.items():assert study.sha(study.MIRROR/name)==expected,name
+    print(json.dumps(acceptance,ensure_ascii=False))
+
+
+REPO=study.REPO
+if __name__=='__main__':main()
