@@ -1,0 +1,177 @@
+{
+  "pid": "self-medium-02",
+  "source": "selfmade",
+  "difficulty": "medium",
+  "title": "模拟量滑动平均滤波（窗口未满与 FIFO 淘汰）",
+  "requirements": "写一个功能块 FB，对模拟量采样值做 8 点滑动平均滤波。\n控制要求：\n1. 每个扫描周期，若 enable 为 TRUE，把 rawValue 压入长度为 8 的环形缓冲区，并用缓冲区内**实际已有**的样本计算算术平均，输出到 filteredValue；\n2. 缓冲区**未填满时不得用 0 填充**：只有 3 个样本时就是这 3 个的平均；\n3. 缓冲区填满后，每来一个新样本挤掉最老的一个（先进先出）；\n4. sampleCount 输出当前缓冲区内的有效样本数（0..8）；\n5. 当样本数达到 8 时 windowFull 置 TRUE，之后保持 TRUE；\n6. enable 为 FALSE 时清空缓冲区（sampleCount 归 0、windowFull 归 FALSE），但 filteredValue 保持上一次的计算结果不变。",
+  "variables": [
+    {
+      "name": "enable",
+      "data_type": "BOOL",
+      "description": "滤波使能，FALSE 时清空历史",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "rawValue",
+      "data_type": "REAL",
+      "description": "本周期原始采样值",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "filteredValue",
+      "data_type": "REAL",
+      "description": "滤波输出",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "windowFull",
+      "data_type": "BOOL",
+      "description": "历史窗口已填满 8 个样本后置 TRUE",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "sampleCount",
+      "data_type": "INT",
+      "description": "当前窗口内有效样本数 0..8",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "窗口未满时，滤波输出必须等于已采集样本的算术平均，不得用 0 填充凑满窗口。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "S2",
+      "text": "窗口满后样本数恒为 8（环形缓冲不再增长，也不会被挤空）。",
+      "ltl": "G(windowFull -> sampleCount = 8)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S3",
+      "text": "enable 拉低后，sampleCount 必须在**当周期**归零，窗口同时退出满载。",
+      "ltl": "G(!enable -> sampleCount = 0 & !windowFull)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S4",
+      "text": "sampleCount 恒不超过 8，即缓冲区不会溢出。",
+      "ltl": "G(sampleCount <= 8)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "f1",
+      "inputs": {
+        "enable": true,
+        "rawValue": 10.0
+      },
+      "expected": {
+        "filteredValue": 10.0,
+        "windowFull": false,
+        "sampleCount": 1
+      },
+      "note": "首个样本：均值就是它本身",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f2",
+      "inputs": {
+        "enable": true,
+        "rawValue": 20.0
+      },
+      "expected": {
+        "filteredValue": 15.0,
+        "sampleCount": 2
+      },
+      "note": "两个样本 (10+20)/2",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f3",
+      "inputs": {
+        "enable": true,
+        "rawValue": 0.0
+      },
+      "expected": {
+        "filteredValue": 10.0,
+        "sampleCount": 3
+      },
+      "note": "第三样本 0：(10+20+0)/3",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f4",
+      "inputs": {
+        "enable": false,
+        "rawValue": 99.0
+      },
+      "expected": {
+        "filteredValue": 10.0,
+        "sampleCount": 0,
+        "windowFull": false
+      },
+      "note": "关断：清空历史，输出保持 10.0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f5",
+      "inputs": {
+        "enable": true,
+        "rawValue": 50.0
+      },
+      "expected": {
+        "filteredValue": 50.0,
+        "sampleCount": 1
+      },
+      "note": "重新使能后从空窗口重新计数",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "自主构思 / 行业经验改编",
+    "origin": "流程行业赛题中，模拟量输入普遍需要滤波以抑制变送器抖动；赛前练习里出现过'窗口刚度切换/移动平均'的要求。",
+    "adaptation": "把赛题中随工艺切换的动态窗口简化为固定 8 点，但刻意保留'窗口未满'这一前半段状态——这是 LLM 最容易写错的地方（常见错误：用 0 填充、或直接除以 8）。",
+    "review": "人工审核：本题是**时序题**，测试用例按连续扫描周期组织（第 t 条用例是第 t 个周期），与题面'每个扫描周期'一致。",
+    "review_revision": "v1.3-review-r1"
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_inputs": {}
+}

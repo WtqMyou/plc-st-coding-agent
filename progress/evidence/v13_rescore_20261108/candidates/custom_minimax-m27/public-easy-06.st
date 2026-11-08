@@ -1,0 +1,31 @@
+FUNCTION_BLOCK FB
+VAR_INPUT
+    DO_LOW            : BOOL;
+    AERATION_E_STOP_NC: BOOL;
+END_VAR
+VAR_OUTPUT
+    BLOWER_RUN                 : BOOL;
+    AERATION_BLOWER_CYCLE_COUNT: UINT;
+END_VAR
+VAR
+    StartDelayCounter : UINT;
+    PrevBlowerRun     : BOOL;
+END_VAR
+
+IF NOT AERATION_E_STOP_NC OR NOT DO_LOW THEN
+    BLOWER_RUN := FALSE;
+    StartDelayCounter := 0;
+ELSIF StartDelayCounter < 5 THEN
+    StartDelayCounter := StartDelayCounter + 1;
+    BLOWER_RUN := FALSE;
+ELSE
+    BLOWER_RUN := TRUE;
+END_IF
+
+IF BLOWER_RUN AND NOT PrevBlowerRun THEN
+    AERATION_BLOWER_CYCLE_COUNT := AERATION_BLOWER_CYCLE_COUNT + 1;
+END_IF
+
+PrevBlowerRun := BLOWER_RUN;
+
+END_FUNCTION_BLOCK

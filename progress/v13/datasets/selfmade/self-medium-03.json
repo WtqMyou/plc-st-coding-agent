@@ -1,0 +1,322 @@
+{
+  "pid": "self-medium-03",
+  "source": "selfmade",
+  "difficulty": "medium",
+  "title": "闸门电机有限状态机（四状态与安全互锁）",
+  "requirements": "写一个功能块 FB，实现闸门电机的有限状态机，状态为 IDLE / OPENING / CLOSING / FAULT 四种。\n控制要求：\n1. 初始状态为 IDLE，电机输出全部关闭；\n2. IDLE 状态下，openBtn 的上升沿且未开到位（openLimit = FALSE）→ 进入 OPENING；closeBtn 的上升沿且未关到位 → 进入 CLOSING；\n3. OPENING 时 motorUp 为 TRUE；到达 openLimit 后回到 IDLE；\n4. CLOSING 时 motorDown 为 TRUE；到达 closeLimit 后回到 IDLE；\n5. **安全要求**：CLOSING 中检测到 obstacle 时，立即停止下降并反向进入 OPENING；OPENING 中检测到 obstacle 时，立即停机并进入 FAULT；\n6. **motorUp 与 motorDown 在任何时刻都不得同时为 TRUE**；\n7. 障碍消失后不得自动重新动作，必须由操作员重新按按钮；\n8. FAULT 下 errorFlag 置 TRUE 并锁存，直到人工复位（openBtn 与 closeBtn 同时按下）才清除，且 FAULT 期间任何按钮都不得启动电机。",
+  "variables": [
+    {
+      "name": "openBtn",
+      "data_type": "BOOL",
+      "description": "开门按钮（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "closeBtn",
+      "data_type": "BOOL",
+      "description": "关门按钮（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "openLimit",
+      "data_type": "BOOL",
+      "description": "开到位限位开关",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "closeLimit",
+      "data_type": "BOOL",
+      "description": "关到位限位开关",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "obstacle",
+      "data_type": "BOOL",
+      "description": "防夹物体检测",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "motorUp",
+      "data_type": "BOOL",
+      "description": "电机上升（开门）输出",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "motorDown",
+      "data_type": "BOOL",
+      "description": "电机下降（关门）输出",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "errorFlag",
+      "data_type": "BOOL",
+      "description": "故障锁存（需人工复位后清除）",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "电机上升与下降输出不得同时为 TRUE。",
+      "ltl": "G(!(motorUp & motorDown))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S2",
+      "text": "任何情况下检测到障碍，下降输出必须立即为 FALSE。",
+      "ltl": "G(obstacle -> !motorDown)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S3",
+      "text": "开到位后不得再输出上升。",
+      "ltl": "G(openLimit -> !motorUp)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S4",
+      "text": "故障锁存后，进入故障的路径必须存在人工复位，且故障期间不得启动电机。",
+      "ltl": "G(errorFlag -> !motorUp & !motorDown)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S5",
+      "text": "障碍出现后立即停止是必需的，但**自动恢复**不允许：故障锁存后，障碍解除的那一拍电机不得自动动作。",
+      "ltl": "G(errorFlag & X(!obstacle) -> X(!motorUp & !motorDown))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "m1",
+      "inputs": {
+        "openBtn": true
+      },
+      "expected": {
+        "motorUp": true,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "点开 → 上升",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m2",
+      "inputs": {
+        "openBtn": false
+      },
+      "expected": {
+        "motorUp": true
+      },
+      "note": "松开按钮仍上升（按钮非自保持）",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m3",
+      "inputs": {
+        "openBtn": false
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false
+      },
+      "note": "到上限 → 停止",
+      "const_inputs": {
+        "openLimit": true,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m4",
+      "inputs": {
+        "closeBtn": true
+      },
+      "expected": {
+        "motorDown": true,
+        "motorUp": false
+      },
+      "note": "点关 → 下降；上限仍为真也不影响（方向由命令决定）",
+      "const_inputs": {
+        "openLimit": true,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m5",
+      "inputs": {
+        "closeBtn": true
+      },
+      "expected": {
+        "motorDown": false,
+        "motorUp": false,
+        "errorFlag": false
+      },
+      "note": "下降遇障 → 立即停止",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": true
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m6",
+      "inputs": {
+        "closeBtn": false
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false
+      },
+      "note": "障碍持续期间不得自动恢复",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": true
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m7",
+      "inputs": {
+        "openBtn": false
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": true
+      },
+      "note": "障碍解除只是可复位，仍是 FAULT：锁存不自动清除、不自行运动",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m8",
+      "inputs": {
+        "openBtn": true,
+        "closeBtn": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "第 8 条：两键同按才人工复位，复位当拍不得起机",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m9",
+      "inputs": {
+        "openBtn": false,
+        "closeBtn": false
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false
+      },
+      "note": "松开两键（m8 里两键都按住，不松就没有新的上升沿）",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m10",
+      "inputs": {
+        "openBtn": true
+      },
+      "expected": {
+        "motorUp": true
+      },
+      "note": "复位并松开后可重新开",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "自主构思 / 行业经验改编",
+    "origin": "西门子杯流程行业自动化赛项中，闸门/阀门类执行机构普遍要求'四状态 + 防夹 + 不得同时正反转'。",
+    "adaptation": "去掉具体阀门行程时间，只保留状态迁移与安全互锁；增加'自动恢复禁止'一条，考察 LLM 是否会把安全动作写成自动往返。",
+    "review": "人工审核：状态机四个状态与迁移条件在题面中穷举，无歧义；安全类规约 S1/S2 用纯布尔 LTL 表达，可交给模型检查器。",
+    "review_revision": "v1.3-review-r1"
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_inputs": {}
+}

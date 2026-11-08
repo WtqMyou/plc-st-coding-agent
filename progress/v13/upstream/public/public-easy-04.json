@@ -1,0 +1,234 @@
+{
+  "pid": "public-easy-04",
+  "source": "public",
+  "difficulty": "easy",
+  "title": "Jam Pump Debouncing and Runtime Maintenance",
+  "requirements": "Control a jam transfer pump on a food production line, including viscosity-signal debouncing, emergency-stop priority, runtime accumulation and a maintenance-due indication.\n\n1. Accept the viscosity condition only after VISCOSITY_OK has remained TRUE for DebounceTime. Invalidate the condition immediately when the input becomes FALSE.\n2. Allow VFD_RUN to be TRUE only when PASTE_E_STOP_NC is TRUE and the viscosity condition is valid. An emergency stop immediately disables the run output and clears any incomplete debounce timing.\n3. Accumulate PUMP_RUNTIME_ACC using the actual invocation interval CycleTime only while VFD_RUN is TRUE. Preserve the accumulated time while the pump is stopped.\n4. Set PUMP_MAINT_DUE when accumulated runtime reaches 500 hours. This indication is informational and must not affect pump operation or the safety permissive.\n5. At power-up, initialize the run output to OFF, accumulated runtime to zero and the maintenance indication to FALSE.",
+  "variables": [
+    {
+      "name": "VISCOSITY_OK",
+      "data_type": "BOOL",
+      "description": "Raw signal indicating that viscosity is within the permitted range.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "PASTE_E_STOP_NC",
+      "data_type": "BOOL",
+      "description": "Normally closed emergency-stop circuit; TRUE permits operation and FALSE means emergency stop.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "DebounceTime",
+      "data_type": "TIME",
+      "description": "Required continuous valid duration for the viscosity signal; must be positive.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "CycleTime",
+      "data_type": "TIME",
+      "description": "Actual elapsed interval represented by this invocation; must be positive.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "VFD_RUN",
+      "data_type": "BOOL",
+      "description": "Pump variable-frequency-drive run command.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "PUMP_MAINT_DUE",
+      "data_type": "BOOL",
+      "description": "Maintenance indication when accumulated runtime reaches 500 hours.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "PUMP_RUNTIME_ACC",
+      "data_type": "LTIME",
+      "description": "Accumulated enabled runtime, using a long-duration time type.",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "当急停回路断开（PASTE_E_STOP_NC=FALSE）时，VFD_RUN 必须为 FALSE。",
+      "ltl": "G(NOT PASTE_E_STOP_NC -> NOT VFD_RUN)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S2",
+      "text": "当粘度原始信号为 FALSE 时，去抖条件立即失效，VFD_RUN 必须为 FALSE。",
+      "ltl": "G(NOT VISCOSITY_OK -> NOT VFD_RUN)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S3",
+      "text": "当维护提示 PUMP_MAINT_DUE 为 TRUE 时，累计运行时间必须已达到 500。",
+      "ltl": "G(PUMP_MAINT_DUE -> PUMP_RUNTIME_ACC >= 500)",
+      "kind": "data",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S4",
+      "text": "当 VFD_RUN 为 FALSE 时，累计运行时间必须与上一拍相同（停机保持，不清零也不增加）。",
+      "ltl": "G(NOT VFD_RUN -> PUMP_RUNTIME_ACC = prev(PUMP_RUNTIME_ACC))",
+      "kind": "sequencing",
+      "verified_by": "plcverif"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "e04-1",
+      "inputs": {},
+      "const_inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 0,
+        "CycleTime": 0
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 0,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "粘度连续有效 2 拍，未到 3 拍去抖门限 → 仍不驱动、不累计（边界负例）；平台偏差：TIME 恒 0，去抖以 3 个扫描周期代替 DebounceTime；1 拍 = 1 小时代替 CycleTime 累加",
+      "init": {},
+      "mode": "",
+      "cycles": 2,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e04-2",
+      "inputs": {},
+      "const_inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 0,
+        "CycleTime": 0
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 1,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "粘度连续有效到第 3 拍，去抖刚满足 → 本拍起驱动，累计 1 拍；平台偏差：TIME 恒 0，去抖以 3 个扫描周期代替 DebounceTime；1 拍 = 1 小时代替 CycleTime 累加",
+      "init": {},
+      "mode": "",
+      "cycles": 3,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e04-3",
+      "inputs": {},
+      "const_inputs": {
+        "VISCOSITY_OK": false,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 0,
+        "CycleTime": 0
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 0,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "粘度一直为 FALSE → 去抖计数每拍清零，绝不驱动（负例）；平台偏差：TIME 恒 0，去抖以 3 个扫描周期代替 DebounceTime；1 拍 = 1 小时代替 CycleTime 累加",
+      "init": {},
+      "mode": "",
+      "cycles": 5,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e04-4",
+      "inputs": {},
+      "const_inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": false,
+        "DebounceTime": 0,
+        "CycleTime": 0
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 0,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "急停回路断开（PASTE_E_STOP_NC=FALSE）压过粘度有效 → 不驱动、不清零不累计（优先级负例）；平台偏差：TIME 恒 0，去抖以 3 个扫描周期代替 DebounceTime；1 拍 = 1 小时代替 CycleTime 累加",
+      "init": {},
+      "mode": "",
+      "cycles": 5,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e04-5",
+      "inputs": {},
+      "const_inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 0,
+        "CycleTime": 0
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 500,
+        "PUMP_MAINT_DUE": true
+      },
+      "note": "运行到第 502 拍：前 2 拍去抖、之后 500 拍运行 → 累计正好 500，维护提示刚好置位（阈值边界）；平台偏差：TIME 恒 0，去抖以 3 个扫描周期代替 DebounceTime；1 拍 = 1 小时代替 CycleTime 累加",
+      "init": {},
+      "mode": "",
+      "cycles": 502,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e04-6",
+      "inputs": {},
+      "const_inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 0,
+        "CycleTime": 0
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 499,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "运行到第 501 拍 → 累计 499，差 1 未到 500，维护提示保持 FALSE（阈值下边界负例）；平台偏差：TIME 恒 0，去抖以 3 个扫描周期代替 DebounceTime；1 拍 = 1 小时代替 CycleTime 累加",
+      "init": {},
+      "mode": "",
+      "cycles": 501,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e04-7",
+      "inputs": {},
+      "const_inputs": {
+        "VISCOSITY_OK": false,
+        "PASTE_E_STOP_NC": false,
+        "DebounceTime": 0,
+        "CycleTime": 0
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 0,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "上电首拍全灭：输出初值 OFF、累计 0、维护提示 FALSE（R5 上电初始化负例）；平台偏差：TIME 恒 0，去抖以 3 个扫描周期代替 DebounceTime；1 拍 = 1 小时代替 CycleTime 累加",
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    }
+  ],
+  "provenance": {},
+  "language": "en",
+  "raw_text": "# Jam Pump Debouncing and Runtime Maintenance\n\n- **Difficulty:** Easy (easy)\n\n## Requirements\n\nControl a jam transfer pump on a food production line, including viscosity-signal debouncing, emergency-stop priority, runtime accumulation and a maintenance-due indication.\n\n1. Accept the viscosity condition only after VISCOSITY_OK has remained TRUE for DebounceTime. Invalidate the condition immediately when the input becomes FALSE.\n2. Allow VFD_RUN to be TRUE only when PASTE_E_STOP_NC is TRUE and the viscosity condition is valid. An emergency stop immediately disables the run output and clears any incomplete debounce timing.\n3. Accumulate PUMP_RUNTIME_ACC using the actual invocation interval CycleTime only while VFD_RUN is TRUE. Preserve the accumulated time while the pump is stopped.\n4. Set PUMP_MAINT_DUE when accumulated runtime reaches 500 hours. This indication is informational and must not affect pump operation or the safety permissive.\n5. At power-up, initialize the run output to OFF, accumulated runtime to zero and the maintenance indication to FALSE.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `VISCOSITY_OK` | `BOOL` | Raw signal indicating that viscosity is within the permitted range. |\n| Input | `PASTE_E_STOP_NC` | `BOOL` | Normally closed emergency-stop circuit; TRUE permits operation and FALSE means emergency stop. |\n| Input | `DebounceTime` | `TIME` | Required continuous valid duration for the viscosity signal; must be positive. |\n| Input | `CycleTime` | `TIME` | Actual elapsed interval represented by this invocation; must be positive. |\n| Output | `VFD_RUN` | `BOOL` | Pump variable-frequency-drive run command. |\n| Output | `PUMP_MAINT_DUE` | `BOOL` | Maintenance indication when accumulated runtime reaches 500 hours. |\n| Output | `PUMP_RUNTIME_ACC` | `LTIME` | Accumulated enabled runtime, using a long-duration time type. |"
+}

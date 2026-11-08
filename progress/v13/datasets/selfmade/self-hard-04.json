@@ -1,0 +1,281 @@
+{
+  "pid": "self-hard-04",
+  "source": "selfmade",
+  "difficulty": "hard",
+  "title": "多泵均衡运行与主备切换（数组遍历与迟滞阈值）",
+  "requirements": "写一个功能块 FB，管理 5 台并联泵的均衡运行。\n控制要求：\n1. demand 为工艺需求台数，**超出 0..5 时先按边界裁剪**（负数按 0、大于 5 按 5）；\n2. 需要运行的泵必须是 runHours 最小的若干台，以均衡磨损；\n3. leadPump 为主泵号、lagPump 为备用泵号，两者**必须是不同的泵**；需求 1 台时 lagPump = 0；需求 0 台时两者都为 0；\n4. runningCount 输出实际运行台数，必须严格等于裁剪后的需求；\n5. **迟滞要求**：rotated 为维护逻辑下发的**轮换请求（输入）**；仅当待选泵的运行小时数比当前主泵少超过 50 小时时才允许切换，否则即使收到请求也保持原主备；无请求时永不切换；\n6. 数组下标必须按题面 1..5 访问，不得把 0 号槽用掉。",
+  "variables": [
+    {
+      "name": "demand",
+      "data_type": "INT",
+      "description": "需求泵台数 0..5（超出请先按边界裁剪）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "runHours",
+      "data_type": "ARRAY[1..5] OF LINT",
+      "description": "各泵累计运行小时数（只读）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "leadPump",
+      "data_type": "INT",
+      "description": "当前主泵号 1..5，0 表示尚未选定",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "lagPump",
+      "data_type": "INT",
+      "description": "当前备用泵号 1..5，0 表示无",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "runningCount",
+      "data_type": "INT",
+      "description": "实际运行泵台数",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "rotated",
+      "data_type": "BOOL",
+      "description": "本周期存在轮换请求（输入，由维护逻辑置位）",
+      "direction": "input",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "运行台数必须等于裁剪后的需求值（需求先收敛到 0..5）。",
+      "ltl": "G(demand >= 0 & demand <= 5 -> runningCount = demand)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S2",
+      "text": "主备泵必须是不同的泵（备泵为 0 表示只有一台）。",
+      "ltl": "G(lagPump <> 0 -> leadPump <> lagPump)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S3",
+      "text": "收到轮换请求时，主备切换仅在两泵运行小时差超过阈值 50 时发生（涉及内部排序表，只在用例中校验）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "S4",
+      "text": "需求为 0 时不得有任何泵处于选中状态（当周期即成立）。",
+      "ltl": "G(demand <= 0 -> leadPump = 0 & lagPump = 0)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S5",
+      "text": "需求为 0 时运行台数必须为 0。",
+      "ltl": "G(demand <= 0 -> runningCount = 0)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "p1",
+      "inputs": {
+        "demand": 0
+      },
+      "expected": {
+        "leadPump": 0,
+        "lagPump": 0,
+        "runningCount": 0
+      },
+      "note": "无需求：全停",
+      "const_inputs": {
+        "runHours": [
+          100,
+          200,
+          300,
+          400,
+          500
+        ],
+        "rotated": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "p2",
+      "inputs": {
+        "demand": 1
+      },
+      "expected": {
+        "leadPump": 1,
+        "lagPump": 0,
+        "runningCount": 1
+      },
+      "note": "需求 1：最省时的 1 号作主泵",
+      "const_inputs": {
+        "runHours": [
+          100,
+          200,
+          300,
+          400,
+          500
+        ],
+        "rotated": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "p3",
+      "inputs": {
+        "demand": 2
+      },
+      "expected": {
+        "leadPump": 2,
+        "lagPump": 5,
+        "runningCount": 2
+      },
+      "note": "需求 2：2 号(100h)主、5 号(200h)辅",
+      "const_inputs": {
+        "runHours": [
+          500,
+          100,
+          300,
+          400,
+          200
+        ],
+        "rotated": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "p4",
+      "inputs": {
+        "demand": 7
+      },
+      "expected": {
+        "runningCount": 5
+      },
+      "note": "需求超界 → 按 5 台跑满",
+      "const_inputs": {
+        "runHours": [
+          100,
+          200,
+          300,
+          400,
+          500
+        ],
+        "rotated": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "p5",
+      "inputs": {
+        "demand": -1
+      },
+      "expected": {
+        "runningCount": 0,
+        "leadPump": 0
+      },
+      "note": "负需求 → 按 0 处理，不得越界访问",
+      "const_inputs": {
+        "runHours": [
+          100,
+          200,
+          300,
+          400,
+          500
+        ],
+        "rotated": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "p6",
+      "inputs": {
+        "demand": 2
+      },
+      "expected": {
+        "leadPump": 1,
+        "lagPump": 2
+      },
+      "note": "轮换标志有效但时差 100 ≥ 50 阈值的反向：保持 1 号为主泵",
+      "const_inputs": {
+        "runHours": [
+          100,
+          200,
+          300,
+          400,
+          500
+        ],
+        "rotated": true
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "p7",
+      "inputs": {
+        "demand": 2
+      },
+      "expected": {
+        "leadPump": 2,
+        "lagPump": 1
+      },
+      "note": "时差 30 < 50 阈值 → 主备互换，避免单泵长期独挑",
+      "const_inputs": {
+        "runHours": [
+          100,
+          130,
+          300,
+          400,
+          500
+        ],
+        "rotated": true
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "自主构思 / 行业经验改编",
+    "origin": "流程行业赛题中多泵并联供水（多泵切换）是标志性题型，要求按运行时间均衡分配并设置切换阈值。",
+    "adaptation": "把赛题的 3 泵简化为 5 泵以考察数组遍历；把'均衡'量化为'运行小时差超过 50 才切换'的精确阈值，从而可被测试用例判定，而不是模糊的'尽量均衡'。",
+    "review": "人工审核：LINT 类型用于小时累计（显式考察 64 位整型）；裁剪与阈值两个边界均有正反用例；数组下标按 1 起，不得越界。",
+    "review_revision": "v1.3-review-r1"
+  },
+  "language": "en",
+  "case_mode": "single",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_inputs": {}
+}

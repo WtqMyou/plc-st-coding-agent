@@ -1,0 +1,67 @@
+FUNCTION_BLOCK FB
+VAR_INPUT
+    OCCUPANCY_DETECTED    : BOOL;
+    ENERGY_SAVING_MODE    : BOOL;
+    HVAC_MODE_SELECTOR    : INT;
+END_VAR
+
+VAR_OUTPUT
+    SUPPLY_FAN_RUN        : BOOL := FALSE;
+    TEMP_SETPOINT_ADJUST  : INT  := 0;
+END_VAR
+
+VAR
+    prev_start_condition  : BOOL := FALSE;
+    delay_counter         : INT  := 0;
+END_VAR
+
+SUPPLY_FAN_RUN     := FALSE;
+TEMP_SETPOINT_ADJUST := 0;
+
+IF OCCUPANCY_DETECTED AND (HVAC_MODE_SELECTOR <> 3) THEN
+    IF prev_start_condition THEN
+        delay_counter := delay_counter + 1;
+    ELSE
+        delay_counter := 1;
+    END_IF;
+    IF delay_counter >= 30 THEN
+        SUPPLY_FAN_RUN := TRUE;
+    END_IF;
+ELSE
+    delay_counter := 0;
+END_IF;
+prev_start_condition := OCCUPANCY_DETECTED AND (HVAC_MODE_SELECTOR <> 3);
+
+CASE HVAC_MODE_SELECTOR OF
+    0:
+        IF OCCUPANCY_DETECTED THEN
+            TEMP_SETPOINT_ADJUST := 0;
+        ELSIF ENERGY_SAVING_MODE THEN
+            TEMP_SETPOINT_ADJUST := 3;
+        ELSE
+            TEMP_SETPOINT_ADJUST := 2;
+        END_IF;
+    1:
+        IF OCCUPANCY_DETECTED THEN
+            TEMP_SETPOINT_ADJUST := 0;
+        ELSE
+            TEMP_SETPOINT_ADJUST := 1;
+        END_IF;
+    2:
+        IF OCCUPANCY_DETECTED THEN
+            TEMP_SETPOINT_ADJUST := 0;
+        ELSE
+            TEMP_SETPOINT_ADJUST := 4;
+        END_IF;
+    3:
+        TEMP_SETPOINT_ADJUST := 4;
+ELSE
+    TEMP_SETPOINT_ADJUST := 0;
+END_CASE;
+
+IF TEMP_SETPOINT_ADJUST < -4 THEN
+    TEMP_SETPOINT_ADJUST := -4;
+ELSIF TEMP_SETPOINT_ADJUST > 4 THEN
+    TEMP_SETPOINT_ADJUST := 4;
+END_IF;
+END_FUNCTION_BLOCK

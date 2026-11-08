@@ -19,8 +19,40 @@ ZIP = REPO / 'progress/工艺复核材料_刘晏铭_20261101.zip'
 CST = timezone(timedelta(hours=8))
 
 
+def offline_page():
+    root = REPO / 'progress/evidence/v13_review_20261108'
+    offline = load(root / 'offline.json')
+    scores = load(REPO / 'progress/evidence/v13_rescore_20261108b/rescore.json')
+    ledger = load(Path('E:/PLC_Dev/evidence/dmxapi_budget_75.json'))
+    native = []
+    for label in ('codesys', 'openplc'):
+        rows = load(root / (label + '_references.json'))
+        rows = rows if isinstance(rows, list) else []
+        native.append(f'<li>{escape(label.upper())}：{sum(r.get("status") == "passed" for r in rows)}/35 参考解编译通过</li>')
+    table = []
+    for r in scores.get('rows', []):
+        cells = [r['group'], f'{r["old_solved"]}/35', f'{r["new_solved"]}/35',
+                 f'{r["new_passed"]}/531', ', '.join(r['lost']) or '无', len(r['tool_errors'])]
+        table.append('<tr>' + ''.join('<td>' + escape(str(x)) + '</td>' for x in cells) + '</tr>')
+    return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="15"><title>PLC 修订验收状态</title><style>
+body{{background:#f1f5fa;color:#203047;font:16px/1.7 system-ui,"Microsoft YaHei",sans-serif;margin:0}}
+main{{max-width:1100px;margin:auto;padding:28px 22px}}section{{background:white;border:1px solid #dce5ef;border-radius:12px;padding:20px;margin:18px 0}}
+table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{padding:10px;text-align:left;border-bottom:1px solid #e6ecf3}}a{{color:#155eab}}.scroll{{overflow:auto}}</style>
+<main><h1>v1.3 修订与免费验收</h1><p>当前没有付费模型实验运行。每 15 秒刷新本机证据。</p>
+<section><h2>验收进度</h2><p>功能与严格接口：{offline.get('cases_passed', 0)}/{offline.get('cases', 531)} 条用例通过。</p><ul>{''.join(native)}</ul>
+<p>性质总数 {offline.get('total_properties', '—')}；原始 LTL {offline.get('raw_ltl', '—')}，运行期 LTL {offline.get('runtime_ltl', '—')}。测试轨迹检查不代表穷尽证明。</p></section>
+<section><h2>固定历史候选的事后评分</h2><div class="scroll"><table><tr><th>组别</th><th>旧版本地整题</th><th>修订版本地整题</th><th>修订版通过用例</th><th>新增失败题</th><th>工具未决</th></tr>{''.join(table)}</table></div>
+<p>两侧使用相同检查器及相同历史候选；不替换 R8 正式结果，不是新版提示的模型生成实验。</p></section>
+<section><h2>人工复审与费用</h2><p>刘晏铭（lym）的原结论为五题均需修改。当前技术整改后待复审，尚未标为通过。</p>
+<p>本阶段模型费用 ¥0；共享账本累计 ¥{ledger.get('spent_cny', 0):.6f}/75，原诊断额度未增加。</p>
+<p><a href="/v13-review.html">查看修改后复审材料</a> · <a href="https://github.com/WtqMyou/plc-st-coding-agent/tree/main/progress/v13">GitHub 修订版</a></p></section></main></html>'''
+
+
 def page():
     active = load(REPO / 'progress/active_experiment.json')
+    if active.get('mode') == 'offline_review':
+        return offline_page()
     selected_cfg = (REPO / active['config']).resolve() if active.get('config') else CFG
     if not selected_cfg.is_relative_to(REPO.resolve()):
         raise RuntimeError('Status configuration must stay in this repository')
@@ -110,6 +142,8 @@ class Handler(BaseHTTPRequestHandler):
             raw, mime = page().encode('utf-8'), 'text/html; charset=utf-8'
         elif path == '/review.html':
             raw, mime = REVIEW.read_bytes(), 'text/html; charset=utf-8'
+        elif path == '/v13-review.html':
+            raw, mime = (REPO / 'progress/v13/复审材料.html').read_bytes(), 'text/html; charset=utf-8'
         elif path == '/review.zip':
             raw, mime = ZIP.read_bytes(), 'application/zip'
         else:

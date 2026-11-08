@@ -1,0 +1,662 @@
+{
+  "pid": "public-medium-01",
+  "source": "public",
+  "difficulty": "medium",
+  "title": "Multi-Pump Switching Control System",
+  "requirements": "In an industrial water supply system, there are 5 pumps, each of which can be controlled independently. The system needs to support both manual and automatic operating modes.\nBased on the value of the mode variable, switch to the corresponding operating mode.\nIn manual mode, control the start and stop of the selected pump based on the value of pumpGroup[1..5].selection.\nIn automatic mode, compare the priority of each pump, and automatically select the 3 pumps with higher priority for water supply according to the method of three in use and two on standby.",
+  "variables": [
+    {
+      "name": "mode",
+      "data_type": "BOOL",
+      "description": "FALSE: Manual mode<br>TRUE: Automatic mode",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "start",
+      "data_type": "BOOL",
+      "description": "Start button, used to start the manually selected or automatically selected pump",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "stop",
+      "data_type": "BOOL",
+      "description": "Stop button, used to stop all pumps",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "pumpGroup",
+      "data_type": "ARRAY[1..5] OF ST_Pump",
+      "description": "Five pump records passed by reference. Read priority and selection; write only RunComd.",
+      "direction": "inout",
+      "fields": [
+        {
+          "name": "priority",
+          "data_type": "INT",
+          "description": "Priority; larger values have higher priority. Read-only to the function block.",
+          "direction": "inout",
+          "fields": []
+        },
+        {
+          "name": "selection",
+          "data_type": "BOOL",
+          "description": "Manual-selection state. Read-only to the function block.",
+          "direction": "inout",
+          "fields": []
+        },
+        {
+          "name": "RunComd",
+          "data_type": "BOOL",
+          "description": "Run command written by the function block; TRUE runs and FALSE stops.",
+          "direction": "inout",
+          "fields": []
+        }
+      ]
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "当停止按钮为 TRUE 时，五台泵的运行命令必须全部为 FALSE（停止优先于手动/自动方式）。",
+      "ltl": "G(stop -> (pumpGroup[1].RunComd = FALSE AND pumpGroup[2].RunComd = FALSE AND pumpGroup[3].RunComd = FALSE AND pumpGroup[4].RunComd = FALSE AND pumpGroup[5].RunComd = FALSE))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S2",
+      "text": "当启动按钮为 FALSE 时，任何一台泵都不得收到运行命令。",
+      "ltl": "G(NOT start -> (pumpGroup[1].RunComd = FALSE AND pumpGroup[2].RunComd = FALSE AND pumpGroup[3].RunComd = FALSE AND pumpGroup[4].RunComd = FALSE AND pumpGroup[5].RunComd = FALSE))",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S3",
+      "text": "手动方式下，未被选中的泵必须收到停机命令（selection=FALSE → RunComd=FALSE）。",
+      "ltl": "G((NOT mode AND NOT pumpGroup[1].selection) -> pumpGroup[1].RunComd = FALSE)",
+      "kind": "safety",
+      "verified_by": "plcverif"
+    },
+    {
+      "sid": "S4",
+      "text": "自动方式按 priority 选前三台运行、其余两台备用停机；优先级相等时下标小者优先（三用两备规则，由 m01-2/6/8/10 用例验证的数据性质）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "S5",
+      "text": "手动方式下 RunComd = start AND selection（逐台启停，由 m01-1/5/9 用例验证的数据性质）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "m01-1",
+      "inputs": {
+        "mode": false,
+        "start": true,
+        "stop": false
+      },
+      "const_inputs": {},
+      "expected": {
+        "pumpGroup": [
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": true
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": true
+          },
+          {
+            "RunComd": false
+          }
+        ]
+      },
+      "note": "手动方式按下启动：2、4 号被选中 → 只有这两台收到运行命令",
+      "init": {
+        "pumpGroup": [
+          {
+            "priority": 10,
+            "selection": false
+          },
+          {
+            "priority": 40,
+            "selection": true
+          },
+          {
+            "priority": 30,
+            "selection": false
+          },
+          {
+            "priority": 20,
+            "selection": true
+          },
+          {
+            "priority": 50,
+            "selection": false
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m01-2",
+      "inputs": {
+        "mode": true,
+        "start": true,
+        "stop": false
+      },
+      "const_inputs": {},
+      "expected": {
+        "pumpGroup": [
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": true
+          },
+          {
+            "RunComd": true
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": true
+          }
+        ]
+      },
+      "note": "自动方式按下启动：三用两备 → 优先级最高的 5(50)、2(40)、3(30) 起，1、4 备用停机",
+      "init": {
+        "pumpGroup": [
+          {
+            "priority": 10,
+            "selection": false
+          },
+          {
+            "priority": 40,
+            "selection": true
+          },
+          {
+            "priority": 30,
+            "selection": false
+          },
+          {
+            "priority": 20,
+            "selection": true
+          },
+          {
+            "priority": 50,
+            "selection": false
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m01-3",
+      "inputs": {
+        "mode": true,
+        "start": true,
+        "stop": true
+      },
+      "const_inputs": {},
+      "expected": {
+        "pumpGroup": [
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          }
+        ]
+      },
+      "note": "自动方式下同时按下启动与停止：停止优先于一切 → 五台全部停机",
+      "init": {
+        "pumpGroup": [
+          {
+            "priority": 10,
+            "selection": false
+          },
+          {
+            "priority": 40,
+            "selection": true
+          },
+          {
+            "priority": 30,
+            "selection": false
+          },
+          {
+            "priority": 20,
+            "selection": true
+          },
+          {
+            "priority": 50,
+            "selection": false
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m01-4",
+      "inputs": {
+        "mode": true,
+        "start": false,
+        "stop": false
+      },
+      "const_inputs": {},
+      "expected": {
+        "pumpGroup": [
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          }
+        ]
+      },
+      "note": "自动方式未按启动：即使选中了前三台也不得运行（负例：不该动作时不动作）",
+      "init": {
+        "pumpGroup": [
+          {
+            "priority": 10,
+            "selection": false
+          },
+          {
+            "priority": 40,
+            "selection": true
+          },
+          {
+            "priority": 30,
+            "selection": false
+          },
+          {
+            "priority": 20,
+            "selection": true
+          },
+          {
+            "priority": 50,
+            "selection": false
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m01-5",
+      "inputs": {
+        "mode": false,
+        "start": false,
+        "stop": false
+      },
+      "const_inputs": {},
+      "expected": {
+        "pumpGroup": [
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          }
+        ]
+      },
+      "note": "手动方式未按启动：选中的 2、4 号也不得运行（负例）",
+      "init": {
+        "pumpGroup": [
+          {
+            "priority": 10,
+            "selection": false
+          },
+          {
+            "priority": 40,
+            "selection": true
+          },
+          {
+            "priority": 30,
+            "selection": false
+          },
+          {
+            "priority": 20,
+            "selection": true
+          },
+          {
+            "priority": 50,
+            "selection": false
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m01-6",
+      "inputs": {
+        "mode": true,
+        "start": true,
+        "stop": false
+      },
+      "const_inputs": {},
+      "expected": {
+        "pumpGroup": [
+          {
+            "RunComd": true
+          },
+          {
+            "RunComd": true
+          },
+          {
+            "RunComd": true
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          }
+        ]
+      },
+      "note": "自动方式优先级并列（1、2 号同为 30）：并列按下标小者优先 → 前三为 1、2、3 号",
+      "init": {
+        "pumpGroup": [
+          {
+            "priority": 30,
+            "selection": false
+          },
+          {
+            "priority": 30,
+            "selection": false
+          },
+          {
+            "priority": 20,
+            "selection": false
+          },
+          {
+            "priority": 10,
+            "selection": false
+          },
+          {
+            "priority": 5,
+            "selection": false
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m01-7",
+      "inputs": {
+        "mode": false,
+        "start": true,
+        "stop": true
+      },
+      "const_inputs": {},
+      "expected": {
+        "pumpGroup": [
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          }
+        ]
+      },
+      "note": "手动方式按下启动且停止同时为 TRUE：停止压过手动选择 → 五台全部停机（负例）",
+      "init": {
+        "pumpGroup": [
+          {
+            "priority": 10,
+            "selection": true
+          },
+          {
+            "priority": 40,
+            "selection": true
+          },
+          {
+            "priority": 30,
+            "selection": false
+          },
+          {
+            "priority": 20,
+            "selection": false
+          },
+          {
+            "priority": 50,
+            "selection": true
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m01-8",
+      "inputs": {
+        "mode": true,
+        "start": true,
+        "stop": false
+      },
+      "const_inputs": {},
+      "expected": {
+        "pumpGroup": [
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": true
+          },
+          {
+            "RunComd": true
+          },
+          {
+            "RunComd": true
+          }
+        ]
+      },
+      "note": "自动方式优先级单调递增：前三为 5(45)、4(35)、3(25) → 3、4、5 号起，1、2 备用",
+      "init": {
+        "pumpGroup": [
+          {
+            "priority": 5,
+            "selection": false
+          },
+          {
+            "priority": 15,
+            "selection": false
+          },
+          {
+            "priority": 25,
+            "selection": false
+          },
+          {
+            "priority": 35,
+            "selection": false
+          },
+          {
+            "priority": 45,
+            "selection": false
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m01-9",
+      "inputs": {
+        "mode": false,
+        "start": true,
+        "stop": false
+      },
+      "const_inputs": {},
+      "expected": {
+        "pumpGroup": [
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          }
+        ]
+      },
+      "note": "手动方式按下启动但一台都没选中：不得凭空启动任何泵（负例）",
+      "init": {
+        "pumpGroup": [
+          {
+            "priority": 10,
+            "selection": false
+          },
+          {
+            "priority": 20,
+            "selection": false
+          },
+          {
+            "priority": 30,
+            "selection": false
+          },
+          {
+            "priority": 40,
+            "selection": false
+          },
+          {
+            "priority": 50,
+            "selection": false
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m01-10",
+      "inputs": {
+        "mode": true,
+        "start": true,
+        "stop": false
+      },
+      "const_inputs": {},
+      "expected": {
+        "pumpGroup": [
+          {
+            "RunComd": true
+          },
+          {
+            "RunComd": true
+          },
+          {
+            "RunComd": true
+          },
+          {
+            "RunComd": false
+          },
+          {
+            "RunComd": false
+          }
+        ]
+      },
+      "note": "自动方式五台优先级全等：退化为按下标取前三 → 1、2、3 号运行；连扫 2 拍结果不变（无自锁）",
+      "init": {
+        "pumpGroup": [
+          {
+            "priority": 10,
+            "selection": false
+          },
+          {
+            "priority": 10,
+            "selection": false
+          },
+          {
+            "priority": 10,
+            "selection": false
+          },
+          {
+            "priority": 10,
+            "selection": false
+          },
+          {
+            "priority": 10,
+            "selection": false
+          }
+        ]
+      },
+      "mode": "",
+      "cycles": 2,
+      "expect_full": true
+    }
+  ],
+  "provenance": {},
+  "language": "en",
+  "raw_text": "# Multi-Pump Switching Control System\n\n- **Difficulty:** Medium (medium)\n\n## Requirements\n\nIn an industrial water supply system, there are 5 pumps, each of which can be controlled independently. The system needs to support both manual and automatic operating modes.\nBased on the value of the mode variable, switch to the corresponding operating mode.\nIn manual mode, control the start and stop of the selected pump based on the value of pumpGroup[1..5].selection.\nIn automatic mode, compare the priority of each pump, and automatically select the 3 pumps with higher priority for water supply according to the method of three in use and two on standby.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `mode` | `BOOL` | FALSE: Manual mode<br>TRUE: Automatic mode |\n| Input | `start` | `BOOL` | Start button, used to start the manually selected or automatically selected pump |\n| Input | `stop` | `BOOL` | Stop button, used to stop all pumps |\n| Input/Output | `pumpGroup` | `ARRAY[1..5] OF ST_Pump` | Five pump records passed by reference. Read priority and selection; write only RunComd. |\n\n**Data type `ST_Pump`**\n\n| Field | Data Type | Description |\n| --- | --- | --- |\n| `priority` | `INT` | Priority; larger values have higher priority. Read-only to the function block. |\n| `selection` | `BOOL` | Manual-selection state. Read-only to the function block. |\n| `RunComd` | `BOOL` | Run command written by the function block; TRUE runs and FALSE stops. |"
+}
