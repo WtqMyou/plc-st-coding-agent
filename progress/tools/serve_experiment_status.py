@@ -44,8 +44,13 @@ def offline_page():
         native.append(f'<li>{escape(label.upper())}：{sum(r.get("status") == "passed" for r in rows)}/35 参考解编译通过</li>')
     baseline_label = escape(str(scores.get('baseline_label', '旧版本地整题')))
     current_label = escape(str(scores.get('current_label', '修订版本地整题')))
-    review_route = '/v13-r2-review.html' if version == 'v1.3-review-r2' else '/v13-review.html'
+    review_route = active.get('review_route') or ('/v13-r2-review.html' if version == 'v1.3-review-r2' else '/v13-review.html')
+    if review_route not in ('/v13-review.html','/v13-r2-review.html'):
+        raise RuntimeError('Unknown review route')
     repo_revision_path = quote(revision_root.relative_to(REPO.resolve()).as_posix())
+    native_probes_note = ('新增 ' + str(offline.get('native_probes_count',0)) + ' 项原生对照（含预期失败），平台接受不等于运行正确。'
+                         if offline.get('native_probes_count') else '')
+    data_note = ('数据仍为 ' + str(offline['data_version']) + '；本次只改变裁判。' if offline.get('data_version') else '')
     table = []
     for r in scores.get('rows', []):
         cells = [r['group'], f'{r["old_solved"]}/35', f'{r["new_solved"]}/35',
@@ -57,8 +62,10 @@ body{{background:#f1f5fa;color:#203047;font:16px/1.7 system-ui,"Microsoft YaHei"
 main{{max-width:1100px;margin:auto;padding:28px 22px}}section{{background:white;border:1px solid #dce5ef;border-radius:12px;padding:20px;margin:18px 0}}
 table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{padding:10px;text-align:left;border-bottom:1px solid #e6ecf3}}a{{color:#155eab}}.scroll{{overflow:auto}}</style>
 <main><h1>{escape(version)} 修订与免费验收</h1><p>当前没有付费模型实验运行。每 15 秒刷新本机证据。</p>
+<p>{escape(data_note)}</p>
 <section><h2>验收进度</h2><p>功能与严格接口：{offline.get('cases_passed', 0)}/{offline.get('cases', 531)} 条用例通过。</p><ul>{''.join(native)}</ul>
 <p>{native_note}本页结果属于平台适配口径，不代表原始 VARIANT 接口通过率。</p>
+<p>{escape(native_probes_note)}</p>
 <p>性质总数 {offline.get('total_properties', '—')}；原始 LTL {offline.get('raw_ltl', '—')}，运行期 LTL {offline.get('runtime_ltl', '—')}。测试轨迹检查不代表穷尽证明。</p></section>
 <section><h2>固定历史候选的事后评分</h2><div class="scroll"><table><tr><th>组别</th><th>{baseline_label}</th><th>{current_label}</th><th>修订版通过用例</th><th>新增失败题</th><th>工具未决</th></tr>{''.join(table)}</table></div>
 <p>两侧使用相同检查器及相同历史候选；不替换 R8 正式结果，不是新版提示的模型生成实验。</p></section>
