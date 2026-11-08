@@ -42,6 +42,9 @@ def page():
     stage = total - plan.get('initial_spent_cny', total)
     stage_cap = float(plan.get('study_additional_cap_cny', 8))
     label = summary.get('label') or active.get('label') or 'R9 小规模多轮修复对照'
+    reuse_note = ('含历史复用 ' + str(summary.get('reused_count', 0)) + ' 条；本轮新归档 ' +
+                  str(summary.get('fresh_recorded', 0)) + '/' + str(summary.get('fresh_planned', 16)) + ' 条'
+                  if 'reused_count' in summary else '完成数量包含失败，不等于通过数量')
     now = datetime.now(CST).strftime('%Y-%m-%d %H:%M:%S')
     current = str(state.get('current_job', '—'))
     elapsed = ''
@@ -80,7 +83,7 @@ code{{overflow-wrap:anywhere;background:#f2f6fa;padding:3px 6px}}.attention{{col
 <h1>实验实时状态</h1><div class="badge">● {escape(title)}</div>
 <p class="muted">本机数据 · 每 15 秒自动刷新 · 页面读取时间 {now}（北京时间）</p>
 <div class="cards"><section class="card"><div>已归档题次</div><div class="value">{completed} / {planned}</div>
-<div class="bar"><span></span></div><div class="muted">完成数量包含失败，不等于通过数量</div></section>
+<div class="bar"><span></span></div><div class="muted">{escape(reuse_note)}</div></section>
 <section class="card"><div>本阶段累计计入</div><div class="value">¥{stage:.3f}</div><div class="muted">阶段上限 ¥{stage_cap:g}，包含在途预留</div></section>
 <section class="card"><div>全部实验累计计入</div><div class="value">¥{total:.3f}</div><div class="muted">总授权 ¥75，未增加额度</div></section>
 <section class="card"><div>原诊断阶段累计增量</div><div class="value">¥{total - 34.011998:.3f}</div><div class="muted">原追加上限 ¥10，接续不重置</div></section></div>

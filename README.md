@@ -11,7 +11,8 @@
 | R9 规约与检查调度修复 | 已实现；接续版本 159 项回归通过 | [开发说明](agent_dev_r9/README.md) |
 | R9 小规模提示诊断 | 24/24 个题次已尝试，实验与监控已停止 | [完整诊断结果](agent_dev_r9/docs/R9小规模诊断完整结果_20261101.md) |
 | R9 多轮修复小规模对照 | 16/16 题次已完成，LTL 计数勘误另附 | [结果](progress/evidence/r9_repair_policy_20261101/实验状态.md) · [复盘与勘误](progress/evidence/r9_repair_analysis_20261101/分析说明.md) |
-| R9 第三阶段四组准备性实验 | 独立副本，两题 × 两模型 × 两框架 | [冻结方案](agent_dev_r9_stage3/docs/R9第三阶段四组准备性实验_20261101.md) · [状态](progress/evidence/r9_four_group_stage3_20261101/实验状态.md) |
+| R9 第三阶段四组准备性实验 | 8/8 题次已完成，新增计入 1.382971 元 | [冻结方案](agent_dev_r9_stage3/docs/R9第三阶段四组准备性实验_20261101.md) · [结果](progress/evidence/r9_four_group_stage3_20261101/实验状态.md) |
+| R9 第四阶段六题首候选扩展 | 全部复用 8 个旧首候选，补充 16 个新首候选；统一首轮口径 | [冻结方案](progress/R9第四阶段六题首候选扩展_20261102.md) · [当前状态](progress/evidence/r9_six_task_coverage_20261102/实验状态.md) |
 | 五道新增工业题工艺复核 | 负责人刘晏铭，人工结论、日期与签署待确认 | [审核清单](agent_dev_r9/evidence/r9_material_audit_20261101b/审核清单.md) |
 | R9 四组全量正式实验 | 尚未启动 | [下一步与预算限制](progress/README.md) |
 
