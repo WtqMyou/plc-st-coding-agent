@@ -129,10 +129,13 @@ def page():
         values = [framework, f"{r['task_seconds']} 秒",
                   '暂缓，先修复功能' if r['verification_after_tests'] else '继续检查',
                   f"{r['attempted']}/{r['n']}", f"{r['first_solved']}/{r['n']}",
-                  f"{r['solved']}/{r['n']}", r['repaired'], r['two_attempts']]
+                  f"{r['solved']}/{r['n']}", r['repaired'], r['two_attempts'],
+                  r.get('calls','—'),r.get('mc_executed','—'),r.get('wall_seconds','—')]
         rows.append('<tr>' + ''.join('<td>' + escape(str(v)) + '</td>' for v in values) + '</tr>')
     attention = '<p class="attention">' + escape(state.get('error', '')) + '</p>' if state.get('error') else ''
     repo_url = 'https://github.com/WtqMyou/plc-st-coding-agent'
+    review_route = escape(active.get('review_route','/review.html'),quote=True)
+    handout_route = escape(active.get('handout_route','/review.zip'),quote=True)
     status_url = repo_url + '/blob/main/' + quote(active.get('status_path','progress/evidence/r9_repair_policy_20261101/实验状态.md'))
     sync_text = ('已同步至 GitHub' if sync.get('state') == 'synced' else '同步状态需检查')
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8">
@@ -160,14 +163,14 @@ code{{overflow-wrap:anywhere;background:#f2f6fa;padding:3px 6px}}.attention{{col
 <section class="panel"><h2>当前执行</h2><p><code>{escape(current)}</code>{escape(elapsed)}</p>{attention}
 <p class="muted">运行依赖这台笔记本保持开机联网。页面关闭不停止实验；实验停止后会显示结束或需检查。</p></section>
 <section class="panel"><h2>各条件进度与结果</h2><div class="scroll"><table><thead><tr>
-<th>框架</th><th>单题预算</th><th>功能失败后的 LTL</th><th>已尝试</th><th>首轮通过</th><th>最终通过</th><th>修复新增成功</th><th>两次尝试</th>
+<th>框架</th><th>单题预算</th><th>功能失败后的 LTL</th><th>已尝试</th><th>首轮通过</th><th>最终通过</th><th>修复新增成功</th><th>两次尝试</th><th>请求数</th><th>形式检查次数</th><th>耗时秒</th>
 </tr></thead><tbody>{''.join(rows)}</tbody></table></div>
 <p class="muted">结果表按实验检查点更新：{escape(str(summary.get('updated_at', '尚无记录')))}。两题小样本不能证明稳定优势；费用按本次页面读取时的账本展示，包含预留，并非供应商实际账单。</p></section>
 <section class="panel"><h2>GitHub 与人工复核</h2><p>{sync_text} · 提交 {escape(str(sync.get('commit', ''))[:8])}
 <span class="muted"> · {escape(str(sync.get('at', '')))}</span></p>
-<p>刘晏铭：五道新增工业题待人工核对，材料已整理，结论尚未填写。</p><div class="links">
+<p>刘晏铭：r4工艺复审待确认，材料包含五道工业题和三道本次修订题。</p><div class="links">
 <a href="{status_url}" target="_blank" rel="noopener">GitHub 状态快照</a><a href="{repo_url}" target="_blank" rel="noopener">项目仓库</a>
-<a href="/review.html" target="_blank">查看五题复核材料</a><a href="/review.zip">下载给刘晏铭的材料包</a></div></section></main></html>'''
+<a href="{review_route}" target="_blank">查看复审材料</a><a href="{handout_route}">下载给刘晏铭的材料包</a></div></section></main></html>'''
 
 
 class Handler(BaseHTTPRequestHandler):

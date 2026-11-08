@@ -16,6 +16,7 @@
 | v1.3-review-r2（数据） | 已冻结；q45、两处注释及完整输出检查完成；531条用例与适配导出保留 | [r2说明](progress/v13_r2/README.md) · [口径与适配导出](progress/v13_r2/口径说明.md) |
 | v1.3-judge-r3（已冻结） | 字符串类型漏报已修复；531/531用例、33项检查通过；140题次主口径工具未决清零，分数不变 | [r3说明](progress/v13_r3/README.md) · [原生差异与根因](progress/evidence/v13_r3_20261108/root_cause.json) |
 | v1.3-review-r4（当前） | 第二批意见及后补清单已处理；583/583用例、40项检查通过；140题次免费重评分完成 | [采纳与核验](progress/v13_r4/意见2采纳与核验.md) · [r4结果](progress/v13_r4/README.md) |
+| r4两题检查顺序小试验 | 启动准备通过；8题次最多16次请求，最坏预留3.895596元 | [方案](progress/r4_check_order/实验方案.md) · [状态](progress/evidence/r4_check_order_20261108/实验状态.md) |
 | R9 第四阶段六题首候选扩展 | 已准备，8 条历史首候选已绑定，16 条新增请求尚未启动；先收敛复核意见 | [冻结方案](progress/R9第四阶段六题首候选扩展_20261102.md) · [当前状态](progress/evidence/r9_six_task_coverage_20261102/实验状态.md) |
 | 工艺复核 | 五道工业题和三道本次修订题待刘晏铭确认；旧稿批准不自动成为r4批准 | [当前材料](progress/v13_r4/复审材料.html) · [当前记录](progress/v13_r4/复审记录.md) |
 | R9 四组全量正式实验 | 尚未启动 | [下一步与预算限制](progress/README.md) |
