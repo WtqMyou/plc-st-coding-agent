@@ -1,0 +1,9 @@
+# r5证据索引
+
+最终验收以offline.json、native_probes.json、pilot_replay_b.json、counterexample_replay_b.json、historical_return_ablations.json、report.json、结果说明.md和acceptance.json为准。
+
+140份固定答案的最终复评分位于../v13_r5_rescore_20261108b。无b目录保留加入模型检查未建模路径隔离前的初次草稿及两份相同源码的原生编译证明；最终版本复用该两份证明时再次核对源码哈希和编译器身份。
+
+pilot_replay.json及counterexample_replay.json保留首轮诊断，最终使用带b文件。native_probes_initial.json保留“未知函数应被两个平台拒绝”的初始假设与实际观测；OpenPLC的接受没有被抹去，最终native_probes.json明确列出该偏离。本地仍拒绝未知函数，不根据打包成功虚构功能正确性。
+
+本轮全部模型调用为0，未改题目、未改候选、未重置或冲销费用记录；没有上机运行或穷尽证明声明。

@@ -17,10 +17,11 @@ CFG = REPO / 'agent_dev_r9/config.r9_repair.json'
 REVIEW = REPO / 'progress/review_liu_20261101/复核材料.html'
 ZIP = REPO / 'progress/工艺复核材料_刘晏铭_20261101.zip'
 CST = timezone(timedelta(hours=8))
+ACTIVE_POINTER = REPO / 'progress/active_experiment.json'
 
 
 def offline_page():
-    active = load(REPO / 'progress/active_experiment.json')
+    active = load(ACTIVE_POINTER)
     cfg = load(REPO / active.get('config', 'progress/v13/config.offline.json'))
     root = (REPO / cfg['campaign_root']).resolve()
     revision_root = (REPO / active.get('revision_root', 'progress/v13')).resolve()
@@ -32,7 +33,7 @@ def offline_page():
     ledger = load(Path('E:/PLC_Dev/evidence/dmxapi_budget_75.json'))
     version = str(offline.get('version', 'v1.3'))
     reused = bool(offline.get('native_results_reused'))
-    native_note = '已按同源码哈希及当前平台身份复用 r1 原生编译证据。' if reused else '参考解已执行真实平台编译。'
+    native_note = '已按同源码哈希及当前平台身份复用历史原生编译证据。' if reused else '参考解已执行真实平台编译。'
     combined_native = load(root / 'native_references.json')
     if isinstance(combined_native,list) and combined_native:
         native_note = f'本版新增 {offline.get("native_fresh",0)} 次参考编译，按相同源码与当前编译器身份复用 {offline.get("native_reused",0)} 份。'
@@ -68,6 +69,10 @@ def offline_page():
             (r['pid'],r.get('actual_depth','—'),r.get('complete_depth','—'),8))+'</tr>' for r in depth_rows)
         depth_note = '<section><h2>形式检查实际范围</h2><p>下表是每题5秒的免费诊断，题库名义上限为8拍。到达某拍不代表这一层已完整展开；这六题均发生预算截断。</p><table><tr><th>题号</th><th>最深到达</th><th>完整展开</th><th>名义上限</th></tr>'+rows+'</table><p>缩小输入域的变异诊断单独存档，不计入正式通过率。</p></section>'
     handout_link = ' · <a href="/v13-r4-review.zip">下载给刘晏铭的r4复审包</a>' if version=='v1.3-review-r4' else ''
+    repair_note = ''
+    if version=='v1.3-judge-r5':
+        explanation_url = 'https://github.com/WtqMyou/plc-st-coding-agent/blob/main/' + quote('progress/evidence/v13_r5_20261108/结果说明.md')
+        repair_note = '<section><h2>这次修复解决了什么</h2><p>通用整数转换和RETURN提前退出已修复。原FIFO答卷通过27/27功能用例，但形式检查仍发现S4反例：满队同拍入出队后，数量变为1却仍返回满队状态码。</p><p>未修改原答卷，也没有更换小试验原选中轮次。历史140份固定答案的分数变化属于裁判纠错，不能当作模型生成能力提升。</p><p><a href="'+explanation_url+'">查看归因、反例和完整复验结果</a></p></section>'
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="15"><title>PLC 修订验收状态</title><style>
 body{{background:#f1f5fa;color:#203047;font:16px/1.7 system-ui,"Microsoft YaHei",sans-serif;margin:0}}
@@ -82,13 +87,14 @@ table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{padding:10px;t
 <section><h2>固定历史候选的事后评分</h2><div class="scroll"><table><tr><th>组别</th><th>{baseline_label}</th><th>{current_label}</th><th>修订版通过用例</th><th>新增失败题</th><th>工具未决</th></tr>{''.join(table)}</table></div>
 <p>同一批历史答卷，保留原选中轮次；数据与裁判版本见表头，用例分母可能不同。不替换R8正式结果，也不表示模型生成能力提升。</p></section>
 {depth_note}
+{repair_note}
 <section><h2>人工复审与费用</h2><p>刘晏铭的本版工艺复审待填写；已收到的旧稿与新意见均留档，旧版批准不自动适用于当前修订版。</p>
 <p>本阶段模型费用 ¥0；共享账本累计 ¥{ledger.get('spent_cny', 0):.6f}/75，原诊断额度未增加。</p>
 <p><a href="{review_route}">查看修改后复审材料</a> · <a href="https://github.com/WtqMyou/plc-st-coding-agent/tree/main/{repo_revision_path}">GitHub 修订版</a>{handout_link}</p></section></main></html>'''
 
 
 def page():
-    active = load(REPO / 'progress/active_experiment.json')
+    active = load(ACTIVE_POINTER)
     if active.get('mode') == 'offline_review':
         return offline_page()
     selected_cfg = (REPO / active['config']).resolve() if active.get('config') else CFG
@@ -217,13 +223,18 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    global ACTIVE_POINTER
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=8879)
+    parser.add_argument('--active', default='progress/active_experiment.json')
     args = parser.parse_args()
+    ACTIVE_POINTER = (REPO / args.active).resolve()
+    if not ACTIVE_POINTER.is_relative_to(REPO.resolve()):
+        raise RuntimeError('Viewer selection must stay in this repository')
     server = ThreadingHTTPServer(('127.0.0.1', args.port), Handler)
-    active = load(REPO / 'progress/active_experiment.json')
+    active = load(ACTIVE_POINTER)
     selected_cfg = REPO / active['config'] if active.get('config') else CFG
-    root = Path(load(selected_cfg)['campaign_root'])
+    root = (REPO / load(selected_cfg)['campaign_root']).resolve()
     marker = dict(**current_process_marker(), url=f'http://127.0.0.1:{server.server_port}/status.html')
     (root / 'status_viewer.json').write_text(json.dumps(marker, ensure_ascii=False, indent=2), encoding='utf-8')
     print(marker['url'], flush=True)
