@@ -1,0 +1,355 @@
+{
+  "pid": "public-hard-01",
+  "model": "MiniMax-M2.7",
+  "provider": "codex-cli",
+  "setting": "codex_minimax-m27",
+  "max_iters": 2,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    estop           : BOOL;\n    opeMode         : BOOL;\n    valveAStart     : BOOL;\n    valveBStart     : BOOL;\n    valveCStart     : BOOL;\n    valveDStart     : BOOL;\n    mixMotorStart   : BOOL;\n    autoStart       : BOOL;\n    processMode     : BOOL;\n    levelSensor     : INT;\n    mixMotorComplete: BOOL;\nEND_VAR\nVAR_OUTPUT\n    valveARun   : BOOL;\n    valveBRun   : BOOL;\n    valveCRun   : BOOL;\n    valveDRun   : BOOL;\n    mixMotorRun : BOOL;\nEND_VAR\nVAR\n    autoState      : INT;         (* 0=IDLE,1=FILL_A,2=FILL_B,3=FILL_C,4=MIXING,5=DRAIN *)\n    prev_autoStart : BOOL;\n    prev_estop     : BOOL;\n    prev_opeMode   : BOOL;\n    prev_valveAStart: BOOL;\n    prev_valveBStart: BOOL;\n    prev_valveCStart: BOOL;\n    prev_valveDStart: BOOL;\n    prev_mixMotorStart: BOOL;\n    prev_valveARun  : BOOL;\n    prev_valveBRun  : BOOL;\n    prev_valveCRun  : BOOL;\n    prev_valveDRun  : BOOL;\n    prev_mixMotorRun: BOOL;\n    prev_levelSensor: INT;\n    prev_mixMotorComplete: BOOL;\n    prev_autoState  : INT;\n    startHistoryFlag: BOOL;\nEND_VAR\n\n    (* --- Rising edge detection helpers --- *)\n    VAR risingAutoStart     : BOOL; risingAutoStart     := autoStart      AND NOT prev_autoStart;\n    VAR risingValveAStart   : BOOL; risingValveAStart   := valveAStart    AND NOT prev_valveAStart;\n    VAR risingValveBStart   : BOOL; risingValveBStart   := valveBStart    AND NOT prev_valveBStart;\n    VAR risingValveCStart   : BOOL; risingValveCStart   := valveCStart    AND NOT prev_valveCStart;\n    VAR risingValveDStart   : BOOL; risingValveDStart   := valveDStart    AND NOT prev_valveDStart;\n    VAR risingMixMotorStart : BOOL; risingMixMotorStart := mixMotorStart  AND NOT prev_mixMotorStart;\n    VAR risingMixMotorComplete: BOOL; risingMixMotorComplete := mixMotorComplete AND NOT prev_mixMotorComplete;\n\n    (* --- Start history flag: set on any start signal, stays set --- *)\n    IF valveAStart OR valveBStart OR valveCStart OR valveDStart OR\n       mixMotorStart OR autoStart THEN\n        startHistoryFlag := TRUE;\n    END_IF\n\n    (* ================================================================ *)\n    (*  S1  Emergency Stop: all equipment off                           *)\n    (* ================================================================ *)\n    IF NOT estop THEN\n        valveARun   := FALSE;\n        valveBRun   := FALSE;\n        valveCRun   := FALSE;\n        valveDRun   := FALSE;\n        mixMotorRun := FALSE;\n        autoState   := 0;\n    (* ================================================================ *)\n    (*  Manual Mode                                                     *)\n    (* ================================================================ *)\n    ELSIF NOT opeMode THEN\n        valveARun   := prev_valveARun   XOR risingValveAStart;\n        valveBRun   := prev_valveBRun   XOR risingValveBStart;\n        valveCRun   := prev_valveCRun   XOR risingValveCStart;\n        valveDRun   := prev_valveDRun   XOR risingValveDStart;\n        mixMotorRun := prev_mixMotorRun XOR risingMixMotorStart;\n        autoState   := 0;\n    (* ================================================================ *)\n    (*  Automatic Mode                                                  *)\n    (* ================================================================ *)\n    ELSE\n        (* N10-S14: first four scans with no start signal → all off *)\n        IF NOT startHistoryFlag THEN\n            valveARun   := FALSE;\n            valveBRun   := FALSE;\n            valveCRun   := FALSE;\n            valveDRun   := FALSE;\n            mixMotorRun := FALSE;\n            autoState   := 0;\n        ELSE\n            CASE autoState OF\n                (* ---- 0: IDLE, wait for autoStart rising edge ---- *)\n                0:  valveARun   := FALSE;\n                    valveBRun   := FALSE;\n                    valveCRun   := FALSE;\n                    valveDRun   := FALSE;\n                    mixMotorRun := FALSE;\n                    IF risingAutoStart THEN\n                        autoState := 1;\n                    END_IF\n\n                (* ---- 1: FILL A, open A until level >= 50 ---- *)\n                1:  valveARun   := (levelSensor < 50);\n                    valveBRun   := FALSE;\n                    valveCRun   := FALSE;\n                    valveDRun   := FALSE;\n                    mixMotorRun := FALSE;\n                    IF levelSensor >= 50 THEN\n                        autoState := 2;\n                    END_IF\n\n                (* ---- 2: FILL B, open B until level >= 80 ---- *)\n                2:  valveARun   := FALSE;\n                    valveBRun   := (levelSensor < 80);\n                    valveCRun   := FALSE;\n                    valveDRun   := FALSE;\n                    mixMotorRun := FALSE;\n                    IF levelSensor >= 80 THEN\n                        autoState := 3;\n                    END_IF\n\n                (* ---- 3: FILL C (processMode=TRUE) or MIX (processMode=FALSE) ---- *)\n                3:  IF processMode THEN\n                        valveARun   := FALSE;\n                        valveBRun   := FALSE;\n                        valveCRun   := (levelSensor < 100);\n                        valveDRun   := FALSE;\n                        mixMotorRun := FALSE;\n                        IF levelSensor >= 100 THEN\n                            autoState := 4;\n                        END_IF\n                    ELSE\n                        valveARun   := FALSE;\n                        valveBRun   := FALSE;\n                        valveCRun   := FALSE;\n                        valveDRun   := FALSE;\n                        mixMotorRun := TRUE;\n                        IF risingMixMotorComplete THEN\n                            autoState := 5;\n                        END_IF\n                    END_IF\n\n                (* ---- 4: MIXING, hold until mixMotorComplete rising edge ---- *)\n                4:  valveARun   := FALSE;\n                    valveBRun   := FALSE;\n                    valveCRun   := FALSE;\n                    valveDRun   := FALSE;\n                    mixMotorRun := TRUE;\n                    IF risingMixMotorComplete THEN\n                        autoState := 5;\n                    END_IF\n\n                (* ---- 5: DRAIN, open D then return to IDLE ---- *)\n                5:  valveARun   := FALSE;\n                    valveBRun   := FALSE;\n                    valveCRun   := FALSE;\n                    valveDRun   := TRUE;\n                    mixMotorRun := FALSE;\n                    autoState   := 0;\n            END_CASE\n        END_IF\n    END_IF\n\n    (* --- Update all previous-value variables for next scan --- *)\n    prev_autoStart       := autoStart;\n    prev_estop           := estop;\n    prev_opeMode         := opeMode;\n    prev_valveAStart     := valveAStart;\n    prev_valveBStart     := valveBStart;\n    prev_valveCStart     := valveCStart;\n    prev_valveDStart     := valveDStart;\n    prev_mixMotorStart   := mixMotorStart;\n    prev_valveARun       := valveARun;\n    prev_valveBRun       := valveBRun;\n    prev_valveCRun       := valveCRun;\n    prev_valveDRun       := valveDRun;\n    prev_mixMotorRun     := mixMotorRun;\n    prev_levelSensor     := levelSensor;\n    prev_mixMotorComplete:= mixMotorComplete;\n    prev_autoState       := autoState;\nEND_FUNCTION_BLOCK",
+      "compiles": false,
+      "tests_passed": 0,
+      "tests_total": 29,
+      "feedback": "静态检查或接口契约失败：\n第 181 行 [E_MISSING_END_POU] FUNCTION_BLOCK FB 缺少结束关键字\n第 1 行 [E_NO_POU] 没有找到 FUNCTION_BLOCK / FUNCTION / PROGRAM 定义\nLTL 检查：not_run。",
+      "prompt_tokens": 8964,
+      "completion_tokens": 2858,
+      "latency_s": 54.09399999998277,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "345c4fc7ae0195bc31a9f11a6163e798c42fc34d2513cf1fdb5b399dfd16a66c",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 181,
+            "code": "E_MISSING_END_POU",
+            "message": "FUNCTION_BLOCK FB 缺少结束关键字"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_NO_POU",
+            "message": "没有找到 FUNCTION_BLOCK / FUNCTION / PROGRAM 定义"
+          }
+        ],
+        "tests_total": 29,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态类型检查失败",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "classification": "candidate_static_error",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "345c4fc7ae0195bc31a9f11a6163e798c42fc34d2513cf1fdb5b399dfd16a66c",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.033836964,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    },
+    {
+      "idx": 1,
+      "code": "修复：把所有中间变量移到 VAR 区，去除内部嵌套 VAR 声明，保持题面接口不变。\nFUNCTION_BLOCK FB\nVAR_INPUT\n    estop             : BOOL;\n    opeMode           : BOOL;\n    valveAStart       : BOOL;\n    valveBStart       : BOOL;\n    valveCStart       : BOOL;\n    valveDStart       : BOOL;\n    mixMotorStart     : BOOL;\n    autoStart         : BOOL;\n    processMode       : BOOL;\n    levelSensor       : INT;\n    mixMotorComplete  : BOOL;\nEND_VAR\nVAR_OUTPUT\n    valveARun   : BOOL;\n    valveBRun   : BOOL;\n    valveCRun   : BOOL;\n    valveDRun   : BOOL;\n    mixMotorRun : BOOL;\nEND_VAR\nVAR\n    autoState           : INT;\n    prev_autoStart      : BOOL;\n    prev_estop          : BOOL;\n    prev_opeMode        : BOOL;\n    prev_valveAStart    : BOOL;\n    prev_valveBStart    : BOOL;\n    prev_valveCStart    : BOOL;\n    prev_valveDStart    : BOOL;\n    prev_mixMotorStart  : BOOL;\n    prev_valveARun      : BOOL;\n    prev_valveBRun      : BOOL;\n    prev_valveCRun      : BOOL;\n    prev_valveDRun      : BOOL;\n    prev_mixMotorRun    : BOOL;\n    prev_levelSensor    : INT;\n    prev_mixMotorComplete: BOOL;\n    prev_autoState      : INT;\n    startHistoryFlag    : BOOL;\n    risingAutoStart     : BOOL;\n    risingValveAStart   : BOOL;\n    risingValveBStart   : BOOL;\n    risingValveCStart   : BOOL;\n    risingValveDStart   : BOOL;\n    risingMixMotorStart : BOOL;\n    risingMixMotorComplete: BOOL;\nEND_VAR\n\n    risingAutoStart      := autoStart      AND NOT prev_autoStart;\n    risingValveAStart    := valveAStart    AND NOT prev_valveAStart;\n    risingValveBStart    := valveBStart    AND NOT prev_valveBStart;\n    risingValveCStart    := valveCStart    AND NOT prev_valveCStart;\n    risingValveDStart    := valveDStart    AND NOT prev_valveDStart;\n    risingMixMotorStart  := mixMotorStart  AND NOT prev_mixMotorStart;\n    risingMixMotorComplete := mixMotorComplete AND NOT prev_mixMotorComplete;\n\n    IF valveAStart OR valveBStart OR valveCStart OR valveDStart OR\n       mixMotorStart OR autoStart THEN\n        startHistoryFlag := TRUE;\n    END_IF;\n\n    IF NOT estop THEN\n        valveARun   := FALSE;\n        valveBRun   := FALSE;\n        valveCRun   := FALSE;\n        valveDRun   := FALSE;\n        mixMotorRun := FALSE;\n        autoState   := 0;\n    ELSIF prev_estop AND NOT estop THEN\n        valveARun   := FALSE;\n        valveBRun   := FALSE;\n        valveCRun   := FALSE;\n        valveDRun   := FALSE;\n        mixMotorRun := FALSE;\n    ELSIF NOT opeMode THEN\n        valveARun   := prev_valveARun   XOR risingValveAStart;\n        valveBRun   := prev_valveBRun   XOR risingValveBStart;\n        valveCRun   := prev_valveCRun   XOR risingValveCStart;\n        valveDRun   := prev_valveDRun   XOR risingValveDStart;\n        mixMotorRun := prev_mixMotorRun XOR risingMixMotorStart;\n        autoState   := 0;\n    ELSE\n        IF NOT startHistoryFlag OR (prev_opeMode AND NOT opeMode) THEN\n            valveARun   := FALSE;\n            valveBRun   := FALSE;\n            valveCRun   := FALSE;\n            valveDRun   := FALSE;\n            mixMotorRun := FALSE;\n            autoState   := 0;\n        ELSE\n            CASE autoState OF\n                0:\n                    valveARun   := FALSE;\n                    valveBRun   := FALSE;\n                    valveCRun   := FALSE;\n                    valveDRun   := FALSE;\n                    mixMotorRun := FALSE;\n                    IF risingAutoStart THEN\n                        autoState := 1;\n                    END_IF;\n                1:\n                    valveARun   := (levelSensor < 50);\n                    valveBRun   := FALSE;\n                    valveCRun   := FALSE;\n                    valveDRun   := FALSE;\n                    mixMotorRun := FALSE;\n                    IF levelSensor >= 50 THEN\n                        autoState := 2;\n                    END_IF;\n                2:\n                    valveARun   := FALSE;\n                    valveBRun   := (levelSensor < 80);\n                    valveCRun   := FALSE;\n                    valveDRun   := FALSE;\n                    mixMotorRun := FALSE;\n                    IF levelSensor >= 80 THEN\n                        autoState := 3;\n                    END_IF;\n                3:\n                    IF processMode THEN\n                        valveARun   := FALSE;\n                        valveBRun   := FALSE;\n                        valveCRun   := (levelSensor < 100);\n                        valveDRun   := FALSE;\n                        mixMotorRun := FALSE;\n                        IF levelSensor >= 100 THEN\n                            autoState := 4;\n                        END_IF;\n                    ELSE\n                        valveARun   := FALSE;\n                        valveBRun   := FALSE;\n                        valveCRun   := FALSE;\n                        valveDRun   := FALSE;\n                        mixMotorRun := TRUE;\n                        IF risingMixMotorComplete THEN\n                            autoState := 5;\n                        END_IF;\n                    END_IF;\n                4:\n                    valveARun   := FALSE;\n                    valveBRun   := FALSE;\n                    valveCRun   := FALSE;\n                    valveDRun   := FALSE;\n                    mixMotorRun := TRUE;\n                    IF risingMixMotorComplete THEN\n                        autoState := 5;\n                    END_IF;\n                5:\n                    valveARun   := FALSE;\n                    valveBRun   := FALSE;\n                    valveCRun   := FALSE;\n                    valveDRun   := TRUE;\n                    mixMotorRun := FALSE;\n                    autoState   := 0;\n            END_CASE;\n        END_IF;\n    END_IF;\n\n    prev_autoStart        := autoStart;\n    prev_estop            := estop;\n    prev_opeMode          := opeMode;\n    prev_valveAStart      := valveAStart;\n    prev_valveBStart      := valveBStart;\n    prev_valveCStart      := valveCStart;\n    prev_valveDStart      := valveDStart;\n    prev_mixMotorStart    := mixMotorStart;\n    prev_valveARun        := valveARun;\n    prev_valveBRun        := valveBRun;\n    prev_valveCRun        := valveCRun;\n    prev_valveDRun        := valveDRun;\n    prev_mixMotorRun      := mixMotorRun;\n    prev_levelSensor      := levelSensor;\n    prev_mixMotorComplete := mixMotorComplete;\n    prev_autoState        := autoState;\nEND_FUNCTION_BLOCK",
+      "compiles": false,
+      "tests_passed": 0,
+      "tests_total": 29,
+      "feedback": "静态检查或接口契约失败：\n第 1 行 [E_BAD_CHAR] 无法识别的字符 '修'\n第 1 行 [E_BAD_CHAR] 无法识别的字符 '复'\n第 1 行 [E_BAD_CHAR] 无法识别的字符 '：'\n第 1 行 [E_BAD_CHAR] 无法识别的字符 '把'\n第 1 行 [E_BAD_CHAR] 无法识别的字符 '所'\nLTL 检查：not_run。",
+      "prompt_tokens": 10730,
+      "completion_tokens": 2064,
+      "latency_s": 41.21900000004098,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "a50d3b657ec03dea87b7f4f2a417fe18cf072d505128d10b967e357f3044a5c6",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '修'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '复'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '：'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '把'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '所'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '有'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '中'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '间'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '变'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '量'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '移'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '到'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '区'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '，'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '去'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '除'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '内'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '部'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '嵌'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '套'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '声'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '明'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '，'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '保'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '持'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '题'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '面'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '接'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '口'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '不'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '变'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '。'"
+          }
+        ],
+        "tests_total": 29,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态类型检查失败",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "classification": "candidate_static_error",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "a50d3b657ec03dea87b7f4f2a417fe18cf072d505128d10b967e357f3044a5c6",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.031497774,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1794312159.476439,
+  "finished_at": 1794312254.88937,
+  "error": "",
+  "stop_reason": "max_candidates",
+  "run_signature": "",
+  "experiment_kind": "live",
+  "tests_total": 29,
+  "request_window_seconds": 451,
+  "prompt_version": "v2.5-task-specific-reset",
+  "solved": false,
+  "first_try": false,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 0.0,
+  "total_tokens": 24616,
+  "total_latency_s": 95.31300000002375,
+  "n_attempts": 2,
+  "job_done": true,
+  "study_plan_sha256": "5d34beeeeacd5265559418bf339d6cefa78c9bc504793ddbd387265486810ba8",
+  "complete_code": false
+}
