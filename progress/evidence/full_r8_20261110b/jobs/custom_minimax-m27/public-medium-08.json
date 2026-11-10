@@ -1,0 +1,229 @@
+{
+  "pid": "public-medium-08",
+  "model": "MiniMax-M2.7",
+  "provider": "custom",
+  "setting": "custom_minimax-m27",
+  "max_iters": 2,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    ipText : STRING(254);\nEND_VAR\nVAR_OUTPUT\n    ipValue : UDINT;\nEND_VAR\nVAR\n    i           : INT;\n    segmentCount: INT;\n    segmentValue: INT;\n    digitCount  : INT;\n    firstIsZero : BOOL;\n    isValid     : BOOL;\n    ch          : CHAR;\n    dotCount    : INT;\n    segValues   : ARRAY[0..3] OF INT;\nEND_VAR\n\n(* Initialisation *)\nipValue      := 0;\nisValid      := TRUE;\nsegmentCount := 0;\nsegmentValue := 0;\ndigitCount   := 0;\nfirstIsZero  := FALSE;\ndotCount     := 0;\n\n(* Scan the input string character by character *)\nFOR i := 1 TO LEN(ipText) DO\n    ch := MID(ipText, 1, i);\n\n    IF ch = '.' THEN\n        (* End of a segment *)\n        IF digitCount = 0 THEN\n            isValid := FALSE;\n        END_IF;\n\n        IF firstIsZero AND (digitCount > 1) THEN\n            isValid := FALSE;\n        END_IF;\n\n        IF segmentValue > 255 THEN\n            isValid := FALSE;\n        END_IF;\n\n        (* Store the parsed segment *)\n        segValues[segmentCount] := segmentValue;\n        segmentCount := segmentCount + 1;\n\n        (* Prepare for the next segment *)\n        segmentValue := 0;\n        digitCount   := 0;\n        firstIsZero  := FALSE;\n\n        dotCount := dotCount + 1;\n        IF dotCount > 3 THEN\n            isValid := FALSE;\n        END_IF;\n\n    ELSE\n        (* Must be a decimal digit *)\n        IF (ch >= '0') AND (ch <= '9') THEN\n            segmentValue := segmentValue * 10 + (BYTE_TO_INT(CHAR_TO_BYTE(ch)) - 48);\n            digitCount   := digitCount + 1;\n\n            (* Detect leading zero *)\n            IF digitCount = 1 AND ch = '0' THEN\n                firstIsZero := TRUE;\n            END_IF;\n\n            (* Reject additional digits after a leading zero *)\n            IF firstIsZero AND (digitCount > 1) THEN\n                isValid := FALSE;\n            END_IF;\n\n            (* Early overflow detection *)\n            IF segmentValue > 255 THEN\n                isValid := FALSE;\n            END_IF;\n        ELSE\n            isValid := FALSE;\n        END_IF;\n    END_IF;\nEND_FOR;\n\n(* Process the last segment (if any) *)\nIF digitCount > 0 THEN\n    IF firstIsZero AND (digitCount > 1) THEN\n        isValid := FALSE;\n    END_IF;\n\n    IF segmentValue > 255 THEN\n        isValid := FALSE;\n    END_IF;\n\n    segValues[segmentCount] := segmentValue;\n    segmentCount := segmentCount + 1;\nELSE\n    (* No characters after the last dot (or empty string) → invalid *)\n    IF segmentCount < 4 THEN\n        isValid := FALSE;\n    END_IF;\nEND_IF;\n\n(* Verify the correct number of segments and dots *)\nIF segmentCount <> 4 THEN\n    isValid := FALSE;\nEND_IF;\n\nIF dotCount <> 3 THEN\n    isValid := FALSE;\nEND_IF;\n\n(* Assemble the IPv4 address in network byte order or set 0 for invalid input *)\nIF isValid THEN\n    ipValue := SHL(UDINT(segValues[0]), 24) OR\n               SHL(UDINT(segValues[1]), 16) OR\n               SHL(UDINT(segValues[2]),  8) OR\n               UDINT(segValues[3]);\nELSE\n    ipValue := 0;\nEND_IF;\n\nEND_FUNCTION_BLOCK",
+      "compiles": false,
+      "tests_passed": 0,
+      "tests_total": 16,
+      "feedback": "静态检查或接口契约失败：\n第 31 行 [E_TYPE_MISMATCH] 类型不匹配：STRING 不能赋给 CHAR\n第 33 行 [E_COMPARE_TYPE] 比较的两边类型不可比：CHAR 与 STRING\n第 63 行 [E_COMPARE_TYPE] 比较的两边类型不可比：CHAR 与 STRING\n第 63 行 [E_COMPARE_TYPE] 比较的两边类型不可比：CHAR 与 STRING\n第 68 行 [E_COMPARE_TYPE] 比较的两边类型不可比：CHAR 与 STRING\nLTL 检查：not_run。",
+      "prompt_tokens": 1029,
+      "completion_tokens": 7961,
+      "latency_s": 127.51600000000326,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "687a417591e2d8a9683e7b4a3ccf873224822d50df524ef77e635334db265d41",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 31,
+            "code": "E_TYPE_MISMATCH",
+            "message": "类型不匹配：STRING 不能赋给 CHAR"
+          },
+          {
+            "level": "error",
+            "line": 33,
+            "code": "E_COMPARE_TYPE",
+            "message": "比较的两边类型不可比：CHAR 与 STRING"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_COMPARE_TYPE",
+            "message": "比较的两边类型不可比：CHAR 与 STRING"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_COMPARE_TYPE",
+            "message": "比较的两边类型不可比：CHAR 与 STRING"
+          },
+          {
+            "level": "error",
+            "line": 68,
+            "code": "E_COMPARE_TYPE",
+            "message": "比较的两边类型不可比：CHAR 与 STRING"
+          },
+          {
+            "level": "error",
+            "line": 117,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'UDINT'"
+          },
+          {
+            "level": "error",
+            "line": 118,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'UDINT'"
+          },
+          {
+            "level": "error",
+            "line": 119,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'UDINT'"
+          },
+          {
+            "level": "error",
+            "line": 120,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'UDINT'"
+          }
+        ],
+        "tests_total": 16,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态类型检查失败",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "classification": "candidate_static_error",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "687a417591e2d8a9683e7b4a3ccf873224822d50df524ef77e635334db265d41",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.054536307,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    },
+    {
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    ipText : STRING(254);\nEND_VAR\nVAR_OUTPUT\n    ipValue : UDINT;\nEND_VAR\nVAR\n    i           : INT;\n    segmentCount: INT;\n    segmentValue: INT;\n    digitCount  : INT;\n    firstIsZero : BOOL;\n    isValid     : BOOL;\n    ch          : STRING(1);\n    dotCount    : INT;\n    segValues   : ARRAY[0..3] OF INT;\nEND_VAR\n\n(* Initialisation *)\nipValue      := 0;\nisValid      := TRUE;\nsegmentCount := 0;\nsegmentValue := 0;\ndigitCount   := 0;\nfirstIsZero  := FALSE;\ndotCount     := 0;\n\n(* Scan the input string character by character *)\nFOR i := 1 TO LEN(ipText) DO\n    ch := MID(ipText, 1, i);\n\n    IF ch = '.' THEN\n        (* End of a segment *)\n        IF digitCount = 0 THEN\n            isValid := FALSE;\n        END_IF;\n\n        IF firstIsZero AND (digitCount > 1) THEN\n            isValid := FALSE;\n        END_IF;\n\n        IF segmentValue > 255 THEN\n            isValid := FALSE;\n        END_IF;\n\n        (* Store the parsed segment *)\n        segValues[segmentCount] := segmentValue;\n        segmentCount := segmentCount + 1;\n\n        (* Prepare for the next segment *)\n        segmentValue := 0;\n        digitCount   := 0;\n        firstIsZero  := FALSE;\n\n        dotCount := dotCount + 1;\n        IF dotCount > 3 THEN\n            isValid := FALSE;\n        END_IF;\n\n    ELSIF (ch >= '0') AND (ch <= '9') THEN\n        (* Must be a decimal digit *)\n        segmentValue := segmentValue * 10 + (BYTE_TO_INT(CHAR_TO_BYTE(MID(ch,1,1))) - 48);\n        digitCount   := digitCount + 1;\n\n        (* Detect leading zero *)\n        IF digitCount = 1 AND ch = '0' THEN\n            firstIsZero := TRUE;\n        END_IF;\n\n        (* Reject additional digits after a leading zero *)\n        IF firstIsZero AND (digitCount > 1) THEN\n            isValid := FALSE;\n        END_IF;\n\n        (* Early overflow detection *)\n        IF segmentValue > 255 THEN\n            isValid := FALSE;\n        END_IF;\n    ELSE\n        isValid := FALSE;\n    END_IF;\nEND_FOR;\n\n(* Process the last segment (if any) *)\nIF digitCount > 0 THEN\n    IF firstIsZero AND (digitCount > 1) THEN\n        isValid := FALSE;\n    END_IF;\n\n    IF segmentValue > 255 THEN\n        isValid := FALSE;\n    END_IF;\n\n    segValues[segmentCount] := segmentValue;\n    segmentCount := segmentCount + 1;\nELSE\n    (* No characters after the last dot (or empty string) → invalid *)\n    IF segmentCount < 4 THEN\n        isValid := FALSE;\n    END_IF;\nEND_IF;\n\n(* Verify the correct number of segments and dots *)\nIF segmentCount <> 4 THEN\n    isValid := FALSE;\nEND_IF;\n\nIF dotCount <> 3 THEN\n    isValid := FALSE;\nEND_IF;\n\n(* Assemble the IPv4 address in network byte order or set 0 for invalid input *)\nIF isValid THEN\n    ipValue := SHL(UDINT(segValues[0]), 24) OR\n               SHL(UDINT(segValues[1]), 16) OR\n               SHL(UDINT(segValues[2]),  8) OR\n               UDINT(segValues[3]);\nELSE\n    ipValue := 0;\nEND_IF;\n\nEND_FUNCTION_BLOCK",
+      "compiles": false,
+      "tests_passed": 0,
+      "tests_total": 16,
+      "feedback": "静态检查或接口契约失败：\n第 115 行 [E_UNKNOWN_FUNC] 调用了未知函数/功能块 'UDINT'\n第 116 行 [E_UNKNOWN_FUNC] 调用了未知函数/功能块 'UDINT'\n第 117 行 [E_UNKNOWN_FUNC] 调用了未知函数/功能块 'UDINT'\n第 118 行 [E_UNKNOWN_FUNC] 调用了未知函数/功能块 'UDINT'\nLTL 检查：not_run。",
+      "prompt_tokens": 1966,
+      "completion_tokens": 1173,
+      "latency_s": 18.84399999998277,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "23386acc0653e1e60da50cb1442b75f3dbf116901e4d4b2df4b05742b9ba9ada",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 115,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'UDINT'"
+          },
+          {
+            "level": "error",
+            "line": 116,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'UDINT'"
+          },
+          {
+            "level": "error",
+            "line": 117,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'UDINT'"
+          },
+          {
+            "level": "error",
+            "line": 118,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'UDINT'"
+          }
+        ],
+        "tests_total": 16,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态类型检查失败",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "classification": "candidate_static_error",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "23386acc0653e1e60da50cb1442b75f3dbf116901e4d4b2df4b05742b9ba9ada",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.011045622,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1794329848.4991624,
+  "finished_at": 1794329994.8702705,
+  "error": "",
+  "stop_reason": "max_candidates",
+  "run_signature": "",
+  "experiment_kind": "live",
+  "tests_total": 16,
+  "request_window_seconds": 451,
+  "prompt_version": "v2.5-task-specific-reset",
+  "solved": false,
+  "first_try": false,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 0.0,
+  "total_tokens": 12129,
+  "total_latency_s": 146.35999999998603,
+  "n_attempts": 2,
+  "job_done": true,
+  "study_plan_sha256": "5d34beeeeacd5265559418bf339d6cefa78c9bc504793ddbd387265486810ba8",
+  "complete_code": true
+}
