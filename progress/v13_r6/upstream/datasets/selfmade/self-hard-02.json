@@ -1,0 +1,741 @@
+{
+  "pid": "self-hard-02",
+  "source": "selfmade",
+  "difficulty": "hard",
+  "title": "批次工艺阶段与运行时长统计（无外部时钟）",
+  "requirements": "写一个功能块 FB，管理一个间歇反应釜的批次生命周期。\n约定：初始状态 (phase, elapsed, timeout) = (0, 0, FALSE)；maxDuration 为正整数、单位为扫描周期（拍）。每个扫描周期按**固定优先级**判定：\n1. **中止优先**：abortBtn 有效即进入 phase = 9，保留 elapsed 与 timeout 原值；\n2. **新启动沿次之**：startBtn 的上升沿开始新批次——phase := 1、elapsed := 0、timeout := FALSE，启动这一拍不计数；同一拍既有中止又有启动沿时按中止处理，并且这个启动沿当拍被消耗掉（要重新启动必须松开再按）；\n3. **运行计数最后**：上一拍 phase 为 1 或 2 时先把 elapsed 加 1；若本拍 elapsed 达到 maxDuration，则 timeout := TRUE 并进入 phase = 3（完成），该判定优先于升温达标；否则 phase = 1 且 pv **达到或超过** setpoint 时进入 phase = 2（保温）；\n4. phase = 3（完成）与 phase = 9（已中止）都是终止态：没有中止命令或新启动沿时保持阶段、elapsed 与 timeout。中止可将完成态切为已中止态，但计数与超时标志保持。只有无中止命令的新启动沿能重新开始运行。maxDuration 是本拍门槛，停在终止态时即使该输入改变也不重新判超时；\n5. **不得使用任何系统时钟**（无 TIME/TON 等计时器），时长只能来自扫描周期计数。",
+  "variables": [
+    {
+      "name": "startBtn",
+      "data_type": "BOOL",
+      "description": "批次开始（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "abortBtn",
+      "data_type": "BOOL",
+      "description": "中止按钮（直接中止批次）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "setpoint",
+      "data_type": "REAL",
+      "description": "工艺设定值",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "pv",
+      "data_type": "REAL",
+      "description": "过程测量值",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "maxDuration",
+      "data_type": "INT",
+      "description": "本拍超时门槛（正整数，单位：扫描拍）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "elapsed",
+      "data_type": "INT",
+      "description": "本批次已经计入的扫描拍数，启动拍为 0",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "phase",
+      "data_type": "INT",
+      "description": "阶段号：0=空闲 1=升温 2=保温 3=完成 9=已中止",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "timeout",
+      "data_type": "BOOL",
+      "description": "超时标志",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "本拍未中止且无启动沿时，若上一拍为运行态则累计拍数恰增 1，否则拍数保持；启动和中止分别按 S5、S3 处理。",
+      "ltl": "G((!abortBtn AND !rising(startBtn)) -> ((prev((phase = 1) OR (phase = 2)) -> elapsed = prev(elapsed) + 1) AND (!prev((phase = 1) OR (phase = 2)) -> elapsed = prev(elapsed))))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "本拍未中止且无新启动沿：上一拍为运行态时，以本拍累计拍数和门槛判超时，达到或超过即置位并进入完成态；上一拍不在运行态时保持超时标志。",
+      "ltl": "G((!abortBtn AND !rising(startBtn)) -> ((prev((phase = 1) OR (phase = 2)) -> ((timeout <-> (elapsed >= maxDuration)) AND (timeout -> phase = 3))) AND (!prev((phase = 1) OR (phase = 2)) -> (timeout <-> prev(timeout)))))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "中止命令有效即进入中止态，并保持上一拍的累计拍数及超时标志；与启动上升沿同拍仍以中止优先。",
+      "ltl": "G(abortBtn -> (phase = 9 AND elapsed = prev(elapsed) AND (timeout <-> prev(timeout))))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "无中止、无新启动沿时，上一拍非运行态保持原阶段。空闲保持 0，完成保持 3，中止保持 9；完成后若收到中止命令按 S3 转到 9，重新启动按 S5 处理。",
+      "ltl": "G((!abortBtn AND !rising(startBtn) AND !prev((phase = 1) OR (phase = 2))) -> phase = prev(phase))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "没有中止命令时，启动上升沿开始新批次并清零计数及超时标志；中止优先。",
+      "ltl": "G((rising(startBtn) AND NOT abortBtn) -> (elapsed = 0 AND NOT timeout AND phase = 1))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "运行计数拍若尚未超时，升温阶段在 pv 达到或超过设定值时进入保温，否则继续升温；保温阶段始终维持到超时、中止或新启动。",
+      "ltl": "G((!abortBtn AND !rising(startBtn) AND prev((phase = 1) OR (phase = 2)) AND elapsed < maxDuration) -> (((prev(phase = 2) OR pv >= setpoint) -> phase = 2) AND ((prev(phase = 1) AND pv < setpoint) -> phase = 1)))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "b1",
+      "inputs": {
+        "startBtn": true,
+        "pv": 20,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 5
+      },
+      "expected": {
+        "phase": 1,
+        "elapsed": 0,
+        "timeout": false
+      },
+      "note": "启动 → 升温，计时从 0 开始（启动这一拍不计数）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b2",
+      "inputs": {
+        "startBtn": true,
+        "pv": 60,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 5
+      },
+      "expected": {
+        "phase": 1,
+        "elapsed": 1
+      },
+      "note": "按住不放没有新上升沿：按运行计数处理，升温中累加计时",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b3",
+      "inputs": {
+        "startBtn": false,
+        "pv": 100,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 5
+      },
+      "expected": {
+        "phase": 2,
+        "elapsed": 2,
+        "timeout": false
+      },
+      "note": "【边界】pv 恰好等于 setpoint → 进入保温",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b4",
+      "inputs": {
+        "startBtn": false,
+        "pv": 101,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 5
+      },
+      "expected": {
+        "phase": 2,
+        "elapsed": 3
+      },
+      "note": "保温继续计时",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b5",
+      "inputs": {
+        "startBtn": false,
+        "pv": 101,
+        "abortBtn": true,
+        "setpoint": 100,
+        "maxDuration": 5
+      },
+      "expected": {
+        "phase": 9,
+        "elapsed": 3,
+        "timeout": false
+      },
+      "note": "【安全】中止优先：立刻进 9，elapsed 与 timeout 都保留原值",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b6",
+      "inputs": {
+        "startBtn": true,
+        "pv": 30,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 3
+      },
+      "expected": {
+        "phase": 1,
+        "elapsed": 0,
+        "timeout": false
+      },
+      "note": "重新启动：计时与超时标志复位",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b7",
+      "inputs": {
+        "startBtn": false,
+        "pv": 40,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 3
+      },
+      "expected": {
+        "elapsed": 1,
+        "phase": 1
+      },
+      "note": "计时 1",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b8",
+      "inputs": {
+        "startBtn": false,
+        "pv": 40,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 3
+      },
+      "expected": {
+        "elapsed": 2,
+        "phase": 1
+      },
+      "note": "计时 2",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b9",
+      "inputs": {
+        "startBtn": false,
+        "pv": 40,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 3
+      },
+      "expected": {
+        "timeout": true,
+        "phase": 3,
+        "elapsed": 3
+      },
+      "note": "计时到 3 = maxDuration → timeout 当拍置位并进 phase = 3（完成）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b10",
+      "inputs": {
+        "startBtn": false,
+        "pv": 40,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 3
+      },
+      "expected": {
+        "phase": 3,
+        "elapsed": 3,
+        "timeout": true
+      },
+      "note": "【终止态】完成态冻结：没有新启动沿就不动，计时不再累加",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b11",
+      "inputs": {
+        "startBtn": false,
+        "pv": 40,
+        "abortBtn": true,
+        "setpoint": 100,
+        "maxDuration": 3
+      },
+      "expected": {
+        "phase": 9,
+        "elapsed": 3,
+        "timeout": true
+      },
+      "note": "【验收】超时后再中止：进 9，保留超时标志与已运行拍数",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b12",
+      "inputs": {
+        "startBtn": false,
+        "pv": 100,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 3
+      },
+      "expected": {
+        "phase": 9,
+        "elapsed": 3,
+        "timeout": true
+      },
+      "note": "中止后即使升温条件满足也不得自动继续",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b13",
+      "inputs": {
+        "startBtn": true,
+        "pv": 20,
+        "abortBtn": true,
+        "setpoint": 100,
+        "maxDuration": 3
+      },
+      "expected": {
+        "phase": 9,
+        "elapsed": 3,
+        "timeout": true
+      },
+      "note": "【验收】同一拍既有启动沿又有中止 → 中止优先，且该启动沿当拍被消耗",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b14",
+      "inputs": {
+        "startBtn": true,
+        "pv": 20,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 3
+      },
+      "expected": {
+        "phase": 9,
+        "elapsed": 3,
+        "timeout": true
+      },
+      "note": "【验收】上拍被消耗的启动沿不会在下一拍复活：仍停在 9",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b15",
+      "inputs": {
+        "startBtn": false,
+        "pv": 20,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 3
+      },
+      "expected": {
+        "phase": 9,
+        "elapsed": 3,
+        "timeout": true
+      },
+      "note": "松开按钮：仍然停在 9（重新启动必须松开再按）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b16",
+      "inputs": {
+        "startBtn": true,
+        "pv": 100,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 1
+      },
+      "expected": {
+        "phase": 1,
+        "elapsed": 0,
+        "timeout": false
+      },
+      "note": "【验收】松开后重新按 → 新批次：阶段回 1、计数与超时清零",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b17",
+      "inputs": {
+        "startBtn": false,
+        "pv": 100,
+        "abortBtn": false,
+        "setpoint": 100,
+        "maxDuration": 1
+      },
+      "expected": {
+        "phase": 3,
+        "timeout": true,
+        "elapsed": 1
+      },
+      "note": "【验收】同一拍既升温达标又到时限 → 超时优先，进 phase = 3",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b18",
+      "inputs": {
+        "startBtn": true,
+        "abortBtn": false,
+        "setpoint": 100,
+        "pv": 20,
+        "maxDuration": 3
+      },
+      "expected": {
+        "phase": 1,
+        "elapsed": 0,
+        "timeout": false
+      },
+      "note": "重启一批，准备运行一拍后中止。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b19",
+      "inputs": {
+        "startBtn": false,
+        "abortBtn": false,
+        "setpoint": 100,
+        "pv": 20,
+        "maxDuration": 3
+      },
+      "expected": {
+        "phase": 1,
+        "elapsed": 1,
+        "timeout": false
+      },
+      "note": "运行一拍，尚未达到三拍门槛。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b20",
+      "inputs": {
+        "startBtn": false,
+        "abortBtn": true,
+        "setpoint": 100,
+        "pv": 20,
+        "maxDuration": 3
+      },
+      "expected": {
+        "phase": 9,
+        "elapsed": 1,
+        "timeout": false
+      },
+      "note": "中止保留 1 拍和未超时状态。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b21",
+      "inputs": {
+        "startBtn": false,
+        "abortBtn": false,
+        "setpoint": 100,
+        "pv": 20,
+        "maxDuration": 1
+      },
+      "expected": {
+        "phase": 9,
+        "elapsed": 1,
+        "timeout": false
+      },
+      "note": "中止后把本拍门槛降为 1；终止态冻结，不能因此超时。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b22",
+      "inputs": {
+        "startBtn": true,
+        "abortBtn": false,
+        "setpoint": 100,
+        "pv": 20,
+        "maxDuration": 3
+      },
+      "expected": {
+        "phase": 1,
+        "elapsed": 0,
+        "timeout": false
+      },
+      "note": "新启动沿后重新开始，启动拍不计数。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b23",
+      "inputs": {
+        "startBtn": false,
+        "abortBtn": false,
+        "setpoint": 100,
+        "pv": 20,
+        "maxDuration": 5
+      },
+      "expected": {
+        "phase": 0,
+        "elapsed": 0,
+        "timeout": false
+      },
+      "note": "独立新实例上电后无命令，保持空闲 0。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true,
+      "group": "phase-boundaries"
+    },
+    {
+      "tc_id": "b24",
+      "inputs": {
+        "startBtn": true,
+        "abortBtn": false,
+        "setpoint": 100,
+        "pv": 100,
+        "maxDuration": 5
+      },
+      "expected": {
+        "phase": 1,
+        "elapsed": 0,
+        "timeout": false
+      },
+      "note": "即使温度已到门槛，启动当拍只进升温阶段且不计数。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true,
+      "group": "phase-boundaries"
+    },
+    {
+      "tc_id": "b25",
+      "inputs": {
+        "startBtn": true,
+        "abortBtn": false,
+        "setpoint": 100,
+        "pv": 100,
+        "maxDuration": 5
+      },
+      "expected": {
+        "phase": 2,
+        "elapsed": 1,
+        "timeout": false
+      },
+      "note": "按钮保持不产生新沿；等于设定值且未超时，当拍进入保温。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true,
+      "group": "phase-boundaries"
+    },
+    {
+      "tc_id": "b26",
+      "inputs": {
+        "startBtn": false,
+        "abortBtn": false,
+        "setpoint": 100,
+        "pv": 20,
+        "maxDuration": 5
+      },
+      "expected": {
+        "phase": 2,
+        "elapsed": 2,
+        "timeout": false
+      },
+      "note": "保温后温度回落到设定值以下，应继续保温。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true,
+      "group": "phase-boundaries"
+    },
+    {
+      "tc_id": "b27",
+      "group": "counter-width",
+      "mode": "sequence",
+      "inputs": {
+        "startBtn": true,
+        "abortBtn": false,
+        "setpoint": 100,
+        "pv": 20,
+        "maxDuration": 256
+      },
+      "expected": {
+        "phase": 1,
+        "elapsed": 0,
+        "timeout": false
+      },
+      "cycles": 1,
+      "init": {},
+      "const_inputs": {},
+      "expect_full": true,
+      "note": "从公开启动沿开始，启动当拍不累计。"
+    },
+    {
+      "tc_id": "b28",
+      "group": "counter-width",
+      "mode": "sequence",
+      "inputs": {
+        "startBtn": false,
+        "abortBtn": false,
+        "setpoint": 100,
+        "pv": 20,
+        "maxDuration": 256
+      },
+      "expected": {
+        "phase": 1,
+        "elapsed": 255,
+        "timeout": false
+      },
+      "cycles": 255,
+      "init": {},
+      "const_inputs": {},
+      "expect_full": true,
+      "note": "连续255个运行拍，仍未达到256拍的门槛。"
+    },
+    {
+      "tc_id": "b29",
+      "group": "counter-width",
+      "mode": "sequence",
+      "inputs": {
+        "startBtn": false,
+        "abortBtn": false,
+        "setpoint": 100,
+        "pv": 20,
+        "maxDuration": 256
+      },
+      "expected": {
+        "phase": 3,
+        "elapsed": 256,
+        "timeout": true
+      },
+      "cycles": 1,
+      "init": {},
+      "const_inputs": {},
+      "expect_full": true,
+      "note": "第256个运行拍应完成，8位中间计数器会在此回绕。"
+    }
+  ],
+  "provenance": {
+    "note": "本题是'扫描周期计数 vs 真实时钟'的经典区分点，在控制系统里两者语义不同，必须按题面要求。",
+    "source_record": "sources/index.json#self-hard-02",
+    "historical_origin": "流程行业赛题的间歇反应工位普遍要求'升温—保温—完成'三阶段以及批次时长统计；判断题面是否允许用 TON 是常见考点。",
+    "historical_review": "人工审核：题面第 7 条明确禁用时间类型，否则不同模型会走'用 TON 实现'的分歧路径，导致测试不可比。",
+    "historical_source_type": "自主构思 / 行业经验改编",
+    "historical_adaptation": "显式禁止计时器，要求用扫描周期计数实现，以考察 LLM 对 PLC 扫描周期语义的理解（这是纯软件工程师最容易忽略的一点）。",
+    "source_type": "自建教学题",
+    "attribution": "上游自述为行业场景启发；缺少可独立核验的外部题号或标准条款。",
+    "independent_process_review": "包内未见可核验的逐题独立签署"
+  },
+  "language": "zh",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_inputs": {}
+}

@@ -1,0 +1,2060 @@
+{
+  "pid": "public-hard-02",
+  "source": "public",
+  "difficulty": "hard",
+  "title": "Flexible Processing Control",
+  "requirements": "An automated production line consists of 5 workstations: numbered 1# to 5# from left to right. The 1# station is used for raw material loading, stations 2# to 4# are used for product processing, and the 5# station is used for finished product output and storage.\nThere is a motor in the production line, responsible for moving the product from one workstation to the next. Each workstation has a sensor (used to detect if the product has arrived).\nEach product has a different sequence and number of processing steps, specified by the process sequence 'processSequence'. The processSequence is an array type, storing the sequence numbers of the workstations, and the system automatically sends the raw materials to the corresponding workstation for processing based on the station number.\nControl requirements:\nAt the start of production, when the sensor at the 1# station (sensor1) detects the raw material, the start button at the 1# station (station1Start) is pressed. The system queries the first element of the process sequence 'processSequence', starts the conveyor to move the raw material to the corresponding workstation, and stops after delivery. Upon receiving the processing completion signal from the corresponding workstation (station2Complete to station4Complete), it continues to query the next element of the process sequence 'processSequence', determines the direction of the conveyor, and starts the conveyor (conveyorLeft, conveyorRight). This continues until the product is delivered to the 5# workstation.\n\nprocessLength specifies the active sequence length, from 1 through 8, starting at processSequence[1]. The final active entry is output station 5; other active entries are processing stations 2 through 4. The caller supplies a sequence satisfying this contract.",
+  "variables": [
+    {
+      "name": "processLength",
+      "data_type": "USINT",
+      "description": "Active process-sequence length, 1..8; the final active entry must be station 5.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "sensor1",
+      "data_type": "BOOL",
+      "description": "Sensor at 1# station",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "sensor2",
+      "data_type": "BOOL",
+      "description": "Sensor at 2# station",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "sensor3",
+      "data_type": "BOOL",
+      "description": "Sensor at 3# station",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "sensor4",
+      "data_type": "BOOL",
+      "description": "Sensor at 4# station",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "sensor5",
+      "data_type": "BOOL",
+      "description": "Sensor at 5# station",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "station1Start",
+      "data_type": "BOOL",
+      "description": "Start button at 1# station",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "station2Complete",
+      "data_type": "BOOL",
+      "description": "Processing completion signal at 2# station",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "station3Complete",
+      "data_type": "BOOL",
+      "description": "Processing completion signal at 3# station",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "station4Complete",
+      "data_type": "BOOL",
+      "description": "Processing completion signal at 4# station",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "processSequence",
+      "data_type": "ARRAY[1..8] OF USINT",
+      "description": "Processing sequence",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "conveyorLeft",
+      "data_type": "BOOL",
+      "description": "Conveyor turns left",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "conveyorRight",
+      "data_type": "BOOL",
+      "description": "Conveyor turns right",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "两条输送带任何时候都不得同时输出（方向互斥）。",
+      "ltl": "G(!(conveyorLeft AND conveyorRight))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "输入契约内，观察器判定空闲时输送带静止。",
+      "ltl": "G(__spec_contract AND __spec_idle -> NOT conveyorLeft AND NOT conveyorRight)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "输入契约内，等待加工完成时输送带静止。",
+      "ltl": "G(__spec_contract AND __spec_wait -> NOT conveyorLeft AND NOT conveyorRight)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "输入契约内，下一目标在右侧且未到位时正转。",
+      "ltl": "G(__spec_contract AND __spec_right -> conveyorRight AND NOT conveyorLeft)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "输入契约内，下一目标在左侧且未到位时反转。",
+      "ltl": "G(__spec_contract AND __spec_left -> conveyorLeft AND NOT conveyorRight)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "当前工位完成信号上升沿推进一工序后，输送输出须符合下一目标。只检验可观察效果，不断言私有 idx。",
+      "ltl": "G(__spec_contract AND __spec_complete -> conveyorLeft = __spec_left AND conveyorRight = __spec_right)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S7",
+      "text": "输入契约内，有未到达的不同目标时必须输出一个输送方向。",
+      "ltl": "G(__spec_contract AND (__spec_left OR __spec_right) -> conveyorLeft OR conveyorRight)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "N10-S8",
+      "text": "11.10补充：合法工序中输送方向与本站、目标站的相对位置一致；目标仍为本站时两个方向都关闭。",
+      "ltl": "G((__spec_contract -> ((conveyorLeft <-> __spec_left) AND (conveyorRight <-> __spec_right))))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S9",
+      "text": "11.10补充：上电首拍的路线长度不在 1..8 时，拒绝启动，传送带两向都停。",
+      "ltl": "G((NOT prev(TRUE) AND (processLength < 1 OR processLength > 8)) -> (NOT conveyorLeft AND NOT conveyorRight))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "h02-1",
+      "inputs": {
+        "sensor1": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "1# 有料但没按启动 → 输送带不动（负例）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-2",
+      "inputs": {
+        "sensor1": true,
+        "station1Start": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "启动 → 首工序 2# 在右侧，当拍正转",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-3",
+      "inputs": {
+        "sensor2": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "产品到 2# 传感器 → 输送带停（承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-4",
+      "inputs": {
+        "sensor2": true,
+        "station2Complete": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "2# 加工完成 → 下一工序 3#，当拍正转",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-5",
+      "inputs": {
+        "sensor3": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "产品到 3# → 输送带停（承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-6",
+      "inputs": {
+        "sensor3": true,
+        "station3Complete": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "3# 加工完成 → 下一工序是 5#，跳过 4# 正转",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-7",
+      "inputs": {
+        "sensor4": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "途经 4# 的传感器不改变输送状态（负例，承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-8",
+      "inputs": {
+        "sensor5": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "产品到 5# 出库站 → 输送带停，流程结束",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-9",
+      "inputs": {
+        "sensor1": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "流程结束后 1# 又有料但没按启动 → 不重复动作（负例，承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-10",
+      "inputs": {
+        "sensor1": true,
+        "station1Start": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "换序列后再启动 → 首工序 4# 在右侧，正转",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          4,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-11",
+      "inputs": {
+        "sensor4": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "产品到 4# → 停（承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          4,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-12",
+      "inputs": {
+        "sensor4": true,
+        "station4Complete": true
+      },
+      "expected": {
+        "conveyorLeft": true,
+        "conveyorRight": false
+      },
+      "note": "4# 完成 → 下一工序 2# 在左侧，改反转（方向判定关键用例）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          4,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-13",
+      "inputs": {
+        "sensor2": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "反转送到 2# → 停（承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          4,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-14",
+      "inputs": {
+        "sensor2": true,
+        "station2Complete": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "2# 完成 → 下一工序 5#，改回正转",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          4,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-15",
+      "inputs": {
+        "sensor5": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "到 5# 出库 → 输送带停（承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          4,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-16",
+      "inputs": {
+        "sensor1": true,
+        "station1Start": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "processLength=0（下边界非法）→ 不启动（负例）",
+      "const_inputs": {
+        "processLength": 0,
+        "processSequence": [
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-17",
+      "inputs": {
+        "sensor1": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "松开启动按钮后仍不动作（负例，承接上一条）",
+      "const_inputs": {
+        "processLength": 0,
+        "processSequence": [
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-18",
+      "inputs": {
+        "sensor1": true,
+        "station1Start": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "processLength=1，唯一工序就是 5# → 直接正转（下边界合法）",
+      "const_inputs": {
+        "processLength": 1,
+        "processSequence": [
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-19",
+      "inputs": {
+        "sensor5": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "一步送到 5# → 停（承接上一条）",
+      "const_inputs": {
+        "processLength": 1,
+        "processSequence": [
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-20",
+      "inputs": {
+        "sensor1": true,
+        "station1Start": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "processLength=9（上边界越界）→ 不启动（负例）",
+      "const_inputs": {
+        "processLength": 9,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-21",
+      "inputs": {
+        "sensor1": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "松开启动按钮后仍不动作（负例，承接上一条）",
+      "const_inputs": {
+        "processLength": 9,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-22",
+      "inputs": {
+        "sensor1": true,
+        "station1Start": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "末项不是 5# 的非法序列：仍按首项 2# 正转",
+      "const_inputs": {
+        "processLength": 2,
+        "processSequence": [
+          2,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-23",
+      "inputs": {
+        "sensor2": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "产品到 2# → 停（承接上一条）",
+      "const_inputs": {
+        "processLength": 2,
+        "processSequence": [
+          2,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-24",
+      "inputs": {
+        "sensor2": true,
+        "station2Complete": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "2# 完成 → 下一工序 3#，正转",
+      "const_inputs": {
+        "processLength": 2,
+        "processSequence": [
+          2,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-25",
+      "inputs": {
+        "sensor3": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "产品到 3# → 停（承接上一条）",
+      "const_inputs": {
+        "processLength": 2,
+        "processSequence": [
+          2,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "h02-26",
+      "inputs": {
+        "sensor3": true,
+        "station3Complete": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "idx 会变成 3 > processLength=2 → 先判下标再读数组，直接停机（越界保护用例）",
+      "const_inputs": {
+        "processLength": 2,
+        "processSequence": [
+          2,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-1",
+      "inputs": {
+        "sensor1": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "1# 有料但没按启动 → 输送带不动（负例）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-2",
+      "inputs": {
+        "sensor1": true,
+        "station1Start": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "启动 → 首工序 2# 在右侧，当拍正转",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-3",
+      "inputs": {
+        "sensor2": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "产品到 2# 传感器 → 输送带停（承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-ha-wait-station-2",
+      "inputs": {
+        "sensor2": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "已到站，本站完成信号仍为假，继续停机等待。",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-4",
+      "inputs": {
+        "sensor2": true,
+        "station2Complete": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "2# 加工完成 → 下一工序 3#，当拍正转",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-5",
+      "inputs": {
+        "sensor3": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "产品到 3# → 输送带停（承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-ha-wait-station-3",
+      "inputs": {
+        "sensor3": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "已到站，本站完成信号仍为假，继续停机等待。",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-6",
+      "inputs": {
+        "sensor3": true,
+        "station3Complete": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "3# 加工完成 → 下一工序是 5#，跳过 4# 正转",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-7",
+      "inputs": {
+        "sensor4": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "途经 4# 的传感器不改变输送状态（负例，承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-8",
+      "inputs": {
+        "sensor5": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "产品到 5# 出库站 → 输送带停，流程结束",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-9",
+      "inputs": {
+        "sensor1": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "流程结束后 1# 又有料但没按启动 → 不重复动作（负例，承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-10",
+      "inputs": {
+        "sensor1": true,
+        "station1Start": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "换序列后再启动 → 首工序 4# 在右侧，正转",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          4,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-11",
+      "inputs": {
+        "sensor4": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "产品到 4# → 停（承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          4,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-ha-wait-station-4",
+      "inputs": {
+        "sensor4": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "已到站，本站完成信号仍为假，继续停机等待。",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          4,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-12",
+      "inputs": {
+        "sensor4": true,
+        "station4Complete": true
+      },
+      "expected": {
+        "conveyorLeft": true,
+        "conveyorRight": false
+      },
+      "note": "4# 完成 → 下一工序 2# 在左侧，改反转（方向判定关键用例）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          4,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-13",
+      "inputs": {
+        "sensor2": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "反转送到 2# → 停（承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          4,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-14",
+      "inputs": {
+        "sensor2": true,
+        "station2Complete": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "2# 完成 → 下一工序 5#，改回正转",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          4,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-15",
+      "inputs": {
+        "sensor5": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "到 5# 出库 → 输送带停（承接上一条）",
+      "const_inputs": {
+        "processLength": 3,
+        "processSequence": [
+          4,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:two-products",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-16",
+      "inputs": {
+        "sensor1": true,
+        "station1Start": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "processLength=0（下边界非法）→ 不启动（负例）",
+      "const_inputs": {
+        "processLength": 0,
+        "processSequence": [
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:invalid-empty",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-17",
+      "inputs": {
+        "sensor1": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "松开启动按钮后仍不动作（负例，承接上一条）",
+      "const_inputs": {
+        "processLength": 0,
+        "processSequence": [
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:invalid-empty",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-18",
+      "inputs": {
+        "sensor1": true,
+        "station1Start": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "processLength=1，唯一工序就是 5# → 直接正转（下边界合法）",
+      "const_inputs": {
+        "processLength": 1,
+        "processSequence": [
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:one-output-station",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-19",
+      "inputs": {
+        "sensor5": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "一步送到 5# → 停（承接上一条）",
+      "const_inputs": {
+        "processLength": 1,
+        "processSequence": [
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:one-output-station",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-20",
+      "inputs": {
+        "sensor1": true,
+        "station1Start": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "processLength=9（上边界越界）→ 不启动（负例）",
+      "const_inputs": {
+        "processLength": 9,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:invalid-length",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-21",
+      "inputs": {
+        "sensor1": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "松开启动按钮后仍不动作（负例，承接上一条）",
+      "const_inputs": {
+        "processLength": 9,
+        "processSequence": [
+          2,
+          3,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:invalid-length",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-22",
+      "inputs": {
+        "sensor1": true,
+        "station1Start": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "末项不是 5# 的非法序列：仍按首项 2# 正转",
+      "const_inputs": {
+        "processLength": 2,
+        "processSequence": [
+          2,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:missing-final-output",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-23",
+      "inputs": {
+        "sensor2": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "产品到 2# → 停（承接上一条）",
+      "const_inputs": {
+        "processLength": 2,
+        "processSequence": [
+          2,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:missing-final-output",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-24",
+      "inputs": {
+        "sensor2": true,
+        "station2Complete": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": true
+      },
+      "note": "2# 完成 → 下一工序 3#，正转",
+      "const_inputs": {
+        "processLength": 2,
+        "processSequence": [
+          2,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:missing-final-output",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-25",
+      "inputs": {
+        "sensor3": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "产品到 3# → 停（承接上一条）",
+      "const_inputs": {
+        "processLength": 2,
+        "processSequence": [
+          2,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:missing-final-output",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-h02-26",
+      "inputs": {
+        "sensor3": true,
+        "station3Complete": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "idx 会变成 3 > processLength=2 → 先判下标再读数组，直接停机（越界保护用例）",
+      "const_inputs": {
+        "processLength": 2,
+        "processSequence": [
+          2,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:missing-final-output",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-ha-route-1",
+      "inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "sensor1": true,
+        "station1Start": true
+      },
+      "expected": {
+        "conveyorRight": true,
+        "conveyorLeft": false
+      },
+      "note": "相邻两步使用同一工位，之后再往成品站。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-station",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-ha-route-2",
+      "inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "sensor2": true
+      },
+      "expected": {
+        "conveyorRight": false,
+        "conveyorLeft": false
+      },
+      "note": "相邻两步使用同一工位，之后再往成品站。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-station",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-ha-route-3",
+      "inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "station2Complete": true
+      },
+      "expected": {
+        "conveyorRight": false,
+        "conveyorLeft": false
+      },
+      "note": "相邻两步使用同一工位，之后再往成品站。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-station",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-ha-route-4",
+      "inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "expected": {
+        "conveyorRight": false,
+        "conveyorLeft": false
+      },
+      "note": "相邻两步使用同一工位，之后再往成品站。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-station",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-ha-route-5",
+      "inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "sensor2": true
+      },
+      "expected": {
+        "conveyorRight": false,
+        "conveyorLeft": false
+      },
+      "note": "相邻两步使用同一工位，之后再往成品站。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-station",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-ha-route-6",
+      "inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "station2Complete": true
+      },
+      "expected": {
+        "conveyorRight": true,
+        "conveyorLeft": false
+      },
+      "note": "相邻两步使用同一工位，之后再往成品站。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-station",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-ha-route-7",
+      "inputs": {
+        "processLength": 3,
+        "processSequence": [
+          2,
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "sensor5": true
+      },
+      "expected": {
+        "conveyorRight": false,
+        "conveyorLeft": false
+      },
+      "note": "相邻两步使用同一工位，之后再往成品站。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-station",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-ha-short-route-1",
+      "inputs": {
+        "processLength": 1,
+        "processSequence": [
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "sensor1": true,
+        "station1Start": true,
+        "sensor2": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "防御工况：活动段缺少末站5，完成最后活动工位后停止；不得读取长度之外的5。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:inactive-tail",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-ha-short-route-2",
+      "inputs": {
+        "processLength": 1,
+        "processSequence": [
+          2,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "station2Complete": true
+      },
+      "expected": {
+        "conveyorLeft": false,
+        "conveyorRight": false
+      },
+      "note": "防御工况：活动段缺少末站5，完成最后活动工位后停止；不得读取长度之外的5。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:inactive-tail",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "r9_spec_policy": {
+      "observer": "process",
+      "changes": [
+        {
+          "sid": "S2",
+          "original_ltl": "G(phase = 0 -> !conveyorLeft AND !conveyorRight)",
+          "original_text": "空闲态（phase=0，尚未接到启动）时输送带必须静止。",
+          "original_verified_by": "plcverif"
+        },
+        {
+          "sid": "S3",
+          "original_ltl": "G(phase = 2 -> !conveyorLeft AND !conveyorRight)",
+          "original_text": "停在工位等加工完成信号期间（phase=2）输送带必须静止，不得自动起步。",
+          "original_verified_by": "plcverif"
+        },
+        {
+          "sid": "S4",
+          "original_ltl": "G(phase = 1 AND dstStation > curStation -> conveyorRight)",
+          "original_text": "目标工位在当前工位右侧时，输送中必须输出正转。",
+          "original_verified_by": "plcverif"
+        },
+        {
+          "sid": "S5",
+          "original_ltl": "G(phase = 1 AND dstStation < curStation -> conveyorLeft)",
+          "original_text": "目标工位在当前工位左侧时，输送中必须输出反转。",
+          "original_verified_by": "plcverif"
+        },
+        {
+          "sid": "S6",
+          "original_ltl": "G(compEdge -> idx = prev(idx) + 1)",
+          "original_text": "每收到一次当前工位的加工完成信号，工序下标 idx 恰好加 1。",
+          "original_verified_by": "plcverif"
+        },
+        {
+          "sid": "S7",
+          "original_ltl": "G(phase = 1 AND dstStation <> curStation -> conveyorLeft OR conveyorRight)",
+          "original_text": "输送中且目标工位与当前工位不同时，必须至少有一条输送带在输出。",
+          "original_verified_by": "plcverif"
+        }
+      ],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r4",
+      "platform": "codesys",
+      "pid": "public-hard-02",
+      "rules": [
+        "Explicit widening of processSequence USINT elements to INT",
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate",
+        "r4: explicit batch/pump/heater contracts; isolated sequence groups"
+      ],
+      "adapted_source_sha256": "9cf15fa70332aa15e84ab41eab519788248c1767d17679bcf946885341bee974"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r6",
+      "kind": "platform_adapted",
+      "platform": "codesys",
+      "original_json": "progress/v13/upstream/public/public-hard-02.json",
+      "original_sha256": "0826938200796317cdca255eb6587e0b8a2f764232be6269202fd252c900c680",
+      "interface_changed": false,
+      "reference_source_sha256": "9cf15fa70332aa15e84ab41eab519788248c1767d17679bcf946885341bee974",
+      "comparison_scope": "r6 platform-adapted suite; r5 execution model; old results retained",
+      "working_json": "progress/v13_r6/datasets/public/public-hard-02.json"
+    },
+    "review_revision": "v1.3-review-r6",
+    "human_process_review": {
+      "status": "pending",
+      "reviewer": "刘晏铭",
+      "approved": false
+    },
+    "review": "11.10技术复核；上游自动验收及旧签署不作为本版工艺批准。"
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "# Flexible Processing Control\n\n- **Difficulty:** Hard (hard)\n\n## Requirements\n\nAn automated production line consists of 5 workstations: numbered 1# to 5# from left to right. The 1# station is used for raw material loading, stations 2# to 4# are used for product processing, and the 5# station is used for finished product output and storage.\nThere is a motor in the production line, responsible for moving the product from one workstation to the next. Each workstation has a sensor (used to detect if the product has arrived).\nEach product has a different sequence and number of processing steps, specified by the process sequence 'processSequence'. The processSequence is an array type, storing the sequence numbers of the workstations, and the system automatically sends the raw materials to the corresponding workstation for processing based on the station number.\nControl requirements:\nAt the start of production, when the sensor at the 1# station (sensor1) detects the raw material, the start button at the 1# station (station1Start) is pressed. The system queries the first element of the process sequence 'processSequence', starts the conveyor to move the raw material to the corresponding workstation, and stops after delivery. Upon receiving the processing completion signal from the corresponding workstation (station2Complete to station4Complete), it continues to query the next element of the process sequence 'processSequence', determines the direction of the conveyor, and starts the conveyor (conveyorLeft, conveyorRight). This continues until the product is delivered to the 5# workstation.\n\nprocessLength specifies the active sequence length, from 1 through 8, starting at processSequence[1]. The final active entry is output station 5; other active entries are processing stations 2 through 4. The caller supplies a sequence satisfying this contract.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `processLength` | `USINT` | Active process-sequence length, 1..8; the final active entry must be station 5. |\n| Input | `sensor1` | `BOOL` | Sensor at 1# station |\n| Input | `sensor2` | `BOOL` | Sensor at 2# station |\n| Input | `sensor3` | `BOOL` | Sensor at 3# station |\n| Input | `sensor4` | `BOOL` | Sensor at 4# station |\n| Input | `sensor5` | `BOOL` | Sensor at 5# station |\n| Input | `station1Start` | `BOOL` | Start button at 1# station |\n| Input | `station2Complete` | `BOOL` | Processing completion signal at 2# station |\n| Input | `station3Complete` | `BOOL` | Processing completion signal at 3# station |\n| Input | `station4Complete` | `BOOL` | Processing completion signal at 4# station |\n| Input | `processSequence` | `ARRAY[1..8] OF USINT` | Processing sequence |\n| Output | `conveyorLeft` | `BOOL` | Conveyor turns left |\n| Output | `conveyorRight` | `BOOL` | Conveyor turns right |",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

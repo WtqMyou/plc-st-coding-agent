@@ -1,0 +1,666 @@
+{
+  "pid": "self-medium-02",
+  "source": "selfmade",
+  "difficulty": "medium",
+  "title": "模拟量滑动平均滤波（窗口未满与 FIFO 淘汰）",
+  "requirements": "写一个功能块 FB，对模拟量采样值做 8 点滑动平均滤波。\n控制要求：\n1. 每个扫描周期，若 enable 为 TRUE，把 rawValue 压入长度为 8 的环形缓冲区，并用缓冲区内**实际已有**的样本计算算术平均，输出到 filteredValue；\n2. 缓冲区**未填满时不得用 0 填充**：只有 3 个样本时就是这 3 个的平均；\n3. 缓冲区填满后，每来一个新样本挤掉最老的一个（先进先出）；\n4. sampleCount 输出当前缓冲区内的有效样本数（0..8）；\n5. 当样本数达到 8 时 windowFull 置 TRUE，之后保持 TRUE；\n6. enable 为 FALSE 时清空缓冲区（sampleCount 归 0、windowFull 归 FALSE），但 filteredValue 保持上一次的计算结果不变。\n每个新启用时段独立计数；同一时段第 8 个样本首次置满，第 9 个样本开始淘汰最老值。停用时清零计数和满标志，保持末次均值。",
+  "variables": [
+    {
+      "name": "enable",
+      "data_type": "BOOL",
+      "description": "滤波使能，FALSE 时清空历史",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "rawValue",
+      "data_type": "REAL",
+      "description": "本周期原始采样值",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "filteredValue",
+      "data_type": "REAL",
+      "description": "滤波输出",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "windowFull",
+      "data_type": "BOOL",
+      "description": "历史窗口已填满 8 个样本后置 TRUE",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "sampleCount",
+      "data_type": "INT",
+      "description": "当前窗口内有效样本数 0..8",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "输出等于最近最多 8 个有效样本的均值；满窗后按先入先出淘汰最老值，以连续样本序列检查第 8、9 拍。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "S2",
+      "text": "windowFull 当且仅当本周期结束后已有 8 个样本。",
+      "ltl": "G(windowFull <-> sampleCount = 8)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "enable 拉低后，sampleCount 必须在**当周期**归零，窗口同时退出满载。",
+      "ltl": "G(!enable -> sampleCount = 0 & !windowFull)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "样本数在 0..8 之间；使能时按拍增加至 8，已满时保持 8。",
+      "ltl": "G((sampleCount >= 0 AND sampleCount <= 8) AND (enable AND prev(sampleCount < 8) -> sampleCount = prev(sampleCount) + 1) AND (enable AND prev(sampleCount = 8) -> sampleCount = 8))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "kind": "safety",
+      "text": "停用当拍与持续停用均保持上次输出，不随新的 rawValue 变化。",
+      "ltl": "G(!enable -> filteredValue = prev(filteredValue))",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "kind": "safety",
+      "text": "新启用时段的第一个样本直接输出原值。",
+      "ltl": "G((enable AND sampleCount = 1) -> filteredValue = rawValue)",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S7",
+      "kind": "safety",
+      "text": "连续第二个样本输出两个有效样本的算术平均。",
+      "ltl": "G((enable AND sampleCount = 2) -> filteredValue = (prev(rawValue) + rawValue) / 2.0)",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "f1",
+      "inputs": {
+        "enable": true,
+        "rawValue": 10.0
+      },
+      "expected": {
+        "filteredValue": 10.0,
+        "windowFull": false,
+        "sampleCount": 1
+      },
+      "note": "首个样本：均值就是它本身",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f2",
+      "inputs": {
+        "enable": true,
+        "rawValue": 20.0
+      },
+      "expected": {
+        "filteredValue": 15.0,
+        "sampleCount": 2
+      },
+      "note": "两个样本 (10+20)/2",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f3",
+      "inputs": {
+        "enable": true,
+        "rawValue": 0.0
+      },
+      "expected": {
+        "filteredValue": 10.0,
+        "sampleCount": 3
+      },
+      "note": "第三样本 0：(10+20+0)/3",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f4",
+      "inputs": {
+        "enable": false,
+        "rawValue": 99.0
+      },
+      "expected": {
+        "filteredValue": 10.0,
+        "sampleCount": 0,
+        "windowFull": false
+      },
+      "note": "关断：清空历史，输出保持 10.0",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f5",
+      "inputs": {
+        "enable": true,
+        "rawValue": 50.0
+      },
+      "expected": {
+        "filteredValue": 50.0,
+        "sampleCount": 1
+      },
+      "note": "重新使能后从空窗口重新计数",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f6-clear",
+      "inputs": {
+        "enable": false,
+        "rawValue": 200.0
+      },
+      "expected": {
+        "filteredValue": 50.0,
+        "sampleCount": 0,
+        "windowFull": false
+      },
+      "note": "清除旧历史，保留 50.0。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f-sample-1",
+      "inputs": {
+        "enable": true,
+        "rawValue": 1.0
+      },
+      "expected": {
+        "sampleCount": 1,
+        "filteredValue": 1.0,
+        "windowFull": false
+      },
+      "note": "新窗口前 1 个实际样本。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f-sample-2",
+      "inputs": {
+        "enable": true,
+        "rawValue": 2.0
+      },
+      "expected": {
+        "sampleCount": 2,
+        "filteredValue": 1.5,
+        "windowFull": false
+      },
+      "note": "新窗口前 2 个实际样本。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f-sample-3",
+      "inputs": {
+        "enable": true,
+        "rawValue": 3.0
+      },
+      "expected": {
+        "sampleCount": 3,
+        "filteredValue": 2.0,
+        "windowFull": false
+      },
+      "note": "新窗口前 3 个实际样本。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f-sample-4",
+      "inputs": {
+        "enable": true,
+        "rawValue": 4.0
+      },
+      "expected": {
+        "sampleCount": 4,
+        "filteredValue": 2.5,
+        "windowFull": false
+      },
+      "note": "新窗口前 4 个实际样本。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f-sample-5",
+      "inputs": {
+        "enable": true,
+        "rawValue": 5.0
+      },
+      "expected": {
+        "sampleCount": 5,
+        "filteredValue": 3.0,
+        "windowFull": false
+      },
+      "note": "新窗口前 5 个实际样本。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f-sample-6",
+      "inputs": {
+        "enable": true,
+        "rawValue": 6.0
+      },
+      "expected": {
+        "sampleCount": 6,
+        "filteredValue": 3.5,
+        "windowFull": false
+      },
+      "note": "新窗口前 6 个实际样本。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f-sample-7",
+      "inputs": {
+        "enable": true,
+        "rawValue": 7.0
+      },
+      "expected": {
+        "sampleCount": 7,
+        "filteredValue": 4.0,
+        "windowFull": false
+      },
+      "note": "新窗口前 7 个实际样本。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f-sample-8",
+      "inputs": {
+        "enable": true,
+        "rawValue": 8.0
+      },
+      "expected": {
+        "sampleCount": 8,
+        "filteredValue": 4.5,
+        "windowFull": true
+      },
+      "note": "首个完整窗口 1..8，均值 4.5。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f-sample-9",
+      "inputs": {
+        "enable": true,
+        "rawValue": 9.0
+      },
+      "expected": {
+        "sampleCount": 8,
+        "filteredValue": 5.5,
+        "windowFull": true
+      },
+      "note": "首个淘汰周期 2..9，均值 5.5。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "f-full-clear",
+      "inputs": {
+        "enable": false,
+        "rawValue": 99.0
+      },
+      "expected": {
+        "filteredValue": 5.5,
+        "sampleCount": 0,
+        "windowFull": false
+      },
+      "note": "满窗停用：计数、满标志清零，均值保持。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "window-order-1",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": true,
+        "rawValue": 2
+      },
+      "expected": {
+        "filteredValue": 2.0,
+        "sampleCount": 1,
+        "windowFull": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    },
+    {
+      "tc_id": "window-order-2",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": true,
+        "rawValue": 3
+      },
+      "expected": {
+        "filteredValue": 2.5,
+        "sampleCount": 2,
+        "windowFull": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    },
+    {
+      "tc_id": "window-order-3",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": true,
+        "rawValue": 5
+      },
+      "expected": {
+        "filteredValue": 3.3333333333333335,
+        "sampleCount": 3,
+        "windowFull": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    },
+    {
+      "tc_id": "window-order-4",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": true,
+        "rawValue": 7
+      },
+      "expected": {
+        "filteredValue": 4.25,
+        "sampleCount": 4,
+        "windowFull": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    },
+    {
+      "tc_id": "window-order-5",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": true,
+        "rawValue": 11
+      },
+      "expected": {
+        "filteredValue": 5.6,
+        "sampleCount": 5,
+        "windowFull": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    },
+    {
+      "tc_id": "window-order-6",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": true,
+        "rawValue": 13
+      },
+      "expected": {
+        "filteredValue": 6.833333333333333,
+        "sampleCount": 6,
+        "windowFull": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    },
+    {
+      "tc_id": "window-order-7",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": true,
+        "rawValue": 17
+      },
+      "expected": {
+        "filteredValue": 8.285714285714286,
+        "sampleCount": 7,
+        "windowFull": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    },
+    {
+      "tc_id": "window-order-8",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": true,
+        "rawValue": 19
+      },
+      "expected": {
+        "filteredValue": 9.625,
+        "sampleCount": 8,
+        "windowFull": true
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    },
+    {
+      "tc_id": "window-order-9",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": true,
+        "rawValue": 23
+      },
+      "expected": {
+        "filteredValue": 12.25,
+        "sampleCount": 8,
+        "windowFull": true
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    },
+    {
+      "tc_id": "window-order-10",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": true,
+        "rawValue": 29
+      },
+      "expected": {
+        "filteredValue": 15.5,
+        "sampleCount": 8,
+        "windowFull": true
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    },
+    {
+      "tc_id": "window-order-11",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": false,
+        "rawValue": 50
+      },
+      "expected": {
+        "filteredValue": 15.5,
+        "sampleCount": 0,
+        "windowFull": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    },
+    {
+      "tc_id": "window-order-12",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": false,
+        "rawValue": -2
+      },
+      "expected": {
+        "filteredValue": 15.5,
+        "sampleCount": 0,
+        "windowFull": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    },
+    {
+      "tc_id": "window-order-13",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": true,
+        "rawValue": -2
+      },
+      "expected": {
+        "filteredValue": -2.0,
+        "sampleCount": 1,
+        "windowFull": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    },
+    {
+      "tc_id": "window-order-14",
+      "group": "nonlinear",
+      "mode": "sequence",
+      "inputs": {
+        "enable": true,
+        "rawValue": 3
+      },
+      "expected": {
+        "filteredValue": 0.5,
+        "sampleCount": 2,
+        "windowFull": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "非等差样本、连续两次淘汰、停用保持与负值重启。"
+    }
+  ],
+  "provenance": {
+    "final_revision_record": "review/other_cases.md",
+    "source_record": "sources/index.json#self-medium-02",
+    "historical_origin": "流程行业赛题中，模拟量输入普遍需要滤波以抑制变送器抖动；赛前练习里出现过'窗口刚度切换/移动平均'的要求。",
+    "historical_review": "人工审核：本题是**时序题**，测试用例按连续扫描周期组织（第 t 条用例是第 t 个周期），与题面'每个扫描周期'一致。",
+    "historical_source_type": "自主构思 / 行业经验改编",
+    "historical_adaptation": "把赛题中随工艺切换的动态窗口简化为固定 8 点，但刻意保留'窗口未满'这一前半段状态——这是 LLM 最容易写错的地方（常见错误：用 0 填充、或直接除以 8）。",
+    "source_type": "自建教学题",
+    "attribution": "上游自述为行业场景启发；缺少可独立核验的外部题号或标准条款。",
+    "independent_process_review": "包内未见可核验的逐题独立签署"
+  },
+  "language": "zh",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_inputs": {}
+}

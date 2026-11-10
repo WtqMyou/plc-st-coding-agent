@@ -1,0 +1,658 @@
+{
+  "pid": "public-easy-04",
+  "source": "public",
+  "difficulty": "easy",
+  "title": "Jam Pump Debouncing and Runtime Maintenance",
+  "requirements": "Implement jam-pump interlocking, time-based debouncing, accumulated runtime and the 500-hour maintenance indication. This portable benchmark represents durations as integer milliseconds: DebounceMs and CycleMs are positive DINTs in 1..3600000. PUMP_RUNTIME_ACC is a LINT in milliseconds. Only the numeric-millisecond interface is graded.\nAt startup the outputs and elapsed counters are zero. On each invocation count the full CycleMs since the previous invocation. If PASTE_E_STOP_NC and VISCOSITY_OK are both TRUE, add that interval to the current uninterrupted valid duration. Run in this scan iff this duration has reached the current DebounceMs. Either input being FALSE immediately stops the pump and discards the debounce duration; the next valid period starts at zero. CycleMs may vary between scans.\nWhen VFD_RUN is TRUE add this scan's full CycleMs to PUMP_RUNTIME_ACC, including the qualifying scan. Otherwise preserve PUMP_RUNTIME_ACC. When and only when the accumulated value is at least 1800000000 milliseconds (500 h), PUMP_MAINT_DUE is TRUE. The indicator never inhibits operation. Executions exceeding the LINT range are outside this benchmark.",
+  "variables": [
+    {
+      "name": "VISCOSITY_OK",
+      "data_type": "BOOL",
+      "description": "Raw signal indicating that viscosity is within the permitted range.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "PASTE_E_STOP_NC",
+      "data_type": "BOOL",
+      "description": "Normally closed emergency-stop circuit; TRUE permits operation and FALSE means emergency stop.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "DebounceMs",
+      "data_type": "DINT",
+      "description": "Minimum uninterrupted valid duration (integer milliseconds, 1..3600000).",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "CycleMs",
+      "data_type": "DINT",
+      "description": "Duration represented by this scan in integer milliseconds (1..3600000).",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "VFD_RUN",
+      "data_type": "BOOL",
+      "description": "Pump variable-frequency-drive run command.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "PUMP_MAINT_DUE",
+      "data_type": "BOOL",
+      "description": "Maintenance indication when accumulated runtime reaches 500 hours.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "PUMP_RUNTIME_ACC",
+      "data_type": "LINT",
+      "description": "Accumulated run duration in integer milliseconds (LINT).",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "当急停回路断开（PASTE_E_STOP_NC=FALSE）时，VFD_RUN 必须为 FALSE。",
+      "ltl": "G(NOT PASTE_E_STOP_NC -> NOT VFD_RUN)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "当粘度原始信号为 FALSE 时，去抖条件立即失效，VFD_RUN 必须为 FALSE。",
+      "ltl": "G(NOT VISCOSITY_OK -> NOT VFD_RUN)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "累计时间达到或超过 1,800,000,000 毫秒时且仅在此时给出维护提示。",
+      "ltl": "G((PUMP_RUNTIME_ACC >= 1800000000 -> PUMP_MAINT_DUE) AND (PUMP_MAINT_DUE -> PUMP_RUNTIME_ACC >= 1800000000))",
+      "kind": "data",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "当 VFD_RUN 为 FALSE 时，累计运行时间必须与上一拍相同（停机保持，不清零也不增加）。",
+      "ltl": "G(NOT VFD_RUN -> PUMP_RUNTIME_ACC = prev(PUMP_RUNTIME_ACC))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "运行每拍的累计增加量等于该拍实际毫秒数。",
+      "ltl": "G(VFD_RUN -> PUMP_RUNTIME_ACC = prev(PUMP_RUNTIME_ACC) + CycleMs)",
+      "kind": "data",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "连续有效段的第一拍仅在本次调用时间达到当前阈值时启动。",
+      "ltl": "G(((PASTE_E_STOP_NC AND VISCOSITY_OK) AND NOT prev((PASTE_E_STOP_NC AND VISCOSITY_OK))) -> (VFD_RUN <-> CycleMs >= DebounceMs))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S7",
+      "text": "连续有效段的第二拍以两次真实间隔之和与当前阈值比较。",
+      "ltl": "G(((PASTE_E_STOP_NC AND VISCOSITY_OK) AND prev((PASTE_E_STOP_NC AND VISCOSITY_OK)) AND NOT prev(prev((PASTE_E_STOP_NC AND VISCOSITY_OK)))) -> (VFD_RUN <-> CycleMs + prev(CycleMs) >= DebounceMs))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S8",
+      "text": "单拍间隔已达阈值，或仍连续合格且上拍已运行、本拍阈值不增时，泵必须运行。",
+      "ltl": "G(((PASTE_E_STOP_NC AND VISCOSITY_OK) AND (CycleMs >= DebounceMs OR (prev(VFD_RUN) AND DebounceMs <= prev(DebounceMs)))) -> VFD_RUN)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "jam-ms-01",
+      "inputs": {
+        "PASTE_E_STOP_NC": false,
+        "VISCOSITY_OK": false,
+        "DebounceMs": 90,
+        "CycleMs": 10
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 0,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "上电停止",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-02",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 90,
+        "CycleMs": 30
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 0,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "累计有效 30 ms",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-03",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 90,
+        "CycleMs": 40
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 0,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "有效 70 ms，第三拍不是固定开启点",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-04",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 90,
+        "CycleMs": 20
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 20,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "刚到 90 ms，计入本拍 20 ms",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-05",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 90,
+        "CycleMs": 7
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 27,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "变周期连续运行，加 7 ms",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-06",
+      "inputs": {
+        "PASTE_E_STOP_NC": false,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 90,
+        "CycleMs": 13
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 27,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "急停，清去抖但保留运行量",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-07",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 90,
+        "CycleMs": 60
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 27,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "急停释放，从零重新计时",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-08",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": false,
+        "DebounceMs": 90,
+        "CycleMs": 24
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 27,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "粘度短暂断开，中止 60 ms 计时",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-09",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 90,
+        "CycleMs": 60
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 27,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "重新有效后未到阈值",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-10",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 90,
+        "CycleMs": 31
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 58,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "有效 91 ms 越过阈值，本拍加 31 ms",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-11",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": false,
+        "DebounceMs": 120,
+        "CycleMs": 1
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 58,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "信号失效，切换到 120 ms 门槛",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-12",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 120,
+        "CycleMs": 100
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 58,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "100 ms 不足新阈值",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-13",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 120,
+        "CycleMs": 19
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 58,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "新阈值前 1 ms",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-14",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 120,
+        "CycleMs": 1
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 59,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "恰达新阈值",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-15",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 120,
+        "CycleMs": 3600000
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 1796400059,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "用 499 个加速扫描累计 499 小时",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 499,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-16",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 120,
+        "CycleMs": 3599940
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 1799999999,
+        "PUMP_MAINT_DUE": false
+      },
+      "note": "距 500 小时差 1 ms",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-17",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 120,
+        "CycleMs": 1
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 1800000000,
+        "PUMP_MAINT_DUE": true
+      },
+      "note": "达到阈值，泵继续运行",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-18",
+      "inputs": {
+        "PASTE_E_STOP_NC": false,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 1,
+        "CycleMs": 120
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 1800000000,
+        "PUMP_MAINT_DUE": true
+      },
+      "note": "维护到期时停机，累计保持",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "jam-ms-19",
+      "inputs": {
+        "PASTE_E_STOP_NC": true,
+        "VISCOSITY_OK": true,
+        "DebounceMs": 1,
+        "CycleMs": 50
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 1800000050,
+        "PUMP_MAINT_DUE": true
+      },
+      "note": "维护提示不禁止重新启动",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "threshold-change-1",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceMs": 30,
+        "CycleMs": 30
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 30,
+        "PUMP_MAINT_DUE": false
+      },
+      "const_inputs": {},
+      "init": {},
+      "cycles": 1,
+      "mode": "sequence",
+      "group": "threshold-change",
+      "expect_full": true,
+      "note": "首拍恰好达到阈值；随后变更当前阈值，连续有效时间须正确累计。"
+    },
+    {
+      "tc_id": "threshold-change-2",
+      "inputs": {
+        "VISCOSITY_OK": false,
+        "PASTE_E_STOP_NC": true,
+        "DebounceMs": 30,
+        "CycleMs": 10
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 30,
+        "PUMP_MAINT_DUE": false
+      },
+      "const_inputs": {},
+      "init": {},
+      "cycles": 1,
+      "mode": "sequence",
+      "group": "threshold-change",
+      "expect_full": true,
+      "note": "首拍恰好达到阈值；随后变更当前阈值，连续有效时间须正确累计。"
+    },
+    {
+      "tc_id": "threshold-change-3",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceMs": 90,
+        "CycleMs": 40
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 30,
+        "PUMP_MAINT_DUE": false
+      },
+      "const_inputs": {},
+      "init": {},
+      "cycles": 1,
+      "mode": "sequence",
+      "group": "threshold-change",
+      "expect_full": true,
+      "note": "首拍恰好达到阈值；随后变更当前阈值，连续有效时间须正确累计。"
+    },
+    {
+      "tc_id": "threshold-change-4",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceMs": 70,
+        "CycleMs": 30
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 60,
+        "PUMP_MAINT_DUE": false
+      },
+      "const_inputs": {},
+      "init": {},
+      "cycles": 1,
+      "mode": "sequence",
+      "group": "threshold-change",
+      "expect_full": true,
+      "note": "首拍恰好达到阈值；随后变更当前阈值，连续有效时间须正确累计。"
+    },
+    {
+      "tc_id": "threshold-change-5",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceMs": 200,
+        "CycleMs": 30
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 60,
+        "PUMP_MAINT_DUE": false
+      },
+      "const_inputs": {},
+      "init": {},
+      "cycles": 1,
+      "mode": "sequence",
+      "group": "threshold-change",
+      "expect_full": true,
+      "note": "首拍恰好达到阈值；随后变更当前阈值，连续有效时间须正确累计。"
+    },
+    {
+      "tc_id": "threshold-change-6",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceMs": 100,
+        "CycleMs": 10
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 70,
+        "PUMP_MAINT_DUE": false
+      },
+      "const_inputs": {},
+      "init": {},
+      "cycles": 1,
+      "mode": "sequence",
+      "group": "threshold-change",
+      "expect_full": true,
+      "note": "首拍恰好达到阈值；随后变更当前阈值，连续有效时间须正确累计。"
+    }
+  ],
+  "provenance": {
+    "contract_revision": {
+      "from": "portable-frame-v5 fixed three-scan debounce and one runtime unit per active scan",
+      "to": "Review candidate: variable millisecond intervals and an exact 500-hour threshold. Does not certify native TIME/LTIME interoperability. The original English statement and interface are preserved in raw_text.",
+      "case_history": "Replaces e04-1..7 (fixed scan surrogate) with jam-ms-01..19. The two versions have different interfaces and scoring.",
+      "validation_scope": "The finite model input sample does not reach 500 hours at the configured depth; dedicated boundary simulation covers 499 h to 500 h."
+    },
+    "source_record": "sources/index.json#public-easy-04"
+  },
+  "language": "en",
+  "raw_text": "# Jam Pump Debouncing and Runtime Maintenance\n\n- **Difficulty:** Easy (easy)\n\n## Requirements\n\nControl a jam transfer pump on a food production line, including viscosity-signal debouncing, emergency-stop priority, runtime accumulation and a maintenance-due indication.\n\n1. Accept the viscosity condition only after VISCOSITY_OK has remained TRUE for DebounceTime. Invalidate the condition immediately when the input becomes FALSE.\n2. Allow VFD_RUN to be TRUE only when PASTE_E_STOP_NC is TRUE and the viscosity condition is valid. An emergency stop immediately disables the run output and clears any incomplete debounce timing.\n3. Accumulate PUMP_RUNTIME_ACC using the actual invocation interval CycleTime only while VFD_RUN is TRUE. Preserve the accumulated time while the pump is stopped.\n4. Set PUMP_MAINT_DUE when accumulated runtime reaches 500 hours. This indication is informational and must not affect pump operation or the safety permissive.\n5. At power-up, initialize the run output to OFF, accumulated runtime to zero and the maintenance indication to FALSE.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `VISCOSITY_OK` | `BOOL` | Raw signal indicating that viscosity is within the permitted range. |\n| Input | `PASTE_E_STOP_NC` | `BOOL` | Normally closed emergency-stop circuit; TRUE permits operation and FALSE means emergency stop. |\n| Input | `DebounceTime` | `TIME` | Required continuous valid duration for the viscosity signal; must be positive. |\n| Input | `CycleTime` | `TIME` | Actual elapsed interval represented by this invocation; must be positive. |\n| Output | `VFD_RUN` | `BOOL` | Pump variable-frequency-drive run command. |\n| Output | `PUMP_MAINT_DUE` | `BOOL` | Maintenance indication when accumulated runtime reaches 500 hours. |\n| Output | `PUMP_RUNTIME_ACC` | `LTIME` | Accumulated enabled runtime, using a long-duration time type. |",
+  "case_mode": "sequence",
+  "mc_inputs": {
+    "DebounceMs": [
+      30,
+      90
+    ],
+    "CycleMs": [
+      10,
+      30,
+      40
+    ],
+    "PASTE_E_STOP_NC": [
+      false,
+      true
+    ],
+    "VISCOSITY_OK": [
+      false,
+      true
+    ]
+  },
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000
+}

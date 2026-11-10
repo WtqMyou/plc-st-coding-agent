@@ -1,0 +1,537 @@
+{
+  "pid": "self-easy-02",
+  "source": "selfmade",
+  "difficulty": "easy",
+  "title": "储罐高低液位联锁与报警自保持",
+  "requirements": "实现储罐进料联锁功能块 FB。每拍采样液位、进料许可和复位按钮；所有输出在同一拍结束时判定。初始两个报警和上一拍按钮均为 FALSE。\n1. tankLevel >= 85.0 是高液位危险条件，tankLevel <= 15.0 是低液位危险条件。每个报警在各自条件成立时立即置位并锁存。回到正常区本身不清除报警。\n2. resetBtn 从 FALSE 变为 TRUE 的那一拍，分别检查每个报警：危险条件已消失才清除，条件仍成立则保持置位。两项均可同时锁存；复位只能清除已安全的那一项。危险条件刚出现的同一拍按下复位，危险条件仍优先。\n3. 按住复位跨越液位变化不产生新复位；需先松手再按。首次扫描前按钮按 FALSE 处理。\n4. 本拍更新报警后，只有 inletPermit 为 TRUE 且两个报警均为 FALSE 才运行进料泵 pumpRun。出口阀 outletValveOpen 在低报警锁存期间关闭，其他情况下开启。outletFlow 是预留观测接口，本题不按流量设动作阈值。",
+  "variables": [
+    {
+      "name": "tankLevel",
+      "data_type": "REAL",
+      "description": "储罐液位百分比 0..100",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "outletFlow",
+      "data_type": "REAL",
+      "description": "出口流量 m³/h",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "inletPermit",
+      "data_type": "BOOL",
+      "description": "进料许可（工艺联锁允许进料）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "resetBtn",
+      "data_type": "BOOL",
+      "description": "复位按钮（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "pumpRun",
+      "data_type": "BOOL",
+      "description": "进料泵运行命令",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "alarmHigh",
+      "data_type": "BOOL",
+      "description": "高液位报警（自保持，需复位）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "alarmLow",
+      "data_type": "BOOL",
+      "description": "低液位报警（自保持，需复位）",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "outletValveOpen",
+      "data_type": "BOOL",
+      "description": "出口阀开命令",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "达到或超过高阈值，当拍报警；复位与越限同拍仍报警。",
+      "ltl": "G(tankLevel >= 85.0 -> alarmHigh)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "已脱离高阈值时，高报警等于上拍锁存且本拍没有复位沿。",
+      "ltl": "G(tankLevel < 85.0 -> (alarmHigh <-> (prev(alarmHigh) AND !rising(resetBtn))))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "高或低报警任一有效，当拍禁止运行进料泵。",
+      "ltl": "G((alarmHigh OR alarmLow) -> !pumpRun)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "阀开命令与低报警互反，包括复位拍。",
+      "ltl": "G(outletValveOpen <-> !alarmLow)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "两报警均清除时，进料泵命令等于本拍进料许可。",
+      "ltl": "G((!alarmHigh AND !alarmLow) -> (pumpRun <-> inletPermit))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "达到或低于低阈值即置位低报警；危险消失前复位无效，之后需新的复位沿清除。",
+      "ltl": "G(alarmLow <-> ((tankLevel <= 15.0) OR (prev(alarmLow) AND !rising(resetBtn))))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "s1",
+      "inputs": {
+        "tankLevel": 50.0
+      },
+      "expected": {
+        "pumpRun": true,
+        "alarmHigh": false,
+        "alarmLow": false,
+        "outletValveOpen": true
+      },
+      "note": "液位正常 → 开泵开阀",
+      "const_inputs": {
+        "inletPermit": true,
+        "resetBtn": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s2",
+      "inputs": {
+        "tankLevel": 85.0
+      },
+      "expected": {
+        "alarmHigh": true,
+        "pumpRun": false
+      },
+      "note": "液位到 85 → 高报警、停泵",
+      "const_inputs": {
+        "inletPermit": true,
+        "resetBtn": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s3",
+      "inputs": {
+        "tankLevel": 80.0
+      },
+      "expected": {
+        "alarmHigh": true,
+        "pumpRun": false
+      },
+      "note": "回落到 80：报警自保持，泵不得重启",
+      "const_inputs": {
+        "inletPermit": true,
+        "resetBtn": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s4",
+      "inputs": {
+        "tankLevel": 80.0
+      },
+      "expected": {
+        "alarmHigh": false,
+        "pumpRun": true
+      },
+      "note": "复位上升沿 → 清报警、恢复运行",
+      "const_inputs": {
+        "inletPermit": true,
+        "resetBtn": true
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s5",
+      "inputs": {
+        "tankLevel": 80.0
+      },
+      "expected": {
+        "alarmHigh": false,
+        "pumpRun": true
+      },
+      "note": "松开复位 → 报警不得复现（证明是边沿触发）",
+      "const_inputs": {
+        "inletPermit": true,
+        "resetBtn": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s6",
+      "inputs": {
+        "tankLevel": 15.0
+      },
+      "expected": {
+        "alarmLow": true,
+        "pumpRun": false,
+        "outletValveOpen": false
+      },
+      "note": "低液位 → 低报警、停泵、关出口阀",
+      "const_inputs": {
+        "inletPermit": true,
+        "resetBtn": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s7",
+      "inputs": {
+        "tankLevel": 90.0
+      },
+      "expected": {
+        "alarmLow": true,
+        "alarmHigh": true,
+        "pumpRun": false
+      },
+      "note": "两种报警同时存在：都要被保持",
+      "const_inputs": {
+        "inletPermit": true,
+        "resetBtn": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s8",
+      "inputs": {
+        "tankLevel": 50.0
+      },
+      "expected": {
+        "alarmHigh": false,
+        "alarmLow": false,
+        "pumpRun": false
+      },
+      "note": "复位清报警；无进料许可 → 停泵",
+      "const_inputs": {
+        "inletPermit": false,
+        "resetBtn": true
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s9",
+      "inputs": {
+        "tankLevel": 85.0,
+        "outletFlow": 12.0,
+        "inletPermit": true,
+        "resetBtn": false
+      },
+      "expected": {
+        "alarmHigh": true,
+        "alarmLow": false,
+        "pumpRun": false,
+        "outletValveOpen": true
+      },
+      "note": "达到高阈值，松开上拍的复位按钮",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s10",
+      "inputs": {
+        "tankLevel": 90.0,
+        "outletFlow": 0.0,
+        "inletPermit": true,
+        "resetBtn": true
+      },
+      "expected": {
+        "alarmHigh": true,
+        "alarmLow": false,
+        "pumpRun": false,
+        "outletValveOpen": true
+      },
+      "note": "危险持续时按复位：高报警仍有效",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s11",
+      "inputs": {
+        "tankLevel": 50.0,
+        "outletFlow": 12.0,
+        "inletPermit": true,
+        "resetBtn": true
+      },
+      "expected": {
+        "alarmHigh": true,
+        "alarmLow": false,
+        "pumpRun": false,
+        "outletValveOpen": true
+      },
+      "note": "持续按住按钮跨回正常区：仍需新的复位沿",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s12",
+      "inputs": {
+        "tankLevel": 15.0,
+        "outletFlow": 0.0,
+        "inletPermit": true,
+        "resetBtn": false
+      },
+      "expected": {
+        "alarmHigh": true,
+        "alarmLow": true,
+        "pumpRun": false,
+        "outletValveOpen": false
+      },
+      "note": "从正常区进入低阈值：前次高报警也仍锁存",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s13",
+      "inputs": {
+        "tankLevel": 15.0,
+        "outletFlow": 12.0,
+        "inletPermit": true,
+        "resetBtn": true
+      },
+      "expected": {
+        "alarmHigh": false,
+        "alarmLow": true,
+        "pumpRun": false,
+        "outletValveOpen": false
+      },
+      "note": "低危险持续时复位：只清除已安全的高报警",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s14",
+      "inputs": {
+        "tankLevel": 50.0,
+        "outletFlow": 0.0,
+        "inletPermit": true,
+        "resetBtn": true
+      },
+      "expected": {
+        "alarmHigh": false,
+        "alarmLow": true,
+        "pumpRun": false,
+        "outletValveOpen": false
+      },
+      "note": "按键仍高且液位恢复：低报警仍保持",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s15",
+      "inputs": {
+        "tankLevel": 50.0,
+        "outletFlow": 12.0,
+        "inletPermit": true,
+        "resetBtn": false
+      },
+      "expected": {
+        "alarmHigh": false,
+        "alarmLow": true,
+        "pumpRun": false,
+        "outletValveOpen": false
+      },
+      "note": "松键不清除低报警",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s16",
+      "inputs": {
+        "tankLevel": 50.0,
+        "outletFlow": 0.0,
+        "inletPermit": true,
+        "resetBtn": true
+      },
+      "expected": {
+        "alarmHigh": false,
+        "alarmLow": false,
+        "pumpRun": true,
+        "outletValveOpen": true
+      },
+      "note": "产生新复位沿且两项安全：恢复运行",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s17",
+      "inputs": {
+        "tankLevel": 50.0,
+        "outletFlow": 12.0,
+        "inletPermit": true,
+        "resetBtn": false
+      },
+      "expected": {
+        "alarmHigh": false,
+        "alarmLow": false,
+        "pumpRun": true,
+        "outletValveOpen": true
+      },
+      "note": "正常区重新准备复位",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s18",
+      "inputs": {
+        "tankLevel": 85.0,
+        "outletFlow": 0.0,
+        "inletPermit": true,
+        "resetBtn": true
+      },
+      "expected": {
+        "alarmHigh": true,
+        "alarmLow": false,
+        "pumpRun": false,
+        "outletValveOpen": true
+      },
+      "note": "首次达到高阈值与复位上升沿同拍",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s19",
+      "inputs": {
+        "tankLevel": 50.0,
+        "outletFlow": 12.0,
+        "inletPermit": true,
+        "resetBtn": false
+      },
+      "expected": {
+        "alarmHigh": true,
+        "alarmLow": false,
+        "pumpRun": false,
+        "outletValveOpen": true
+      },
+      "note": "松开复位，正常液位保持高报警",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s20",
+      "inputs": {
+        "tankLevel": 15.0,
+        "outletFlow": 0.0,
+        "inletPermit": true,
+        "resetBtn": true
+      },
+      "expected": {
+        "alarmHigh": false,
+        "alarmLow": true,
+        "pumpRun": false,
+        "outletValveOpen": false
+      },
+      "note": "首次达到低阈值与复位上升沿同拍；高报警可清除",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    }
+  ],
+  "provenance": {
+    "source_record": "sources/index.json#self-easy-02",
+    "historical_origin": "罐区液位联锁是流程行业自动化赛项的基础题型，涉及带迟滞的报警、报警自保持、上升沿复位与'停止优先'四件事。",
+    "historical_review": "人工审核：边界值用 >= / <= 明确写死，避免 LLM 用 >/< 产生 off-by-one；复位必须按边沿而非常电平，这一条最容易被写错，故单独设规约 S2。",
+    "historical_source_type": "自主构思 / 行业经验改编",
+    "historical_adaptation": "把赛题中的多罐切换简化为单罐，保留边界值（85.0/15.0）与报警优先的语义，使它成为可独立测试的最小单元。",
+    "source_type": "自建教学题",
+    "attribution": "上游自述为行业场景启发；缺少可独立核验的外部题号或标准条款。",
+    "independent_process_review": "包内未见可核验的逐题独立签署"
+  },
+  "language": "zh",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_inputs": {}
+}

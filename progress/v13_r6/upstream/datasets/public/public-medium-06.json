@@ -1,0 +1,583 @@
+{
+  "pid": "public-medium-06",
+  "source": "public",
+  "difficulty": "medium",
+  "title": "Slab Thickness Alarm and Fault History",
+  "requirements": "Monitor slab-thickness faults on a stone-cutting line, including minimum alarm holding, fault counting, normal-cutting runtime accumulation and a history of the five most recent faults.\n\n1. When THICKNESS_SIGNAL_VALID is TRUE, THICKNESS_FAULT indicates that thickness deviation exceeds tolerance. Activate THICKNESS_ALARM immediately when the fault becomes TRUE, and hold each triggered alarm for at least 500 ms. Keep the alarm active while the fault persists.\n2. On each FALSE-to-TRUE transition of a valid fault signal, increment Slab_Fault_Counter and store the current FaultTimestamp in element 0 of Slab_Fault_History. Shift older entries toward higher indices, retaining only the five most recent entries.\n3. Accumulate Slab_Runtime_Accumulator by one scan only while CUTTING_RUN is TRUE, the thickness signal is valid and no thickness fault is present. Otherwise preserve the accumulated value.\n4. At power-up or whenever THICKNESS_SIGNAL_VALID is FALSE, switch off the alarm and clear its holding state. Do not add fault records or accumulate normal runtime while the signal is invalid.\n5. At power-up, initialize the fault count, accumulated runtime and all five history entries to zero. Statistics and history are for observation and maintenance only; they must not alter the cutting equipment's operating permissive, and external callers must not modify history entries.\nEffective assessment uses a fixed 20 ms scan. Hold the alarm for the 25 valid scans following fault clearance and clear on the 26th unless a new fault occurs. An invalid signal clears it immediately. CycleTime is retained for interface compatibility. The accumulator counts eligible scans.",
+  "variables": [
+    {
+      "name": "THICKNESS_FAULT",
+      "data_type": "BOOL",
+      "description": "Thickness deviation exceeds the permitted tolerance.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "THICKNESS_SIGNAL_VALID",
+      "data_type": "BOOL",
+      "description": "Thickness-signal validity; FALSE means the signal is lost or unavailable.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "CUTTING_RUN",
+      "data_type": "BOOL",
+      "description": "Actual cutting-equipment running status.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "FaultTimestamp",
+      "data_type": "DINT",
+      "description": "Current timestamp in seconds, used as the fault-record identifier.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "CycleTime",
+      "data_type": "TIME",
+      "description": "Compatibility input; the effective profile uses fixed 20 ms scans.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "THICKNESS_ALARM",
+      "data_type": "BOOL",
+      "description": "Thickness alarm with a minimum 500 ms hold duration.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "Slab_Fault_Counter",
+      "data_type": "UINT",
+      "description": "Number of valid thickness-fault occurrences.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "Slab_Runtime_Accumulator",
+      "data_type": "LTIME",
+      "description": "Number of scans with valid, healthy cutting.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "Slab_Fault_History",
+      "data_type": "ARRAY[0..4] OF DINT",
+      "description": "Five most recent fault timestamps; index 0 is newest; read-only to callers.",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "当厚度信号无效时，厚度报警必须为 FALSE（无效信号不得报警）",
+      "ltl": "G(THICKNESS_SIGNAL_VALID = FALSE -> THICKNESS_ALARM = FALSE)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "有效切割且无厚度故障时，本拍运行计数恰好增加一。",
+      "ltl": "G((CUTTING_RUN AND THICKNESS_SIGNAL_VALID AND NOT THICKNESS_FAULT) -> Slab_Runtime_Accumulator = prev(Slab_Runtime_Accumulator) + 1)",
+      "kind": "data",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "当信号有效且厚度故障存在时，厚度报警必须为 TRUE（有效故障立即报警）",
+      "ltl": "G(THICKNESS_SIGNAL_VALID = TRUE AND THICKNESS_FAULT = TRUE -> THICKNESS_ALARM = TRUE)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "运行时间累积只能增加或保持：本拍累积值不得小于上一拍（只在合格拍 +1，其余拍保持）",
+      "ltl": "G(Slab_Runtime_Accumulator >= prev(Slab_Runtime_Accumulator))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "历史 index0 记录到时间戳时，故障计数必须已经至少为 1",
+      "ltl": "G(Slab_Fault_History[0] <> 0 -> Slab_Fault_Counter >= 1)",
+      "kind": "data",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "故障计数与 5 条历史队列的写入与移位顺序（未满 5 条与满后移位两种状态）：由用例验证的数据性质",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "S7",
+      "text": "无合格切割时运行累计保持。",
+      "ltl": "G(NOT (CUTTING_RUN AND THICKNESS_SIGNAL_VALID AND NOT THICKNESS_FAULT) -> Slab_Runtime_Accumulator = prev(Slab_Runtime_Accumulator))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S8",
+      "text": "仅有效故障的上升沿累加计数，在未达到 UINT 上限时加一。",
+      "ltl": "G(((rising((THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT)) AND NOT prev(Slab_Fault_Counter = 65535)) -> Slab_Fault_Counter = prev(Slab_Fault_Counter) + 1) AND (NOT rising((THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT)) -> Slab_Fault_Counter = prev(Slab_Fault_Counter)))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S9",
+      "text": "新故障写入时间戳并逐槽后移其余四条，无新沿时全部五条保持。",
+      "ltl": "G((rising((THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT)) -> (Slab_Fault_History[0] = FaultTimestamp AND Slab_Fault_History[1] = prev(Slab_Fault_History[0]) AND Slab_Fault_History[2] = prev(Slab_Fault_History[1]) AND Slab_Fault_History[3] = prev(Slab_Fault_History[2]) AND Slab_Fault_History[4] = prev(Slab_Fault_History[3]))) AND (NOT rising((THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT)) -> (Slab_Fault_History[0] = prev(Slab_Fault_History[0]) AND Slab_Fault_History[1] = prev(Slab_Fault_History[1]) AND Slab_Fault_History[2] = prev(Slab_Fault_History[2]) AND Slab_Fault_History[3] = prev(Slab_Fault_History[3]) AND Slab_Fault_History[4] = prev(Slab_Fault_History[4]))))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S10",
+      "text": "有效故障刚解除且信号仍有效时，报警继续保持。",
+      "ltl": "G((THICKNESS_SIGNAL_VALID AND prev((THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT))) -> THICKNESS_ALARM)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S11",
+      "text": "仅在信号有效且有未超过25个有效清除拍的故障时保持报警；失效当拍中断历史。",
+      "ltl": "G(THICKNESS_ALARM <-> (THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND (THICKNESS_FAULT OR prev((THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "M06-01",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 0,
+        "CycleTime": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": false,
+        "Slab_Fault_Counter": 0,
+        "Slab_Runtime_Accumulator": 1,
+        "Slab_Fault_History": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "承接上电：计数/累积/历史全 0；切割运行且无故障 → 累积 1 拍（CycleTime 恒 0，运行时间以扫描周期计数，见约定 §7）",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M06-02",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 100,
+        "CycleTime": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 1,
+        "Slab_Runtime_Accumulator": 1,
+        "Slab_Fault_History": [
+          100,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "承接上一条：有效故障上升沿立即报警、计数 1、时间戳进 index0；故障期间不累积",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 2,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M06-03",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": false,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 999,
+        "CycleTime": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": false,
+        "Slab_Fault_Counter": 1,
+        "Slab_Runtime_Accumulator": 1,
+        "Slab_Fault_History": [
+          100,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "承接上一条：信号无效 → 报警熄灭、不记录、不累积（计数/历史/累积均保持）",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 3,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M06-04",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 200,
+        "CycleTime": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 2,
+        "Slab_Runtime_Accumulator": 1,
+        "Slab_Fault_History": [
+          200,
+          100,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "承接上一条：信号恢复后的有效故障上升沿 → 计数 2，历史 2 条（未满 5 条的中间态）",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M06-05",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 200,
+        "CycleTime": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": false,
+        "Slab_Fault_Counter": 2,
+        "Slab_Runtime_Accumulator": 27,
+        "Slab_Fault_History": [
+          200,
+          100,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "承接上一条：故障消失后报警保持 25 拍（500 ms，以周期数代替 T#500ms）满即熄灭；26 拍全部合格 → 累积 1+26=27",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 26,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M06-06",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 300,
+        "CycleTime": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 3,
+        "Slab_Runtime_Accumulator": 27,
+        "Slab_Fault_History": [
+          300,
+          200,
+          100,
+          0,
+          0
+        ]
+      },
+      "note": "承接上一条：第 3 次有效故障 → 历史移位为 3 条",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M06-07",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": false,
+        "FaultTimestamp": 300,
+        "CycleTime": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 3,
+        "Slab_Runtime_Accumulator": 27,
+        "Slab_Fault_History": [
+          300,
+          200,
+          100,
+          0,
+          0
+        ]
+      },
+      "note": "承接上一条：故障消失首拍仍保持报警（第 1/25 拍）；CUTTING_RUN=FALSE → 不是运行状态，累积时间保持 27（只在切割运行且无故障时累积）",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M06-08",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 400,
+        "CycleTime": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 4,
+        "Slab_Runtime_Accumulator": 27,
+        "Slab_Fault_History": [
+          400,
+          300,
+          200,
+          100,
+          0
+        ]
+      },
+      "note": "承接上一条：第 4 次有效故障 → 历史 4 条，仅剩 1 个 0",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M06-09",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 400,
+        "CycleTime": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 4,
+        "Slab_Runtime_Accumulator": 28,
+        "Slab_Fault_History": [
+          400,
+          300,
+          200,
+          100,
+          0
+        ]
+      },
+      "note": "承接上一条：故障消失首拍保持报警；切割运行且无故障 → 累积 28",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M06-10",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 500,
+        "CycleTime": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 5,
+        "Slab_Runtime_Accumulator": 28,
+        "Slab_Fault_History": [
+          500,
+          400,
+          300,
+          200,
+          100
+        ]
+      },
+      "note": "承接上一条：第 5 次有效故障 → 历史刚好填满 5 条",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M06-11",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 500,
+        "CycleTime": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 5,
+        "Slab_Runtime_Accumulator": 29,
+        "Slab_Fault_History": [
+          500,
+          400,
+          300,
+          200,
+          100
+        ]
+      },
+      "note": "承接上一条：故障消失首拍保持报警；累积 → 29",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "M06-12",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 600,
+        "CycleTime": 0
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 6,
+        "Slab_Runtime_Accumulator": 29,
+        "Slab_Fault_History": [
+          600,
+          500,
+          400,
+          300,
+          200
+        ]
+      },
+      "note": "承接上一条：第 6 次有效故障 → 满 5 条后移位，最旧的 100 被挤出，仍只保留 5 条",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "hold-500ms-1",
+      "inputs": {
+        "THICKNESS_FAULT": true,
+        "THICKNESS_SIGNAL_VALID": true,
+        "CUTTING_RUN": false,
+        "FaultTimestamp": 101,
+        "CycleTime": 0
+      },
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 1,
+        "Slab_Fault_History": [
+          101,
+          0,
+          0,
+          0,
+          0
+        ],
+        "Slab_Runtime_Accumulator": 0
+      },
+      "note": "20 ms/拍，故障消失后的第25拍保持，第26拍解除。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "group": "hold-500ms",
+      "expect_full": false
+    },
+    {
+      "tc_id": "hold-500ms-2",
+      "inputs": {
+        "THICKNESS_FAULT": false,
+        "THICKNESS_SIGNAL_VALID": true,
+        "CUTTING_RUN": false,
+        "FaultTimestamp": 101,
+        "CycleTime": 0
+      },
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 1,
+        "Slab_Fault_History": [
+          101,
+          0,
+          0,
+          0,
+          0
+        ],
+        "Slab_Runtime_Accumulator": 0
+      },
+      "note": "20 ms/拍，故障消失后的第25拍保持，第26拍解除。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 25,
+      "group": "hold-500ms",
+      "expect_full": false
+    },
+    {
+      "tc_id": "hold-500ms-3",
+      "inputs": {
+        "THICKNESS_FAULT": false,
+        "THICKNESS_SIGNAL_VALID": true,
+        "CUTTING_RUN": false,
+        "FaultTimestamp": 101,
+        "CycleTime": 0
+      },
+      "expected": {
+        "THICKNESS_ALARM": false,
+        "Slab_Fault_Counter": 1,
+        "Slab_Fault_History": [
+          101,
+          0,
+          0,
+          0,
+          0
+        ],
+        "Slab_Runtime_Accumulator": 0
+      },
+      "note": "20 ms/拍，故障消失后的第25拍保持，第26拍解除。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "group": "hold-500ms",
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_record": "sources/index.json#public-medium-06"
+  },
+  "language": "en",
+  "raw_text": "# Slab Thickness Alarm and Fault History\n\n- **Difficulty:** Medium (medium)\n\n## Requirements\n\nMonitor slab-thickness faults on a stone-cutting line, including minimum alarm holding, fault counting, normal-cutting runtime accumulation and a history of the five most recent faults.\n\n1. When THICKNESS_SIGNAL_VALID is TRUE, THICKNESS_FAULT indicates that thickness deviation exceeds tolerance. Activate THICKNESS_ALARM immediately when the fault becomes TRUE, and hold each triggered alarm for at least 500 ms. Keep the alarm active while the fault persists.\n2. On each FALSE-to-TRUE transition of a valid fault signal, increment Slab_Fault_Counter and store the current FaultTimestamp in element 0 of Slab_Fault_History. Shift older entries toward higher indices, retaining only the five most recent entries.\n3. Accumulate Slab_Runtime_Accumulator using CycleTime only while CUTTING_RUN is TRUE, the thickness signal is valid and no thickness fault is present. Otherwise preserve the accumulated value.\n4. At power-up or whenever THICKNESS_SIGNAL_VALID is FALSE, switch off the alarm and clear its holding state. Do not add fault records or accumulate normal runtime while the signal is invalid.\n5. At power-up, initialize the fault count, accumulated runtime and all five history entries to zero. Statistics and history are for observation and maintenance only; they must not alter the cutting equipment's operating permissive, and external callers must not modify history entries.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `THICKNESS_FAULT` | `BOOL` | Thickness deviation exceeds the permitted tolerance. |\n| Input | `THICKNESS_SIGNAL_VALID` | `BOOL` | Thickness-signal validity; FALSE means the signal is lost or unavailable. |\n| Input | `CUTTING_RUN` | `BOOL` | Actual cutting-equipment running status. |\n| Input | `FaultTimestamp` | `DINT` | Current timestamp in seconds, used as the fault-record identifier. |\n| Input | `CycleTime` | `TIME` | Actual elapsed interval represented by this invocation; must be positive. |\n| Output | `THICKNESS_ALARM` | `BOOL` | Thickness alarm with a minimum 500 ms hold duration. |\n| Output | `Slab_Fault_Counter` | `UINT` | Number of valid thickness-fault occurrences. |\n| Output | `Slab_Runtime_Accumulator` | `LTIME` | Accumulated normal-cutting runtime. |\n| Output | `Slab_Fault_History` | `ARRAY[0..4] OF DINT` | Five most recent fault timestamps; index 0 is newest; read-only to callers. |",
+  "case_mode": "sequence"
+}

@@ -51,12 +51,12 @@ def offline_page():
     baseline_label = escape(str(scores.get('baseline_label', '旧版本地整题')))
     current_label = escape(str(scores.get('current_label', '修订版本地整题')))
     review_route = active.get('review_route') or ('/v13-r2-review.html' if version == 'v1.3-review-r2' else '/v13-review.html')
-    if review_route not in ('/v13-review.html','/v13-r2-review.html','/v13-r4-review.html'):
+    if review_route not in ('/v13-review.html','/v13-r2-review.html','/v13-r4-review.html','/v13-r6-review.html'):
         raise RuntimeError('Unknown review route')
     repo_revision_path = quote(revision_root.relative_to(REPO.resolve()).as_posix())
     native_probes_note = ('新增 ' + str(offline.get('native_probes_count',0)) + ' 项原生对照（含预期失败），平台接受不等于运行正确。'
                          if offline.get('native_probes_count') else '')
-    data_note = ('数据仍为 ' + str(offline['data_version']) + '；本次只改变裁判。' if offline.get('data_version') else '')
+    data_note = str(offline.get('data_note') or ('数据仍为 ' + str(offline['data_version']) + '；本次只改变裁判。' if offline.get('data_version') else ''))
     table = []
     for r in scores.get('rows', []):
         cells = [r['group'], f'{r["old_solved"]}/35', f'{r["new_solved"]}/35',
@@ -73,6 +73,8 @@ def offline_page():
     if version=='v1.3-judge-r5':
         explanation_url = 'https://github.com/WtqMyou/plc-st-coding-agent/blob/main/' + quote('progress/evidence/v13_r5_20261108/结果说明.md')
         repair_note = '<section><h2>这次修复解决了什么</h2><p>通用整数转换和RETURN提前退出已修复。原FIFO答卷通过27/27功能用例，但形式检查仍发现S4反例：满队同拍入出队后，数量变为1却仍返回满队状态码。</p><p>未修改原答卷，也没有更换小试验原选中轮次。历史140份固定答案的分数变化属于裁判纠错，不能当作模型生成能力提升。</p><p><a href="'+explanation_url+'">查看归因、反例和完整复验结果</a></p></section>'
+    if version=='v1.3-review-r6':
+        repair_note = '<section><h2>11.10资料处理</h2><p>已核验四份来件，修复危险液位复位、无效配方编号和灌装INT上限。原583条断言保留，补入568条兼容断言。新分母含扩展轨迹的旧前缀，不等于独立样本数。</p><p>果酱泵毫秒接口、需求升档时备泵重选、闸门遇障动作仍待明确，冲突内容已留档。319条公式通过测试轨迹检查，2条旧公式轨迹不足；没有转借上游320条有界证明。</p><p><a href="/v13-r6-review.html">当前35题材料</a> · <a href="/v13-r6-record.md">复审记录模板</a> · <a href="/v13-r6-analysis.md">完整采纳说明</a></p></section>'
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="15"><title>PLC 修订验收状态</title><style>
 body{{background:#f1f5fa;color:#203047;font:16px/1.7 system-ui,"Microsoft YaHei",sans-serif;margin:0}}
@@ -203,6 +205,14 @@ class Handler(BaseHTTPRequestHandler):
             raw, mime = (REPO / 'progress/v13_r2/复审材料.html').read_bytes(), 'text/html; charset=utf-8'
         elif path == '/v13-r4-review.html':
             raw, mime = (REPO / 'progress/v13_r4/复审材料.html').read_bytes(), 'text/html; charset=utf-8'
+        elif path == '/v13-r6-review.html':
+            raw = (REPO / 'progress/v13_r6/复审材料.html').read_text('utf-8')
+            raw = raw.replace('href="复审记录.md"','href="/v13-r6-record.md"').replace('href="采纳与核验.md"','href="/v13-r6-analysis.md"')
+            raw, mime = raw.encode('utf-8'), 'text/html; charset=utf-8'
+        elif path == '/v13-r6-record.md':
+            raw, mime = (REPO / 'progress/v13_r6/复审记录.md').read_bytes(), 'text/plain; charset=utf-8'
+        elif path == '/v13-r6-analysis.md':
+            raw, mime = (REPO / 'progress/v13_r6/采纳与核验.md').read_bytes(), 'text/plain; charset=utf-8'
         elif path == '/v13-r4-review.zip':
             raw, mime = (REPO / 'progress/工艺复审_r4_刘晏铭_20261108.zip').read_bytes(), 'application/zip'
         elif path == '/review.zip':

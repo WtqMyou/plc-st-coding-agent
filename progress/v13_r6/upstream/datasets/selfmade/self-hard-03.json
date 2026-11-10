@@ -1,0 +1,1349 @@
+{
+  "pid": "self-hard-03",
+  "source": "selfmade",
+  "difficulty": "hard",
+  "title": "固定容量物料 FIFO（紧凑对外数组、满空与同拍出入）",
+  "requirements": "功能块 FB 管理容量为 8 的物料队列，输入按钮由低到高仅触发一次；持续按住不重复执行。初始 count=0、队列为空，两个按钮的初始历史均为 FALSE。\n1. popEn 的上升沿先执行出队：非空则移除第一项，空队列不变。\n2. pushEn 的上升沿随后执行入队：若此时 count<8，将 pushItem 追加到逻辑队尾；否则拒绝且原队列不变。满队列同时出入时先腾出一个槽再追加；空队列同时出入时只留下新物料。\n3. 输出 count 为当前长度，full 当且仅当 count=8，empty 当且仅当 count=0。空队列 head=0，非空时 head 是第一项物料号。\n4. fifo 为调用方绑定、运行期间不被调用方改写的可读写数组。每拍结束时 fifo[1..count] 是按出队次序紧凑排列的逻辑队列，fifo[1] 在非空时等于 head。非有效区间 fifo[count+1..8] 的值未规定，不得据此判错。",
+  "variables": [
+    {
+      "name": "pushEn",
+      "data_type": "BOOL",
+      "description": "入队指令（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "pushItem",
+      "data_type": "INT",
+      "description": "入队物料号",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "popEn",
+      "data_type": "BOOL",
+      "description": "出队指令（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "fifo",
+      "data_type": "ARRAY[1..8] OF INT",
+      "description": "队列缓冲区，下标 1 为最老元素",
+      "direction": "inout",
+      "fields": []
+    },
+    {
+      "name": "count",
+      "data_type": "INT",
+      "description": "当前队列元素个数 0..8",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "full",
+      "data_type": "BOOL",
+      "description": "队列满",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "empty",
+      "data_type": "BOOL",
+      "description": "队列空",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "head",
+      "data_type": "INT",
+      "description": "队首元素（空时保持 0）",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "长度属于 0..8，空、满标志与长度双向一致。",
+      "ltl": "G((count >= 0 AND count <= 8) AND (full <-> count = 8) AND (empty <-> count = 0))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "上一拍已满，本拍只有入队上升沿时保持长度。",
+      "ltl": "G(prev(full) AND rising(pushEn) AND !rising(popEn) -> count = 8)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "上一拍为空，本拍只有出队上升沿时保持长度为零。",
+      "ltl": "G(prev(empty) AND rising(popEn) AND !rising(pushEn) -> count = 0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "每拍结束后按出队顺序检查全部有效前缀；满队时逐槽比较，非满时只断言 fifo[1..count]。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "S5",
+      "text": "空队列的 head 为零；非空时 head 就是可见有效前缀的第一项。",
+      "ltl": "G((empty -> head = 0) AND (NOT empty -> head = fifo[1]))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "kind": "safety",
+      "text": "按先出后入计算本拍长度；仅成功的单边动作改变计数。",
+      "ltl": "G((((rising(pushEn) AND !rising(popEn) AND !prev(count >= 8)) OR (rising(pushEn) AND rising(popEn) AND !prev(count <> 0))) -> count = prev(count) + 1) AND ((!rising(pushEn) AND rising(popEn) AND prev(count > 0)) -> count = prev(count) - 1) AND ((!((rising(pushEn) AND !rising(popEn) AND !prev(count >= 8)) OR (rising(pushEn) AND rising(popEn) AND !prev(count <> 0)) OR (!rising(pushEn) AND rising(popEn) AND prev(count > 0)))) -> count = prev(count)))",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S7",
+      "kind": "safety",
+      "text": "接受入队时，新增逻辑队尾等于本拍物料号。",
+      "ltl": "G((rising(pushEn) AND (rising(popEn) OR !prev(count >= 8)) AND count >= 1 AND count <= 8) -> fifo[count] = pushItem)",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S8",
+      "kind": "safety",
+      "text": "逐槽校验有效前缀；成功出队才左移一位，其余原有有效元素保持。",
+      "ltl": "G(((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 1)) -> fifo[1] = prev(fifo[1])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 1)) -> fifo[1] = prev(fifo[2])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 2)) -> fifo[2] = prev(fifo[2])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 2)) -> fifo[2] = prev(fifo[3])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 3)) -> fifo[3] = prev(fifo[3])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 3)) -> fifo[3] = prev(fifo[4])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 4)) -> fifo[4] = prev(fifo[4])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 4)) -> fifo[4] = prev(fifo[5])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 5)) -> fifo[5] = prev(fifo[5])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 5)) -> fifo[5] = prev(fifo[6])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 6)) -> fifo[6] = prev(fifo[6])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 6)) -> fifo[6] = prev(fifo[7])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 7)) -> fifo[7] = prev(fifo[7])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 7)) -> fifo[7] = prev(fifo[8])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 8)) -> fifo[8] = prev(fifo[8])))",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "q1",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 0,
+        "empty": true,
+        "full": false,
+        "head": 0
+      },
+      "note": "空队列初始状态",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q2",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 11
+      },
+      "expected": {
+        "count": 1,
+        "empty": false,
+        "head": 11,
+        "fifo": {
+          "$prefix": [
+            11
+          ]
+        }
+      },
+      "note": "入队 11",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q3",
+      "inputs": {
+        "pushEn": false
+      },
+      "expected": {
+        "count": 1,
+        "head": 11,
+        "fifo": {
+          "$prefix": [
+            11
+          ]
+        }
+      },
+      "note": "松开：不得重复入队（边沿触发）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q4",
+      "inputs": {
+        "pushEn": true,
+        "pushItem": 22
+      },
+      "expected": {
+        "count": 2,
+        "head": 11,
+        "fifo": {
+          "$prefix": [
+            11,
+            22
+          ]
+        }
+      },
+      "note": "入队 22，队头仍是 11",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q5",
+      "inputs": {
+        "pushEn": false
+      },
+      "expected": {
+        "count": 2,
+        "fifo": {
+          "$prefix": [
+            11,
+            22
+          ]
+        }
+      },
+      "note": "松开",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q6",
+      "inputs": {
+        "pushEn": true,
+        "pushItem": 33
+      },
+      "expected": {
+        "count": 3,
+        "head": 11,
+        "fifo": {
+          "$prefix": [
+            11,
+            22,
+            33
+          ]
+        }
+      },
+      "note": "入队 33",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q7",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false
+      },
+      "expected": {
+        "count": 3,
+        "head": 11,
+        "fifo": {
+          "$prefix": [
+            11,
+            22,
+            33
+          ]
+        }
+      },
+      "note": "松开：为下一拍的上升沿做准备",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q8",
+      "inputs": {
+        "pushEn": true,
+        "popEn": true,
+        "pushItem": 44
+      },
+      "expected": {
+        "count": 3,
+        "head": 22,
+        "fifo": {
+          "$prefix": [
+            22,
+            33,
+            44
+          ]
+        }
+      },
+      "note": "同周期同时按：先出队（11 走）再入队（44 进）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q9",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false
+      },
+      "expected": {
+        "count": 3,
+        "head": 22,
+        "fifo": {
+          "$prefix": [
+            22,
+            33,
+            44
+          ]
+        }
+      },
+      "note": "松开：状态保持",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-fill-55",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 55
+      },
+      "expected": {
+        "count": 4,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": {
+          "$prefix": [
+            22,
+            33,
+            44,
+            55
+          ]
+        }
+      },
+      "note": "追加新物料；满队时核对全部 8 个可见槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-release-55",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 55
+      },
+      "expected": {
+        "count": 4,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": {
+          "$prefix": [
+            22,
+            33,
+            44,
+            55
+          ]
+        }
+      },
+      "note": "松开入队按钮，保持所有有效元素。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-fill-66",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 66
+      },
+      "expected": {
+        "count": 5,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": {
+          "$prefix": [
+            22,
+            33,
+            44,
+            55,
+            66
+          ]
+        }
+      },
+      "note": "追加新物料；满队时核对全部 8 个可见槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-release-66",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 66
+      },
+      "expected": {
+        "count": 5,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": {
+          "$prefix": [
+            22,
+            33,
+            44,
+            55,
+            66
+          ]
+        }
+      },
+      "note": "松开入队按钮，保持所有有效元素。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-fill-77",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 77
+      },
+      "expected": {
+        "count": 6,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": {
+          "$prefix": [
+            22,
+            33,
+            44,
+            55,
+            66,
+            77
+          ]
+        }
+      },
+      "note": "追加新物料；满队时核对全部 8 个可见槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-release-77",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 77
+      },
+      "expected": {
+        "count": 6,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": {
+          "$prefix": [
+            22,
+            33,
+            44,
+            55,
+            66,
+            77
+          ]
+        }
+      },
+      "note": "松开入队按钮，保持所有有效元素。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-fill-88",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 88
+      },
+      "expected": {
+        "count": 7,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": {
+          "$prefix": [
+            22,
+            33,
+            44,
+            55,
+            66,
+            77,
+            88
+          ]
+        }
+      },
+      "note": "追加新物料；满队时核对全部 8 个可见槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-release-88",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 88
+      },
+      "expected": {
+        "count": 7,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": {
+          "$prefix": [
+            22,
+            33,
+            44,
+            55,
+            66,
+            77,
+            88
+          ]
+        }
+      },
+      "note": "松开入队按钮，保持所有有效元素。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-fill-99",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 99
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99
+        ]
+      },
+      "note": "追加新物料；满队时核对全部 8 个可见槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-release-99",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 99
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99
+        ]
+      },
+      "note": "松开入队按钮，保持所有有效元素。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-full-reject",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 123
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99
+        ]
+      },
+      "note": "满队拒绝单独入队，不覆盖原队列。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-full-release",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 123
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99
+        ]
+      },
+      "note": "松开按钮，准备满队双上升沿。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-full-both",
+      "inputs": {
+        "pushEn": true,
+        "popEn": true,
+        "pushItem": 456
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 33,
+        "fifo": [
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99,
+          456
+        ]
+      },
+      "note": "满时两个上升沿：先移除 22，再在队尾追加 456。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-both-held",
+      "inputs": {
+        "pushEn": true,
+        "popEn": true,
+        "pushItem": 777
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 33,
+        "fifo": [
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99,
+          456
+        ]
+      },
+      "note": "两个按钮保持高电平，不能再次操作。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-both-release",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 33,
+        "fifo": [
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99,
+          456
+        ]
+      },
+      "note": "松开两按钮。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-drain-1",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 7,
+        "empty": false,
+        "full": false,
+        "head": 44,
+        "fifo": {
+          "$prefix": [
+            44,
+            55,
+            66,
+            77,
+            88,
+            99,
+            456
+          ]
+        }
+      },
+      "note": "出队后核对下一个队首及剩余长度。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-pop-held",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 7,
+        "empty": false,
+        "full": false,
+        "head": 44,
+        "fifo": {
+          "$prefix": [
+            44,
+            55,
+            66,
+            77,
+            88,
+            99,
+            456
+          ]
+        }
+      },
+      "note": "出队按钮保持高电平不能多出一件。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-pop-release-1",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 7,
+        "empty": false,
+        "full": false,
+        "head": 44,
+        "fifo": {
+          "$prefix": [
+            44,
+            55,
+            66,
+            77,
+            88,
+            99,
+            456
+          ]
+        }
+      },
+      "note": "松开出队按钮为下一拍重新触发。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-drain-2",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 6,
+        "empty": false,
+        "full": false,
+        "head": 55,
+        "fifo": {
+          "$prefix": [
+            55,
+            66,
+            77,
+            88,
+            99,
+            456
+          ]
+        }
+      },
+      "note": "出队后核对下一个队首及剩余长度。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-pop-release-2",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 6,
+        "empty": false,
+        "full": false,
+        "head": 55,
+        "fifo": {
+          "$prefix": [
+            55,
+            66,
+            77,
+            88,
+            99,
+            456
+          ]
+        }
+      },
+      "note": "松开出队按钮为下一拍重新触发。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-drain-3",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 5,
+        "empty": false,
+        "full": false,
+        "head": 66,
+        "fifo": {
+          "$prefix": [
+            66,
+            77,
+            88,
+            99,
+            456
+          ]
+        }
+      },
+      "note": "出队后核对下一个队首及剩余长度。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-pop-release-3",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 5,
+        "empty": false,
+        "full": false,
+        "head": 66,
+        "fifo": {
+          "$prefix": [
+            66,
+            77,
+            88,
+            99,
+            456
+          ]
+        }
+      },
+      "note": "松开出队按钮为下一拍重新触发。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-drain-4",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 4,
+        "empty": false,
+        "full": false,
+        "head": 77,
+        "fifo": {
+          "$prefix": [
+            77,
+            88,
+            99,
+            456
+          ]
+        }
+      },
+      "note": "出队后核对下一个队首及剩余长度。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-pop-release-4",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 4,
+        "empty": false,
+        "full": false,
+        "head": 77,
+        "fifo": {
+          "$prefix": [
+            77,
+            88,
+            99,
+            456
+          ]
+        }
+      },
+      "note": "松开出队按钮为下一拍重新触发。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-drain-5",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 3,
+        "empty": false,
+        "full": false,
+        "head": 88,
+        "fifo": {
+          "$prefix": [
+            88,
+            99,
+            456
+          ]
+        }
+      },
+      "note": "出队后核对下一个队首及剩余长度。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-pop-release-5",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 3,
+        "empty": false,
+        "full": false,
+        "head": 88,
+        "fifo": {
+          "$prefix": [
+            88,
+            99,
+            456
+          ]
+        }
+      },
+      "note": "松开出队按钮为下一拍重新触发。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-drain-6",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 2,
+        "empty": false,
+        "full": false,
+        "head": 99,
+        "fifo": {
+          "$prefix": [
+            99,
+            456
+          ]
+        }
+      },
+      "note": "出队后核对下一个队首及剩余长度。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-pop-release-6",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 2,
+        "empty": false,
+        "full": false,
+        "head": 99,
+        "fifo": {
+          "$prefix": [
+            99,
+            456
+          ]
+        }
+      },
+      "note": "松开出队按钮为下一拍重新触发。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-drain-7",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 1,
+        "empty": false,
+        "full": false,
+        "head": 456,
+        "fifo": {
+          "$prefix": [
+            456
+          ]
+        }
+      },
+      "note": "出队后核对下一个队首及剩余长度。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-pop-release-7",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 1,
+        "empty": false,
+        "full": false,
+        "head": 456,
+        "fifo": {
+          "$prefix": [
+            456
+          ]
+        }
+      },
+      "note": "松开出队按钮为下一拍重新触发。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-drain-8",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 0,
+        "empty": true,
+        "full": false,
+        "head": 0
+      },
+      "note": "出队后核对下一个队首及剩余长度。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-pop-release-8",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 0,
+        "empty": true,
+        "full": false,
+        "head": 0
+      },
+      "note": "松开出队按钮为下一拍重新触发。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-empty-pop",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 0,
+        "empty": true,
+        "full": false,
+        "head": 0
+      },
+      "note": "空队列出队被忽略。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-empty-release",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 0,
+        "empty": true,
+        "full": false,
+        "head": 0
+      },
+      "note": "空队列松开。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-empty-both",
+      "inputs": {
+        "pushEn": true,
+        "popEn": true,
+        "pushItem": 111
+      },
+      "expected": {
+        "count": 1,
+        "empty": false,
+        "full": false,
+        "head": 111,
+        "fifo": {
+          "$prefix": [
+            111
+          ]
+        }
+      },
+      "note": "空队列同时出入，最终只有新物料。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q-push-held",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 222
+      },
+      "expected": {
+        "count": 1,
+        "empty": false,
+        "full": false,
+        "head": 111,
+        "fifo": {
+          "$prefix": [
+            111
+          ]
+        }
+      },
+      "note": "入队按钮保持高电平，新物料不应重复追加。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "fifo_direction_note": "v1.2/v1.3 上游 JSON 曾写 input，与参考解的 VAR_IN_OUT 声明矛盾（参考解注释：fifo 由调用方分配、FB 内部读写，必须是 VAR_IN_OUT）。本仓库按参考解修正为 inout；待上游 v1.3.1 修正生成器后同步。",
+    "final_revision_record": "review/other_cases.md",
+    "source_record": "sources/index.json#self-hard-03",
+    "historical_origin": "流程行业赛题里物料缓冲、成品暂存常用于吸收上下游节拍差异，赛题中常要求 FIFO 队列；环形缓冲的满/空判定是经典易错点。",
+    "historical_review": "人工审核：满/空边界、同周期双向操作、计数不得为负三项均有独立用例；'先出队再入队'的顺序在题面明确，避免歧义。",
+    "historical_source_type": "自主构思 / 行业经验改编",
+    "historical_adaptation": "把赛题中随管线运行的输送队列固化为 8 槽缓冲区，并强制要求每周期整理成紧凑数组（下标 1 为最老），这排除了只写读写指针的偷懒实现，考察真实数据搬移。",
+    "source_type": "自建教学题",
+    "attribution": "上游自述为行业场景启发；缺少可独立核验的外部题号或标准条款。",
+    "independent_process_review": "包内未见可核验的逐题独立签署"
+  },
+  "language": "zh",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 18,
+  "mc_max_traces": 60000,
+  "mc_inputs": {}
+}

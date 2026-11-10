@@ -1,0 +1,241 @@
+{
+  "pid": "public-easy-06",
+  "source": "public",
+  "difficulty": "easy",
+  "title": "Aeration Blower Delayed Start",
+  "requirements": "Control a wastewater-treatment aeration blower with a low-dissolved-oxygen demand, a 5-second start delay, emergency-stop priority and start-cycle counting.\n\n1. Start delay timing when both DO_LOW and AERATION_E_STOP_NC are TRUE. Allow BLOWER_RUN to become TRUE only after these conditions have remained satisfied for 5 seconds.\n2. If DO_LOW becomes FALSE or an emergency stop occurs, immediately disable BLOWER_RUN and reset the start timer, whether timing is incomplete or complete. A new demand must wait the full 5 seconds again.\n3. Increment AERATION_BLOWER_CYCLE_COUNT once on each FALSE-to-TRUE transition of BLOWER_RUN. Do not count repeatedly during continuous operation.\n4. At power-up, initialize the blower to OFF and the start count to zero. The start delay gates a BOOL enable; no continuous speed ramp is required.",
+  "variables": [
+    {
+      "name": "DO_LOW",
+      "data_type": "BOOL",
+      "description": "Dissolved oxygen is below its threshold and aeration is needed.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "AERATION_E_STOP_NC",
+      "data_type": "BOOL",
+      "description": "TRUE means the emergency stop is inactive; FALSE means it is active.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "BLOWER_RUN",
+      "data_type": "BOOL",
+      "description": "Blower motor-contactor run command.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "AERATION_BLOWER_CYCLE_COUNT",
+      "data_type": "UINT",
+      "description": "Count of actual blower starts.",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "当急停按下（AERATION_E_STOP_NC=FALSE）时，鼓风机运行命令必须为 FALSE。",
+      "ltl": "G(NOT AERATION_E_STOP_NC -> NOT BLOWER_RUN)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "当低氧需求为 FALSE 时，鼓风机运行命令必须为 FALSE。",
+      "ltl": "G(NOT DO_LOW -> NOT BLOWER_RUN)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "鼓风机连续运行期间（本拍与上一拍都在运行）启动计数不得增加。",
+      "ltl": "G(BLOWER_RUN AND prev(BLOWER_RUN) -> AERATION_BLOWER_CYCLE_COUNT = prev(AERATION_BLOWER_CYCLE_COUNT))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "上电初始化后 5 个扫描周期内不得启动（以周期数代替 5 秒延时），且计数只在运行命上升沿加 1（由 e06-1..e06-7 用例验证的数据性质）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "N10-S5",
+      "text": "11.10补充：连续五拍低氧且急停释放才启动，需求中断须重新等待。",
+      "ltl": "G(BLOWER_RUN <-> ((DO_LOW AND AERATION_E_STOP_NC) AND prev(((DO_LOW AND AERATION_E_STOP_NC) AND prev(((DO_LOW AND AERATION_E_STOP_NC) AND prev(((DO_LOW AND AERATION_E_STOP_NC) AND prev((DO_LOW AND AERATION_E_STOP_NC))))))))))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "e06-1",
+      "inputs": {
+        "DO_LOW": true,
+        "AERATION_E_STOP_NC": true
+      },
+      "expected": {
+        "BLOWER_RUN": true,
+        "AERATION_BLOWER_CYCLE_COUNT": 1
+      },
+      "note": "低氧且无急停连续 5 拍：第 5 拍启动延时到点，BLOWER_RUN 置 TRUE 并在这一拍把计数加到 1（以周期数代替 5 秒）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 5,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e06-2",
+      "inputs": {
+        "DO_LOW": true,
+        "AERATION_E_STOP_NC": true
+      },
+      "expected": {
+        "BLOWER_RUN": false,
+        "AERATION_BLOWER_CYCLE_COUNT": 0
+      },
+      "note": "只满足 4 拍：延时差一拍，风机不启动、计数保持 0（边界下方，负例）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 4,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e06-3",
+      "inputs": {
+        "DO_LOW": true,
+        "AERATION_E_STOP_NC": true
+      },
+      "expected": {
+        "BLOWER_RUN": true,
+        "AERATION_BLOWER_CYCLE_COUNT": 1
+      },
+      "note": "连续运行 7 拍：只在第 5 拍的上升沿计一次数，持续运行期间不得重复计数（负例）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 7,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e06-4",
+      "inputs": {
+        "DO_LOW": false,
+        "AERATION_E_STOP_NC": true
+      },
+      "expected": {
+        "BLOWER_RUN": false,
+        "AERATION_BLOWER_CYCLE_COUNT": 0
+      },
+      "note": "低氧需求不存在：连续 7 拍也不启动、不计数（负例）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 7,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e06-5",
+      "inputs": {
+        "DO_LOW": true,
+        "AERATION_E_STOP_NC": false
+      },
+      "expected": {
+        "BLOWER_RUN": false,
+        "AERATION_BLOWER_CYCLE_COUNT": 0
+      },
+      "note": "急停按下（AERATION_E_STOP_NC=FALSE）压过启动延时：不启动、不计数（负例）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 7,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e06-6",
+      "inputs": {
+        "DO_LOW": true,
+        "AERATION_E_STOP_NC": true
+      },
+      "expected": {
+        "BLOWER_RUN": false,
+        "AERATION_BLOWER_CYCLE_COUNT": 0
+      },
+      "note": "上电第 1 拍：延时计时刚开始，风机 OFF、计数为 0（上电初始化边界）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e06-7",
+      "inputs": {
+        "DO_LOW": true,
+        "AERATION_E_STOP_NC": true
+      },
+      "expected": {
+        "BLOWER_RUN": true,
+        "AERATION_BLOWER_CYCLE_COUNT": 1
+      },
+      "note": "连续运行 10 拍：仍只计 1 次启动，计数不随运行时间增长",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 10,
+      "expect_full": true
+    }
+  ],
+  "provenance": {
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r4",
+      "platform": "codesys",
+      "pid": "public-easy-06",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate",
+        "r4: explicit batch/pump/heater contracts; isolated sequence groups"
+      ],
+      "adapted_source_sha256": "7d94fd204642001fef5977405191039a63d39024c23ac08e5fa590fc28dd9ef7"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r6",
+      "kind": "platform_adapted",
+      "platform": "codesys",
+      "original_json": "progress/v13/upstream/public/public-easy-06.json",
+      "original_sha256": "7c01568e43eb63d4d970c1359c42267a3840cc5ab36ff570f65b793139f46a83",
+      "interface_changed": false,
+      "reference_source_sha256": "7d94fd204642001fef5977405191039a63d39024c23ac08e5fa590fc28dd9ef7",
+      "comparison_scope": "r6 platform-adapted suite; r5 execution model; old results retained",
+      "working_json": "progress/v13_r6/datasets/public/public-easy-06.json"
+    },
+    "review_revision": "v1.3-review-r6",
+    "human_process_review": {
+      "status": "pending",
+      "reviewer": "刘晏铭",
+      "approved": false
+    },
+    "review": "11.10技术复核；上游自动验收及旧签署不作为本版工艺批准。"
+  },
+  "language": "en",
+  "case_mode": "single",
+  "raw_text": "# Aeration Blower Delayed Start\n\n- **Difficulty:** Easy (easy)\n\n## Requirements\n\nControl a wastewater-treatment aeration blower with a low-dissolved-oxygen demand, a 5-second start delay, emergency-stop priority and start-cycle counting.\n\n1. Start delay timing when both DO_LOW and AERATION_E_STOP_NC are TRUE. Allow BLOWER_RUN to become TRUE only after these conditions have remained satisfied for 5 seconds.\n2. If DO_LOW becomes FALSE or an emergency stop occurs, immediately disable BLOWER_RUN and reset the start timer, whether timing is incomplete or complete. A new demand must wait the full 5 seconds again.\n3. Increment AERATION_BLOWER_CYCLE_COUNT once on each FALSE-to-TRUE transition of BLOWER_RUN. Do not count repeatedly during continuous operation.\n4. At power-up, initialize the blower to OFF and the start count to zero. The start delay gates a BOOL enable; no continuous speed ramp is required.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `DO_LOW` | `BOOL` | Dissolved oxygen is below its threshold and aeration is needed. |\n| Input | `AERATION_E_STOP_NC` | `BOOL` | TRUE means the emergency stop is inactive; FALSE means it is active. |\n| Output | `BLOWER_RUN` | `BOOL` | Blower motor-contactor run command. |\n| Output | `AERATION_BLOWER_CYCLE_COUNT` | `UINT` | Count of actual blower starts. |",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

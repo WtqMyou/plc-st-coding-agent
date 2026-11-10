@@ -1,0 +1,1726 @@
+{
+  "pid": "self-hard-03",
+  "source": "selfmade",
+  "difficulty": "hard",
+  "title": "分批物料队列（环形缓冲 FIFO 与满空边界）",
+  "requirements": "写一个功能块 FB，实现一个容量为 8 的先入先出物料队列。\n控制要求：\n1. pushEn 的**上升沿**把 pushItem 压入队尾；popEn 的上升沿从队首弹出；\n2. 每次只处理一条指令；若同一周期 pushEn 与 popEn 同时为上升沿，**先出队再入队**；\n3. count 输出当前队列元素个数（0..8），full 在 count = 8 时为 TRUE，empty 在 count = 0 时为 TRUE；\n4. **队列满时入队必须被丢弃**，不得覆盖已有元素，count 保持不变；\n5. **队列空时出队必须被忽略**，count 不得变成负数；\n6. head 输出队首元素的物料号，队列为空时保持 0；\n7. fifo 数组本身对外可见，下标 1 始终是最老元素（每周期需要整理成紧凑数组）。",
+  "variables": [
+    {
+      "name": "pushEn",
+      "data_type": "BOOL",
+      "description": "入队指令（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "pushItem",
+      "data_type": "INT",
+      "description": "入队物料号",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "popEn",
+      "data_type": "BOOL",
+      "description": "出队指令（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "fifo",
+      "data_type": "ARRAY[1..8] OF INT",
+      "description": "队列缓冲区，下标 1 为最老元素",
+      "direction": "inout",
+      "fields": []
+    },
+    {
+      "name": "count",
+      "data_type": "INT",
+      "description": "当前队列元素个数 0..8",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "full",
+      "data_type": "BOOL",
+      "description": "队列满",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "empty",
+      "data_type": "BOOL",
+      "description": "队列空",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "head",
+      "data_type": "INT",
+      "description": "队首元素（空时保持 0）",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "count 恒介于 0 与 8 之间。",
+      "ltl": "G(count >= 0 & count <= 8)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "队列满时入队不得改变 count（本拍即不改变）。",
+      "ltl": "G(prev(full) & pushEn & !popEn -> count = prev(count))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "队列空时出队不得改变 count，也不得产生负值（本拍即不改变）。",
+      "ltl": "G(prev(empty) & popEn & !pushEn -> count = prev(count))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "入队与出队严格保持先进先出顺序：先入的元素先出（需要跟踪元素身份，只在用例中校验）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "S5",
+      "text": "头指针只在出队时前进：没有出队动作的周期 head 必须保持不变。",
+      "ltl": "G(empty -> head = 0)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "N10-S1",
+      "text": "11.10补充：长度属于 0..8，空、满标志与长度双向一致。",
+      "ltl": "G((count >= 0 AND count <= 8) AND (full <-> count = 8) AND (empty <-> count = 0))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S2",
+      "text": "11.10补充：上一拍已满，本拍只有入队上升沿时保持长度。",
+      "ltl": "G(prev(full) AND rising(pushEn) AND !rising(popEn) -> count = 8)",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S3",
+      "text": "11.10补充：上一拍为空，本拍只有出队上升沿时保持长度为零。",
+      "ltl": "G(prev(empty) AND rising(popEn) AND !rising(pushEn) -> count = 0)",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S5",
+      "text": "11.10补充：空队列的 head 为零；非空时 head 就是可见有效前缀的第一项。",
+      "ltl": "G((empty -> head = 0) AND (NOT empty -> head = fifo[1]))",
+      "kind": "sequencing",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S6",
+      "text": "11.10补充：按先出后入计算本拍长度；仅成功的单边动作改变计数。",
+      "ltl": "G((((rising(pushEn) AND !rising(popEn) AND !prev(count >= 8)) OR (rising(pushEn) AND rising(popEn) AND !prev(count <> 0))) -> count = prev(count) + 1) AND ((!rising(pushEn) AND rising(popEn) AND prev(count > 0)) -> count = prev(count) - 1) AND ((!((rising(pushEn) AND !rising(popEn) AND !prev(count >= 8)) OR (rising(pushEn) AND rising(popEn) AND !prev(count <> 0)) OR (!rising(pushEn) AND rising(popEn) AND prev(count > 0)))) -> count = prev(count)))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S7",
+      "text": "11.10补充：接受入队时，新增逻辑队尾等于本拍物料号。",
+      "ltl": "G((rising(pushEn) AND (rising(popEn) OR !prev(count >= 8)) AND count >= 1 AND count <= 8) -> fifo[count] = pushItem)",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S8",
+      "text": "11.10补充：逐槽校验有效前缀；成功出队才左移一位，其余原有有效元素保持。",
+      "ltl": "G(((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 1)) -> fifo[1] = prev(fifo[1])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 1)) -> fifo[1] = prev(fifo[2])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 2)) -> fifo[2] = prev(fifo[2])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 2)) -> fifo[2] = prev(fifo[3])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 3)) -> fifo[3] = prev(fifo[3])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 3)) -> fifo[3] = prev(fifo[4])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 4)) -> fifo[4] = prev(fifo[4])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 4)) -> fifo[4] = prev(fifo[5])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 5)) -> fifo[5] = prev(fifo[5])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 5)) -> fifo[5] = prev(fifo[6])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 6)) -> fifo[6] = prev(fifo[6])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 6)) -> fifo[6] = prev(fifo[7])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 7)) -> fifo[7] = prev(fifo[7])) AND (((rising(popEn) AND prev(count > 0)) AND prev(count > 7)) -> fifo[7] = prev(fifo[8])) AND ((!(rising(popEn) AND prev(count > 0)) AND prev(count >= 8)) -> fifo[8] = prev(fifo[8])))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "q1",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 0,
+        "empty": true,
+        "full": false,
+        "head": 0,
+        "fifo": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "空队列初始状态",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q2",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 11
+      },
+      "expected": {
+        "count": 1,
+        "empty": false,
+        "head": 11,
+        "fifo": [
+          11,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "入队 11",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q3",
+      "inputs": {
+        "pushEn": false
+      },
+      "expected": {
+        "count": 1,
+        "head": 11,
+        "fifo": [
+          11,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开：不得重复入队（边沿触发）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q4",
+      "inputs": {
+        "pushEn": true,
+        "pushItem": 22
+      },
+      "expected": {
+        "count": 2,
+        "head": 11,
+        "fifo": [
+          11,
+          22,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "入队 22，队头仍是 11",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q5",
+      "inputs": {
+        "pushEn": false
+      },
+      "expected": {
+        "count": 2,
+        "fifo": [
+          11,
+          22,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q6",
+      "inputs": {
+        "pushEn": true,
+        "pushItem": 33
+      },
+      "expected": {
+        "count": 3,
+        "head": 11,
+        "fifo": [
+          11,
+          22,
+          33,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "入队 33",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q7",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false
+      },
+      "expected": {
+        "count": 3,
+        "head": 11,
+        "fifo": [
+          11,
+          22,
+          33,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开：为下一拍的上升沿做准备",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q8",
+      "inputs": {
+        "pushEn": true,
+        "popEn": true,
+        "pushItem": 44
+      },
+      "expected": {
+        "count": 3,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "同周期同时按：先出队（11 走）再入队（44 进）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "q9",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false
+      },
+      "expected": {
+        "count": 3,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开：状态保持",
+      "const_inputs": {},
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q1",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 0,
+        "empty": true,
+        "full": false,
+        "head": 0
+      },
+      "note": "空队列初始状态",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q2",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 11
+      },
+      "expected": {
+        "count": 1,
+        "empty": false,
+        "head": 11,
+        "fifo": [
+          11,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "入队 11；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q3",
+      "inputs": {
+        "pushEn": false
+      },
+      "expected": {
+        "count": 1,
+        "head": 11,
+        "fifo": [
+          11,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开：不得重复入队（边沿触发）；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q4",
+      "inputs": {
+        "pushEn": true,
+        "pushItem": 22
+      },
+      "expected": {
+        "count": 2,
+        "head": 11,
+        "fifo": [
+          11,
+          22,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "入队 22，队头仍是 11；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q5",
+      "inputs": {
+        "pushEn": false
+      },
+      "expected": {
+        "count": 2,
+        "fifo": [
+          11,
+          22,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q6",
+      "inputs": {
+        "pushEn": true,
+        "pushItem": 33
+      },
+      "expected": {
+        "count": 3,
+        "head": 11,
+        "fifo": [
+          11,
+          22,
+          33,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "入队 33；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q7",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false
+      },
+      "expected": {
+        "count": 3,
+        "head": 11,
+        "fifo": [
+          11,
+          22,
+          33,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开：为下一拍的上升沿做准备；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q8",
+      "inputs": {
+        "pushEn": true,
+        "popEn": true,
+        "pushItem": 44
+      },
+      "expected": {
+        "count": 3,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "同周期同时按：先出队（11 走）再入队（44 进）；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q9",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false
+      },
+      "expected": {
+        "count": 3,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开：状态保持；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-fill-55",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 55
+      },
+      "expected": {
+        "count": 4,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "追加新物料；满队时核对全部 8 个可见槽。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-release-55",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 55
+      },
+      "expected": {
+        "count": 4,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开入队按钮，保持所有有效元素。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-fill-66",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 66
+      },
+      "expected": {
+        "count": 5,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "追加新物料；满队时核对全部 8 个可见槽。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-release-66",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 66
+      },
+      "expected": {
+        "count": 5,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开入队按钮，保持所有有效元素。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-fill-77",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 77
+      },
+      "expected": {
+        "count": 6,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          77,
+          0,
+          0
+        ]
+      },
+      "note": "追加新物料；满队时核对全部 8 个可见槽。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-release-77",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 77
+      },
+      "expected": {
+        "count": 6,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          77,
+          0,
+          0
+        ]
+      },
+      "note": "松开入队按钮，保持所有有效元素。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-fill-88",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 88
+      },
+      "expected": {
+        "count": 7,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          0
+        ]
+      },
+      "note": "追加新物料；满队时核对全部 8 个可见槽。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-release-88",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 88
+      },
+      "expected": {
+        "count": 7,
+        "empty": false,
+        "full": false,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          0
+        ]
+      },
+      "note": "松开入队按钮，保持所有有效元素。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-fill-99",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 99
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99
+        ]
+      },
+      "note": "追加新物料；满队时核对全部 8 个可见槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-release-99",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 99
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99
+        ]
+      },
+      "note": "松开入队按钮，保持所有有效元素。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-full-reject",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 123
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99
+        ]
+      },
+      "note": "满队拒绝单独入队，不覆盖原队列。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-full-release",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 123
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 22,
+        "fifo": [
+          22,
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99
+        ]
+      },
+      "note": "松开按钮，准备满队双上升沿。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-full-both",
+      "inputs": {
+        "pushEn": true,
+        "popEn": true,
+        "pushItem": 456
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 33,
+        "fifo": [
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99,
+          456
+        ]
+      },
+      "note": "满时两个上升沿：先移除 22，再在队尾追加 456。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-both-held",
+      "inputs": {
+        "pushEn": true,
+        "popEn": true,
+        "pushItem": 777
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 33,
+        "fifo": [
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99,
+          456
+        ]
+      },
+      "note": "两个按钮保持高电平，不能再次操作。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-both-release",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 8,
+        "empty": false,
+        "full": true,
+        "head": 33,
+        "fifo": [
+          33,
+          44,
+          55,
+          66,
+          77,
+          88,
+          99,
+          456
+        ]
+      },
+      "note": "松开两按钮。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-drain-1",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 7,
+        "empty": false,
+        "full": false,
+        "head": 44,
+        "fifo": [
+          44,
+          55,
+          66,
+          77,
+          88,
+          99,
+          456,
+          0
+        ]
+      },
+      "note": "出队后核对下一个队首及剩余长度。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-pop-held",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 7,
+        "empty": false,
+        "full": false,
+        "head": 44,
+        "fifo": [
+          44,
+          55,
+          66,
+          77,
+          88,
+          99,
+          456,
+          0
+        ]
+      },
+      "note": "出队按钮保持高电平不能多出一件。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-pop-release-1",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 7,
+        "empty": false,
+        "full": false,
+        "head": 44,
+        "fifo": [
+          44,
+          55,
+          66,
+          77,
+          88,
+          99,
+          456,
+          0
+        ]
+      },
+      "note": "松开出队按钮为下一拍重新触发。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-drain-2",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 6,
+        "empty": false,
+        "full": false,
+        "head": 55,
+        "fifo": [
+          55,
+          66,
+          77,
+          88,
+          99,
+          456,
+          0,
+          0
+        ]
+      },
+      "note": "出队后核对下一个队首及剩余长度。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-pop-release-2",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 6,
+        "empty": false,
+        "full": false,
+        "head": 55,
+        "fifo": [
+          55,
+          66,
+          77,
+          88,
+          99,
+          456,
+          0,
+          0
+        ]
+      },
+      "note": "松开出队按钮为下一拍重新触发。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-drain-3",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 5,
+        "empty": false,
+        "full": false,
+        "head": 66,
+        "fifo": [
+          66,
+          77,
+          88,
+          99,
+          456,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "出队后核对下一个队首及剩余长度。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-pop-release-3",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 5,
+        "empty": false,
+        "full": false,
+        "head": 66,
+        "fifo": [
+          66,
+          77,
+          88,
+          99,
+          456,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开出队按钮为下一拍重新触发。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-drain-4",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 4,
+        "empty": false,
+        "full": false,
+        "head": 77,
+        "fifo": [
+          77,
+          88,
+          99,
+          456,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "出队后核对下一个队首及剩余长度。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-pop-release-4",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 4,
+        "empty": false,
+        "full": false,
+        "head": 77,
+        "fifo": [
+          77,
+          88,
+          99,
+          456,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开出队按钮为下一拍重新触发。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-drain-5",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 3,
+        "empty": false,
+        "full": false,
+        "head": 88,
+        "fifo": [
+          88,
+          99,
+          456,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "出队后核对下一个队首及剩余长度。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-pop-release-5",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 3,
+        "empty": false,
+        "full": false,
+        "head": 88,
+        "fifo": [
+          88,
+          99,
+          456,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开出队按钮为下一拍重新触发。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-drain-6",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 2,
+        "empty": false,
+        "full": false,
+        "head": 99,
+        "fifo": [
+          99,
+          456,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "出队后核对下一个队首及剩余长度。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-pop-release-6",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 2,
+        "empty": false,
+        "full": false,
+        "head": 99,
+        "fifo": [
+          99,
+          456,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开出队按钮为下一拍重新触发。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-drain-7",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 1,
+        "empty": false,
+        "full": false,
+        "head": 456,
+        "fifo": [
+          456,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "出队后核对下一个队首及剩余长度。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-pop-release-7",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 1,
+        "empty": false,
+        "full": false,
+        "head": 456,
+        "fifo": [
+          456,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "松开出队按钮为下一拍重新触发。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-drain-8",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 0,
+        "empty": true,
+        "full": false,
+        "head": 0
+      },
+      "note": "出队后核对下一个队首及剩余长度。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-pop-release-8",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 0,
+        "empty": true,
+        "full": false,
+        "head": 0
+      },
+      "note": "松开出队按钮为下一拍重新触发。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-empty-pop",
+      "inputs": {
+        "pushEn": false,
+        "popEn": true,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 0,
+        "empty": true,
+        "full": false,
+        "head": 0
+      },
+      "note": "空队列出队被忽略。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-empty-release",
+      "inputs": {
+        "pushEn": false,
+        "popEn": false,
+        "pushItem": 0
+      },
+      "expected": {
+        "count": 0,
+        "empty": true,
+        "full": false,
+        "head": 0
+      },
+      "note": "空队列松开。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-empty-both",
+      "inputs": {
+        "pushEn": true,
+        "popEn": true,
+        "pushItem": 111
+      },
+      "expected": {
+        "count": 1,
+        "empty": false,
+        "full": false,
+        "head": 111,
+        "fifo": [
+          111,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "空队列同时出入，最终只有新物料。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-q-push-held",
+      "inputs": {
+        "pushEn": true,
+        "popEn": false,
+        "pushItem": 222
+      },
+      "expected": {
+        "count": 1,
+        "empty": false,
+        "full": false,
+        "head": 111,
+        "fifo": [
+          111,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "入队按钮保持高电平，新物料不应重复追加。；r6按现行紧凑可见数组契约补齐尾部零，不引入$prefix判分扩展。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "自主构思 / 行业经验改编",
+    "origin": "流程行业赛题里物料缓冲、成品暂存常用于吸收上下游节拍差异，赛题中常要求 FIFO 队列；环形缓冲的满/空判定是经典易错点。",
+    "adaptation": "把赛题中随管线运行的输送队列固化为 8 槽缓冲区，并强制要求每周期整理成紧凑数组（下标 1 为最老），这排除了只写读写指针的偷懒实现，考察真实数据搬移。",
+    "review": "11.10技术复核；上游自动验收及旧签署不作为本版工艺批准。",
+    "interface_resolution": "原始 input 原样留档；运行平台适配统一为 inout，与参考解和调用方可写存储一致。",
+    "review_revision": "v1.3-review-r6",
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r4",
+      "platform": "codesys",
+      "pid": "self-hard-03",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "v1.3 FIFO input -> inout; upstream retained, reference and caller storage unchanged",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate",
+        "r4: explicit batch/pump/heater contracts; isolated sequence groups"
+      ],
+      "adapted_source_sha256": "c236b8f12e13f3be680abb3da4c383b3e4e1c47df24019cd819412ef7b447bc0"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r6",
+      "kind": "platform_adapted",
+      "platform": "codesys",
+      "original_json": "progress/v13/upstream/selfmade/self-hard-03.json",
+      "original_sha256": "519bfb89ee2586a0a5878de9da2540c9da206f3de1866b685c9c88bcd0a9843c",
+      "interface_changed": true,
+      "reference_source_sha256": "c236b8f12e13f3be680abb3da4c383b3e4e1c47df24019cd819412ef7b447bc0",
+      "comparison_scope": "r6 platform-adapted suite; r5 execution model; old results retained",
+      "working_json": "progress/v13_r6/datasets/selfmade/self-hard-03.json"
+    },
+    "human_process_review": {
+      "status": "pending",
+      "reviewer": "刘晏铭",
+      "approved": false
+    }
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}
