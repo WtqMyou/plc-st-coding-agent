@@ -51,7 +51,7 @@ def offline_page():
     baseline_label = escape(str(scores.get('baseline_label', '旧版本地整题')))
     current_label = escape(str(scores.get('current_label', '修订版本地整题')))
     review_route = active.get('review_route') or ('/v13-r2-review.html' if version == 'v1.3-review-r2' else '/v13-review.html')
-    if review_route not in ('/v13-review.html','/v13-r2-review.html','/v13-r4-review.html','/v13-r6-review.html'):
+    if review_route not in ('/v13-review.html','/v13-r2-review.html','/v13-r4-review.html','/v13-r6-review.html','/v13-r8-review.html'):
         raise RuntimeError('Unknown review route')
     repo_revision_path = quote(revision_root.relative_to(REPO.resolve()).as_posix())
     native_probes_note = ('新增 ' + str(offline.get('native_probes_count',0)) + ' 项原生对照（含预期失败），平台接受不等于运行正确。'
@@ -59,7 +59,8 @@ def offline_page():
     data_note = str(offline.get('data_note') or ('数据仍为 ' + str(offline['data_version']) + '；本次只改变裁判。' if offline.get('data_version') else ''))
     table = []
     for r in scores.get('rows', []):
-        cells = [r['group'], f'{r["old_solved"]}/35', f'{r["new_solved"]}/35',
+        task_count = r.get('tasks',35)
+        cells = [r['group'], f'{r["old_solved"]}/{task_count}', f'{r["new_solved"]}/{task_count}',
                  f'{r["new_passed"]}/{r.get("new_cases",offline.get("cases",531))}', ', '.join(r['lost']) or '无', len(r['tool_errors'])]
         table.append('<tr>' + ''.join('<td>' + escape(str(x)) + '</td>' for x in cells) + '</tr>')
     depth_rows = load(root / 'depth_diagnostics.json').get('results',[])
@@ -75,6 +76,11 @@ def offline_page():
         repair_note = '<section><h2>这次修复解决了什么</h2><p>通用整数转换和RETURN提前退出已修复。原FIFO答卷通过27/27功能用例，但形式检查仍发现S4反例：满队同拍入出队后，数量变为1却仍返回满队状态码。</p><p>未修改原答卷，也没有更换小试验原选中轮次。历史140份固定答案的分数变化属于裁判纠错，不能当作模型生成能力提升。</p><p><a href="'+explanation_url+'">查看归因、反例和完整复验结果</a></p></section>'
     if version=='v1.3-review-r6':
         repair_note = '<section><h2>11.10资料处理</h2><p>已核验四份来件，修复危险液位复位、无效配方编号和灌装INT上限。原583条断言保留，补入568条兼容断言。新分母含扩展轨迹的旧前缀，不等于独立样本数。</p><p>果酱泵毫秒接口、需求升档时备泵重选、闸门遇障动作仍待明确，冲突内容已留档。319条公式通过测试轨迹检查，2条旧公式轨迹不足；没有转借上游320条有界证明。</p><p><a href="/v13-r6-review.html">当前35题材料</a> · <a href="/v13-r6-record.md">复审记录模板</a> · <a href="/v13-r6-analysis.md">完整采纳说明</a></p></section>'
+    human_note = '刘晏铭的本版工艺复审待填写；已收到的旧稿与新意见均留档，旧版批准不自动适用于当前修订版。'
+    if version=='v1.3-review-r8':
+        repair_note = '<section><h2>lym返回规则已落实</h2><p>果酱泵使用毫秒接口；需求升档时重选备泵；闸门任何状态遇障均立即停机锁故障，解除后须新的双键组合沿复位。</p><p>三题契约改变，表中只比较其余32题和1113条相同功能断言。三题的旧答案单独诊断，不当作新的35题四组实验。</p><p>349条非空公式均通过参考测试轨迹核验，另23条仿真性质；这不是全输入和全深度的形式证明。</p><p><a href="/v13-r8-review.html">查看当前35题</a> · <a href="/v13-r8-analysis.md">查看返回包采纳与验收说明</a></p></section>'
+        human_note = '已收到lym的13题修订与本地验算，明确的三项规则已采用。返回包未附填写后的逐题签署表，登记为收到修订并技术验收，未推定全部题目人工批准。'
+    raw_ltl_note = f'原始 LTL {offline["raw_ltl"]}，' if 'raw_ltl' in offline else ''
     return f'''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="refresh" content="15"><title>PLC 修订验收状态</title><style>
 body{{background:#f1f5fa;color:#203047;font:16px/1.7 system-ui,"Microsoft YaHei",sans-serif;margin:0}}
@@ -85,12 +91,12 @@ table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{padding:10px;t
 <section><h2>验收进度</h2><p>功能与严格接口：{offline.get('cases_passed', 0)}/{offline.get('cases', 531)} 条用例通过。</p><ul>{''.join(native)}</ul>
 <p>{native_note}本页结果属于平台适配口径，不代表原始 VARIANT 接口通过率。</p>
 <p>{escape(native_probes_note)}</p>
-<p>性质总数 {offline.get('total_properties', '—')}；原始 LTL {offline.get('raw_ltl', '—')}，运行期 LTL {offline.get('runtime_ltl', '—')}。测试轨迹检查不代表穷尽证明。</p></section>
+<p>性质总数 {offline.get('total_properties', '—')}；{raw_ltl_note}非空公式 {offline.get('runtime_ltl', '—')}。测试轨迹检查不代表穷尽证明。</p></section>
 <section><h2>固定历史候选的事后评分</h2><div class="scroll"><table><tr><th>组别</th><th>{baseline_label}</th><th>{current_label}</th><th>修订版通过用例</th><th>新增失败题</th><th>工具未决</th></tr>{''.join(table)}</table></div>
 <p>同一批历史答卷，保留原选中轮次；数据与裁判版本见表头，用例分母可能不同。不替换R8正式结果，也不表示模型生成能力提升。</p></section>
 {depth_note}
 {repair_note}
-<section><h2>人工复审与费用</h2><p>刘晏铭的本版工艺复审待填写；已收到的旧稿与新意见均留档，旧版批准不自动适用于当前修订版。</p>
+<section><h2>人工复审与费用</h2><p>{human_note}</p>
 <p>本阶段模型费用 ¥0；共享账本累计 ¥{ledger.get('spent_cny', 0):.6f}/75，原诊断额度未增加。</p>
 <p><a href="{review_route}">查看修改后复审材料</a> · <a href="https://github.com/WtqMyou/plc-st-coding-agent/tree/main/{repo_revision_path}">GitHub 修订版</a>{handout_link}</p></section></main></html>'''
 
@@ -213,6 +219,10 @@ class Handler(BaseHTTPRequestHandler):
             raw, mime = (REPO / 'progress/v13_r6/复审记录.md').read_bytes(), 'text/plain; charset=utf-8'
         elif path == '/v13-r6-analysis.md':
             raw, mime = (REPO / 'progress/v13_r6/采纳与核验.md').read_bytes(), 'text/plain; charset=utf-8'
+        elif path == '/v13-r8-review.html':
+            raw, mime = (REPO / 'progress/v13_r8/复审材料.html').read_bytes(), 'text/html; charset=utf-8'
+        elif path == '/v13-r8-analysis.md':
+            raw, mime = (REPO / 'progress/v13_r8/README.md').read_bytes(), 'text/plain; charset=utf-8'
         elif path == '/v13-r4-review.zip':
             raw, mime = (REPO / 'progress/工艺复审_r4_刘晏铭_20261108.zip').read_bytes(), 'application/zip'
         elif path == '/review.zip':

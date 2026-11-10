@@ -1,0 +1,842 @@
+{
+  "pid": "self-medium-03",
+  "source": "selfmade",
+  "difficulty": "medium",
+  "title": "闸门电机有限状态机（四状态与安全互锁）",
+  "requirements": "实现闸门功能块 FB，状态为 IDLE、OPENING、CLOSING、FAULT。上电为 IDLE，两按钮的初始前值为 FALSE。输入在每次扫描开始时采样，输出表示本拍结束时的命令。采用以下课程用防夹规则。\n1. 无障碍的 IDLE 中，只有开按钮出现新上升沿、关按钮为 FALSE 且未开到位才开始上升。关方向对称。双键同按不启动。启动当拍即给出对应电机命令；松开按钮继续运行。在运行中忽略方向按钮。\n2. 无障碍时，到达本方向限位则当拍停机并回到 IDLE。另一方向限位不妨碍运动。任一时刻两个电机方向互斥。\n3. 任意状态检测到障碍，当拍关闭两个方向并进入FAULT，errorFlag置TRUE；优先于限位、运动与复位。\n4. FAULT 锁存 errorFlag 并停机。清除须在无障碍时让双键组合从未同时按下变为同时按下；有障碍时按住双键，不能在障碍解除那一拍自动复位。复位仅回到 IDLE，复位当拍两方向都停止，之后按规则 1 重启。",
+  "variables": [
+    {
+      "name": "openBtn",
+      "data_type": "BOOL",
+      "description": "开门按钮（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "closeBtn",
+      "data_type": "BOOL",
+      "description": "关门按钮（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "openLimit",
+      "data_type": "BOOL",
+      "description": "开到位限位开关",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "closeLimit",
+      "data_type": "BOOL",
+      "description": "关到位限位开关",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "obstacle",
+      "data_type": "BOOL",
+      "description": "防夹物体检测",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "motorUp",
+      "data_type": "BOOL",
+      "description": "电机上升（开门）输出",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "motorDown",
+      "data_type": "BOOL",
+      "description": "电机下降（关门）输出",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "errorFlag",
+      "data_type": "BOOL",
+      "description": "故障锁存（需人工复位后清除）",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "两方向不可同时启动。",
+      "ltl": "G(!(motorUp AND motorDown))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "有障碍的扫描周期两个方向都停。",
+      "ltl": "G(obstacle -> (!motorUp AND !motorDown))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "达到本方向限位就停该方向。",
+      "ltl": "G((openLimit -> !motorUp) AND (closeLimit -> !motorDown))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "故障有效时两个方向都停。",
+      "ltl": "G(errorFlag -> (!motorUp AND !motorDown))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "已锁存的故障，只有无障碍且双键组合出现新上升沿时才可清除。",
+      "ltl": "G((prev(errorFlag) AND !(!obstacle AND rising(openBtn AND closeBtn))) -> errorFlag)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "下降遇障当拍置故障并停机。",
+      "ltl": "G((prev(motorDown) AND obstacle) -> (errorFlag AND !motorUp AND !motorDown))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S7",
+      "text": "上一拍有障碍，若无新的方向按键沿，两个输出继续保持停止。",
+      "ltl": "G((prev(obstacle) AND !rising(openBtn) AND !rising(closeBtn)) -> (!motorUp AND !motorDown))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S8",
+      "text": "上升时遇障或障碍连续两拍，故障当拍置位。",
+      "ltl": "G((obstacle AND (prev(motorUp) OR prev(obstacle))) -> errorFlag)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S9",
+      "text": "在无障碍时人工复位故障：清除报警，当拍仍停机。",
+      "ltl": "G((prev(errorFlag) AND !obstacle AND rising(openBtn AND closeBtn)) -> (!errorFlag AND !motorUp AND !motorDown))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S10",
+      "text": "空闲状态收到合法开门新指令，当拍上升。",
+      "ltl": "G((!prev(motorUp) AND !prev(motorDown) AND !prev(errorFlag) AND !obstacle AND rising(openBtn) AND !closeBtn AND !openLimit) -> motorUp)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S11",
+      "text": "空闲状态收到合法关门新指令，当拍下降。",
+      "ltl": "G((!prev(motorUp) AND !prev(motorDown) AND !prev(errorFlag) AND !obstacle AND rising(closeBtn) AND !openBtn AND !closeLimit) -> motorDown)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S12",
+      "kind": "safety",
+      "text": "运动命令必须来自该方向的合法新启动或运行延续；障碍或本方向限位立即停机。",
+      "ltl": "G(motorUp <-> (!obstacle AND !openLimit AND (prev(motorUp) OR (!prev(motorUp) AND !prev(motorDown) AND !prev(errorFlag) AND rising(openBtn) AND !closeBtn))))",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S13",
+      "kind": "safety",
+      "text": "运动命令必须来自该方向的合法新启动或运行延续；障碍或本方向限位立即停机。",
+      "ltl": "G(motorDown <-> (!obstacle AND !closeLimit AND (prev(motorDown) OR (!prev(motorUp) AND !prev(motorDown) AND !prev(errorFlag) AND rising(closeBtn) AND !openBtn))))",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S14",
+      "kind": "safety",
+      "text": "任意障碍置故障；障碍解除后仅双键组合新沿可复位。",
+      "ltl": "G(errorFlag <-> (obstacle OR (prev(errorFlag) AND !rising(openBtn AND closeBtn))))",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "m1",
+      "inputs": {
+        "openBtn": true
+      },
+      "expected": {
+        "motorUp": true,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "点开 → 上升",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m2",
+      "inputs": {
+        "openBtn": false
+      },
+      "expected": {
+        "motorUp": true
+      },
+      "note": "松开按钮仍上升（按钮非自保持）",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m3",
+      "inputs": {
+        "openBtn": false
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false
+      },
+      "note": "到上限 → 停止",
+      "const_inputs": {
+        "openLimit": true,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m4",
+      "inputs": {
+        "closeBtn": true
+      },
+      "expected": {
+        "motorDown": true,
+        "motorUp": false
+      },
+      "note": "点关 → 下降；上限仍为真也不影响（方向由命令决定）",
+      "const_inputs": {
+        "openLimit": true,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m5",
+      "inputs": {
+        "closeBtn": true
+      },
+      "expected": {
+        "motorDown": false,
+        "motorUp": false,
+        "errorFlag": true
+      },
+      "note": "下降遇障 → 立即停止",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": true
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m6",
+      "inputs": {
+        "closeBtn": false
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": true
+      },
+      "note": "障碍持续，保持故障且停机。",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": true
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m7",
+      "inputs": {
+        "openBtn": false
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": true
+      },
+      "note": "障碍解除只是可复位，仍是 FAULT：锁存不自动清除、不自行运动",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m8",
+      "inputs": {
+        "openBtn": true,
+        "closeBtn": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "障碍已解除，双键组合的新上升沿复位，复位拍停机。",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m9",
+      "inputs": {
+        "openBtn": false,
+        "closeBtn": false
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false
+      },
+      "note": "松开两键（m8 里两键都按住，不松就没有新的上升沿）",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m10",
+      "inputs": {
+        "openBtn": true
+      },
+      "expected": {
+        "motorUp": true
+      },
+      "note": "复位并松开后可重新开",
+      "const_inputs": {
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "m11",
+      "inputs": {
+        "openLimit": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "承接 m10：到上限停机",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m12",
+      "inputs": {
+        "closeBtn": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": true,
+        "errorFlag": false
+      },
+      "note": "关门开始下降",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m13",
+      "inputs": {
+        "closeBtn": true,
+        "obstacle": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": true
+      },
+      "note": "一拍障碍：下降立刻停止",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m14",
+      "inputs": {
+        "closeBtn": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": true
+      },
+      "note": "障碍解除仍按住关门：不得自行上升或下降",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m15",
+      "inputs": {},
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": true
+      },
+      "note": "释放按键",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "gate-reset-after-pulse",
+      "mode": "sequence",
+      "inputs": {
+        "openBtn": true,
+        "closeBtn": true
+      },
+      "expected": {
+        "errorFlag": false,
+        "motorUp": false,
+        "motorDown": false
+      },
+      "note": "先复位，松开后才接受后续单键启动。"
+    },
+    {
+      "tc_id": "gate-release-after-pulse",
+      "mode": "sequence",
+      "inputs": {},
+      "expected": {
+        "errorFlag": false,
+        "motorUp": false,
+        "motorDown": false
+      },
+      "note": "先复位，松开后才接受后续单键启动。"
+    },
+    {
+      "tc_id": "m16",
+      "inputs": {
+        "openBtn": true
+      },
+      "expected": {
+        "motorUp": true,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "新开门上升沿允许上升",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m17",
+      "inputs": {
+        "obstacle": true,
+        "openLimit": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": true
+      },
+      "note": "上升遇障与到位同拍：障碍优先，锁存故障",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m18",
+      "inputs": {
+        "obstacle": true,
+        "openBtn": true,
+        "closeBtn": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": true
+      },
+      "note": "故障中有障碍，双键复位无效",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m19",
+      "inputs": {
+        "openBtn": true,
+        "closeBtn": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": true
+      },
+      "note": "障碍清除而双键保持：无新复位动作",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m20",
+      "inputs": {},
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": true
+      },
+      "note": "松开双键仍保持故障",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m21",
+      "inputs": {
+        "openBtn": true,
+        "closeBtn": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "安全条件下再次同时按下，清故障且停机",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m22",
+      "inputs": {
+        "openBtn": true,
+        "closeBtn": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "复位后双键持续有效：不启动",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m23",
+      "inputs": {},
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "空闲时释放按钮",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m24",
+      "inputs": {
+        "openBtn": true,
+        "closeBtn": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "空闲时同时新按两个方向，无动作",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m25",
+      "inputs": {},
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "重新准备单键关门指令",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m26",
+      "inputs": {
+        "closeBtn": true,
+        "closeLimit": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "已关到位时禁止新启动下降",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m27",
+      "inputs": {},
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "关门键释放，关限位已退",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m28",
+      "inputs": {
+        "closeBtn": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": true,
+        "errorFlag": false
+      },
+      "note": "新关门指令允许下降",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "m29",
+      "inputs": {
+        "closeLimit": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "note": "到达下限，当拍停止",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "gate-reverse-1",
+      "mode": "sequence:ignore-opposite",
+      "inputs": {
+        "openBtn": false,
+        "closeBtn": true,
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": true,
+        "errorFlag": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "下降期间忽略反向开键和上限位，直到本方向下限位停机。"
+    },
+    {
+      "tc_id": "gate-reverse-2",
+      "mode": "sequence:ignore-opposite",
+      "inputs": {
+        "openBtn": true,
+        "closeBtn": false,
+        "openLimit": true,
+        "closeLimit": false,
+        "obstacle": false
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": true,
+        "errorFlag": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "下降期间忽略反向开键和上限位，直到本方向下限位停机。"
+    },
+    {
+      "tc_id": "gate-reverse-3",
+      "mode": "sequence:ignore-opposite",
+      "inputs": {
+        "openBtn": false,
+        "closeBtn": false,
+        "openLimit": false,
+        "closeLimit": true,
+        "obstacle": false
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "下降期间忽略反向开键和上限位，直到本方向下限位停机。"
+    },
+    {
+      "tc_id": "gate-reset-1",
+      "mode": "sequence:combined-edge",
+      "inputs": {
+        "openBtn": true,
+        "closeBtn": false,
+        "openLimit": false,
+        "closeLimit": false,
+        "obstacle": true
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": true
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "障碍导致故障时已按开键；解除障碍并补按关键，双键组合首个上升沿应清故障。"
+    },
+    {
+      "tc_id": "gate-reset-2",
+      "mode": "sequence:combined-edge",
+      "inputs": {
+        "openBtn": true,
+        "closeBtn": true,
+        "openLimit": false,
+        "closeLimit": true,
+        "obstacle": false
+      },
+      "expected": {
+        "motorUp": false,
+        "motorDown": false,
+        "errorFlag": false
+      },
+      "cycles": 1,
+      "const_inputs": {},
+      "init": {},
+      "expect_full": false,
+      "note": "障碍导致故障时已按开键；解除障碍并补按关键，双键组合首个上升沿应清故障。"
+    }
+  ],
+  "provenance": {
+    "final_revision_record": "review/other_cases.md",
+    "source_record": "sources/index.json#self-medium-03",
+    "historical_origin": "西门子杯流程行业自动化赛项中，闸门/阀门类执行机构普遍要求'四状态 + 防夹 + 不得同时正反转'。",
+    "historical_review": "人工审核：状态机四个状态与迁移条件在题面中穷举，无歧义；安全类规约 S1/S2 用纯布尔 LTL 表达，可交给模型检查器。",
+    "historical_source_type": "自主构思 / 行业经验改编",
+    "historical_adaptation": "去掉具体阀门行程时间，只保留状态迁移与安全互锁；增加'自动恢复禁止'一条，考察 LLM 是否会把安全动作写成自动往返。",
+    "source_type": "自建教学题",
+    "attribution": "上游自述为行业场景启发；缺少可独立核验的外部题号或标准条款。",
+    "independent_process_review": "包内未见可核验的逐题独立签署"
+  },
+  "language": "zh",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_inputs": {}
+}

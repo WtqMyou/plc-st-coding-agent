@@ -1,0 +1,278 @@
+{
+  "pid": "public-easy-05",
+  "source": "public",
+  "difficulty": "easy",
+  "title": "Weld Gap Alarm and Startup Inhibition",
+  "requirements": "Control a weld-gap alarm with power-up monitoring inhibition, input debouncing during normal monitoring and emergency-stop priority.\n\n1. Gap_Exceeded indicates that the scanner has detected a weld gap exceeding the permitted 1.5 mm value.\n2. Begin with a five-scan initialization inhibition period after power-up. During this period, Operator_Alert is FALSE, Weld_Soft_Start_Active is TRUE, and gap-signal debounce time does not accumulate.\n3. Resume gap monitoring after initialization. Allow the alarm only after Gap_Exceeded has remained TRUE for three consecutive monitoring scans. When the signal becomes FALSE, switch off the alarm and clear debounce timing.\n4. When Weld_E_Stop_NC is FALSE, the emergency stop takes priority over initialization and normal monitoring. Operator_Alert must immediately become FALSE and any incomplete debounce timing must be cleared.\n5. Weld_Soft_Start_Active indicates only the power-up inhibition period; it does not represent a continuous speed ramp.\nIn this scan-count profile the first five scans are inhibited, including emergency-stop scans. DebounceTime is retained for interface compatibility and does not set the threshold.",
+  "variables": [
+    {
+      "name": "Gap_Exceeded",
+      "data_type": "BOOL",
+      "description": "Scanner indication that the gap exceeds 1.5 mm.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "Weld_E_Stop_NC",
+      "data_type": "BOOL",
+      "description": "TRUE means the emergency stop is inactive; FALSE means it is active.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "DebounceTime",
+      "data_type": "TIME",
+      "description": "Compatibility input; three consecutive monitoring scans are used.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "Operator_Alert",
+      "data_type": "BOOL",
+      "description": "Audible and visual alarm command.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "Weld_Soft_Start_Active",
+      "data_type": "BOOL",
+      "description": "Monitoring-inhibition status during the 5-second power-up initialization.",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "当上电抑制期指示为 TRUE 时，报警必须为 FALSE（抑制期内屏蔽报警）。",
+      "ltl": "G(Weld_Soft_Start_Active -> NOT Operator_Alert)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "当急停按下（Weld_E_Stop_NC=FALSE）时，报警必须为 FALSE（急停优先）。",
+      "ltl": "G(NOT Weld_E_Stop_NC -> NOT Operator_Alert)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "报警为 TRUE 时必须同时满足：间隙超差为 TRUE 且急停未按下。",
+      "ltl": "G(Operator_Alert -> (Gap_Exceeded AND Weld_E_Stop_NC))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "当间隙超差信号刚由 FALSE 变为 TRUE 的那一拍，不许立刻报警（去抖至少还要再等 2 拍）。",
+      "ltl": "G(Gap_Exceeded AND NOT prev(Gap_Exceeded) -> NOT Operator_Alert)",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "上电抑制期为 5 个扫描周期、监视期需连续 3 个扫描周期超差才报警（以周期数代替 DebounceTime，由 e05-1..e05-4 用例验证的数据性质）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "N10-S7",
+      "text": "11.10补充：仅在最近连续三拍都处于正常监测、信号超差且急停释放时报警。",
+      "ltl": "G(Operator_Alert <-> ((Gap_Exceeded AND Weld_E_Stop_NC AND NOT Weld_Soft_Start_Active) AND prev(((Gap_Exceeded AND Weld_E_Stop_NC AND NOT Weld_Soft_Start_Active) AND prev((Gap_Exceeded AND Weld_E_Stop_NC AND NOT Weld_Soft_Start_Active))))))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S6",
+      "text": "11.10补充：仅上电后的前五拍抑制报警，急停拍也计入初始化。",
+      "ltl": "G(Weld_Soft_Start_Active <-> NOT prev(prev(prev(prev(prev(TRUE))))))",
+      "kind": "data",
+      "verified_by": "test_trace_audit"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "e05-1",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": true
+      },
+      "note": "上电前 5 拍抑制期：间隙超差一直为 TRUE 也不许报警，软启动指示保持 TRUE（去抖以周期数代替 DebounceTime）",
+      "const_inputs": {
+        "DebounceTime": 0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 5,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e05-2",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "note": "抑制期第 5 拍结束、进入第 1 拍监视：软启动指示 OFF，但超差只累计 1 拍 < 3 拍，仍不报警（负例）",
+      "const_inputs": {
+        "DebounceTime": 0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 6,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e05-3",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true
+      },
+      "expected": {
+        "Operator_Alert": true,
+        "Weld_Soft_Start_Active": false
+      },
+      "note": "抑制期结束后连续 3 拍超差：第 8 拍报警置位（3 拍去抖，代替 DebounceTime）",
+      "const_inputs": {
+        "DebounceTime": 0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 8,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e05-4",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "note": "监视期只累计 2 拍超差：差一拍不报警，边界下方（负例）",
+      "const_inputs": {
+        "DebounceTime": 0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 7,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e05-5",
+      "inputs": {
+        "Gap_Exceeded": false,
+        "Weld_E_Stop_NC": true
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "note": "间隙正常（超差为 FALSE）：连续 8 拍也不报警，且抑制期结束后软启动指示 OFF（负例）",
+      "const_inputs": {
+        "DebounceTime": 0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 8,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e05-6",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": false
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "note": "急停按下（Weld_E_Stop_NC=FALSE）压过监视：超差再久也不报警（负例）",
+      "const_inputs": {
+        "DebounceTime": 0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 8,
+      "expect_full": true
+    },
+    {
+      "tc_id": "e05-7",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": true
+      },
+      "note": "上电第 1 拍：软启动指示已为 TRUE、报警为 FALSE（上电初始化的边界拍）",
+      "const_inputs": {
+        "DebounceTime": 0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": true
+    }
+  ],
+  "provenance": {
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r4",
+      "platform": "codesys",
+      "pid": "public-easy-05",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate",
+        "r4: explicit batch/pump/heater contracts; isolated sequence groups"
+      ],
+      "adapted_source_sha256": "af8e263a03889522cb7fb2c07a2978eccc14e0fb6f771358440c4d30faadafec",
+      "data_version": "v1.3-review-r8"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r8",
+      "kind": "platform_adapted",
+      "platform": "codesys",
+      "original_json": "progress/v13/upstream/public/public-easy-05.json",
+      "original_sha256": "3e6c402c19cff03afe3f5a262e112b6ee25ce405832af8b450f207597969217d",
+      "interface_changed": false,
+      "reference_source_sha256": "af8e263a03889522cb7fb2c07a2978eccc14e0fb6f771358440c4d30faadafec",
+      "comparison_scope": "Three changed contracts are excluded from the unchanged 32-task historical comparison; no candidate interface rewriting",
+      "working_json": "progress/v13_r8/datasets/public/public-easy-05.json"
+    },
+    "review_revision": "v1.3-review-r8",
+    "human_process_review": {
+      "status": "pending",
+      "reviewer": "刘晏铭",
+      "approved": false
+    },
+    "review": "11.10技术复核；上游自动验收及旧签署不作为本版工艺批准。",
+    "spec_revision": "v1.3-review-r8"
+  },
+  "language": "en",
+  "case_mode": "single",
+  "raw_text": "# Weld Gap Alarm and Startup Inhibition\n\n- **Difficulty:** Easy (easy)\n\n## Requirements\n\nControl a weld-gap alarm with power-up monitoring inhibition, input debouncing during normal monitoring and emergency-stop priority.\n\n1. Gap_Exceeded indicates that the scanner has detected a weld gap exceeding the permitted 1.5 mm value.\n2. Begin with a 5-second initialization inhibition period after power-up. During this period, Operator_Alert is FALSE, Weld_Soft_Start_Active is TRUE, and gap-signal debounce time does not accumulate.\n3. Resume gap monitoring after initialization. Allow the alarm only after Gap_Exceeded has remained TRUE for DebounceTime. When the signal becomes FALSE, switch off the alarm and clear debounce timing.\n4. When Weld_E_Stop_NC is FALSE, the emergency stop takes priority over initialization and normal monitoring. Operator_Alert must immediately become FALSE and any incomplete debounce timing must be cleared.\n5. Weld_Soft_Start_Active indicates only the power-up inhibition period; it does not represent a continuous speed ramp.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `Gap_Exceeded` | `BOOL` | Scanner indication that the gap exceeds 1.5 mm. |\n| Input | `Weld_E_Stop_NC` | `BOOL` | TRUE means the emergency stop is inactive; FALSE means it is active. |\n| Input | `DebounceTime` | `TIME` | Gap-signal debounce duration during normal monitoring; must be positive. |\n| Output | `Operator_Alert` | `BOOL` | Audible and visual alarm command. |\n| Output | `Weld_Soft_Start_Active` | `BOOL` | Monitoring-inhibition status during the 5-second power-up initialization. |",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

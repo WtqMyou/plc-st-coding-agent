@@ -1,0 +1,1659 @@
+{
+  "pid": "self-medium-01",
+  "source": "selfmade",
+  "difficulty": "medium",
+  "title": "配料配方装载与校验（数组越界与浮点区间）",
+  "requirements": "写一个功能块 FB，从配方库中按槽位装载配方并校验。\n控制要求：\n1. recipe 是 8 个槽位的配方数组，槽位 recipeID = 0 表示空槽；\n2. selSlot 是操作员选中的槽位，合法范围 1..8；**越界时必须判为非法，不得访问数组外**；\n3. loadCmd 的**上升沿**触发一次装载；按住不放不得重复装载；\n4. 校验规则（**全部满足**才算 valid）：槽位非空；totalRatio 在 99.0..101.0 之间（含端点）；temperature 在 30.0..180.0 之间（含端点）；\n5. 校验通过时 valid := TRUE 且 loadedID 更新为该槽位的 recipeID；校验失败时 valid := FALSE 且 loadedID 归 0；\n6. running 为 TRUE 表示正在生产，此时装载命令无效，loadedID 保持原值。\n平台约定：内部结构体临时变量避免使用单字母 r；当前平台对原写法报告词法冲突，接口保持原样。",
+  "variables": [
+    {
+      "name": "recipe",
+      "data_type": "ARRAY[1..8] OF ST_Recipe",
+      "description": "配方槽位 1..8，槽位 recipeID=0 表示空",
+      "direction": "input",
+      "fields": [
+        {
+          "name": "recipeID",
+          "data_type": "INT",
+          "description": "配方号，0 表示空槽",
+          "direction": "input",
+          "fields": []
+        },
+        {
+          "name": "totalRatio",
+          "data_type": "REAL",
+          "description": "配方总比例，合法 99.0..101.0",
+          "direction": "input",
+          "fields": []
+        },
+        {
+          "name": "temperature",
+          "data_type": "REAL",
+          "description": "工艺温度，合法 30.0..180.0",
+          "direction": "input",
+          "fields": []
+        }
+      ]
+    },
+    {
+      "name": "selSlot",
+      "data_type": "INT",
+      "description": "操作员选中的槽位，合法范围 1..8",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "loadCmd",
+      "data_type": "BOOL",
+      "description": "装载命令（上升沿触发一次装载）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "running",
+      "data_type": "BOOL",
+      "description": "当前是否处于生产状态",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "valid",
+      "data_type": "BOOL",
+      "description": "配方校验通过",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "loadedID",
+      "data_type": "INT",
+      "description": "已装载的配方号，无配方时为 0",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "收到合法槽位的装载沿且未生产时，若选中空槽，valid 为 FALSE 且 loadedID 清零。",
+      "ltl": "G(!running & rising(loadCmd) & (selSlot >= 1) & (selSlot <= 8) & (recipe[selSlot].recipeID = 0) -> (!valid AND loadedID = 0))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "总配比越界（totalRatio < 99 或 > 101）时装载必须判为非法。",
+      "ltl": "G((!running AND rising(loadCmd) AND selSlot >= 1 AND selSlot <= 8 AND (recipe[selSlot].totalRatio < 99.0 OR recipe[selSlot].totalRatio > 101.0)) -> !valid)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "温度越界（temperature < 30 或 > 180）时装载必须判为非法。",
+      "ltl": "G((!running AND rising(loadCmd) AND selSlot >= 1 AND selSlot <= 8 AND (recipe[selSlot].temperature < 30.0 OR recipe[selSlot].temperature > 180.0)) -> !valid)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "连续两拍处于生产状态时，本拍编号保持上一拍值。进入生产的首拍另由 N10-S4 覆盖。",
+      "ltl": "G((prev(running) AND running) -> loadedID = prev(loadedID))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "槽位越界（selSlot < 1 或 > 8）时必须判为非法，不得访问数组外内存。",
+      "ltl": "G(!running & rising(loadCmd) & ((selSlot < 1) | (selSlot > 8)) -> !valid)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "装载命令只在上升沿生效，电平保持期间不得重复装载。",
+      "ltl": "G(loadCmd & prev(loadCmd) -> loadedID = prev(loadedID))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "N10-S4",
+      "text": "11.10补充：本拍处于生产状态时，loadedID 保持上一拍的值，包括刚进入生产的第一拍。",
+      "ltl": "G(running -> loadedID = prev(loadedID))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S7",
+      "text": "11.10补充：接收装载沿且下标合法时，有效位等价于槽非空、配比和温度均在闭区间。",
+      "ltl": "G((!running AND rising(loadCmd) AND selSlot >= 1 AND selSlot <= 8) -> (valid <-> (recipe[selSlot].recipeID <> 0 AND recipe[selSlot].totalRatio >= 99.0 AND recipe[selSlot].totalRatio <= 101.0 AND recipe[selSlot].temperature >= 30.0 AND recipe[selSlot].temperature <= 180.0)))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S8",
+      "text": "11.10补充：有效装载回传选中槽的实际编号；无效装载清零编号。",
+      "ltl": "G((!running AND rising(loadCmd)) -> ((!valid -> loadedID = 0) AND ((valid AND selSlot >= 1 AND selSlot <= 8) -> loadedID = recipe[selSlot].recipeID)))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S9",
+      "text": "11.10补充：没有接受装载沿时，ID 和有效位都保持上拍。",
+      "ltl": "G((running OR !rising(loadCmd)) -> ((valid <-> prev(valid)) AND loadedID = prev(loadedID)))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "c1",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": true,
+        "loadedID": 101
+      },
+      "note": "槽 1 配方合法 → valid",
+      "const_inputs": {
+        "selSlot": 1,
+        "running": false,
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c2",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "槽 3 是空槽（recipeID=0）→ 无效",
+      "const_inputs": {
+        "selSlot": 3,
+        "running": false,
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c3",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "总比例 98.9 超差 → 无效",
+      "const_inputs": {
+        "selSlot": 2,
+        "running": false,
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 102,
+            "totalRatio": 98.9,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c4",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": true,
+        "loadedID": 202
+      },
+      "note": "温度正好 180.0 属合法边界",
+      "const_inputs": {
+        "selSlot": 4,
+        "running": false,
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 100.0,
+            "temperature": 180.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c5",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "温度 180.1 超上限 → 无效",
+      "const_inputs": {
+        "selSlot": 5,
+        "running": false,
+        "recipe": [
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 303,
+            "totalRatio": 99.5,
+            "temperature": 180.1
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c6",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "运行中不接受装载命令：保持原值",
+      "const_inputs": {
+        "selSlot": 1,
+        "running": true,
+        "recipe": [
+          {
+            "recipeID": 202,
+            "totalRatio": 100.0,
+            "temperature": 180.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "c7",
+      "inputs": {
+        "loadCmd": true
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "槽号越界 → 不得访问数组，判无效",
+      "const_inputs": {
+        "selSlot": 9,
+        "running": false,
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-hold-1",
+      "inputs": {
+        "selSlot": 1,
+        "loadCmd": true,
+        "running": false
+      },
+      "expected": {
+        "loadedID": 101,
+        "valid": true
+      },
+      "note": "先装入合法配方",
+      "const_inputs": {
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:load_and_hold",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-hold-2",
+      "inputs": {
+        "selSlot": 1,
+        "loadCmd": false,
+        "running": true
+      },
+      "expected": {
+        "loadedID": 101,
+        "valid": true
+      },
+      "note": "转入生产、保持101",
+      "const_inputs": {
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:load_and_hold",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-hold-3",
+      "inputs": {
+        "selSlot": 3,
+        "loadCmd": true,
+        "running": true
+      },
+      "expected": {
+        "loadedID": 101,
+        "valid": true
+      },
+      "note": "生产中忽略空槽装载请求",
+      "const_inputs": {
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:load_and_hold",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-hold-4",
+      "inputs": {
+        "selSlot": 3,
+        "loadCmd": false,
+        "running": false
+      },
+      "expected": {
+        "loadedID": 101,
+        "valid": true
+      },
+      "note": "停产并释放按钮",
+      "const_inputs": {
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:load_and_hold",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-hold-5",
+      "inputs": {
+        "selSlot": 3,
+        "loadCmd": true,
+        "running": false
+      },
+      "expected": {
+        "loadedID": 0,
+        "valid": false
+      },
+      "note": "接受非法装载，ID与有效标志清零",
+      "const_inputs": {
+        "recipe": [
+          {
+            "recipeID": 101,
+            "totalRatio": 100.0,
+            "temperature": 60.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          },
+          {
+            "recipeID": 0,
+            "totalRatio": 0.0,
+            "temperature": 0.0
+          }
+        ]
+      },
+      "init": {},
+      "mode": "sequence:peer:load_and_hold",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-recipe-edge-1",
+      "inputs": {
+        "recipe": [
+          {
+            "recipeID": 201,
+            "totalRatio": 99,
+            "temperature": 30
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 101,
+            "temperature": 180
+          },
+          {
+            "recipeID": 203,
+            "totalRatio": 101.01,
+            "temperature": 100
+          },
+          {
+            "recipeID": 204,
+            "totalRatio": 100,
+            "temperature": 29.99
+          },
+          {
+            "recipeID": 205,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 206,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 207,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 208,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          }
+        ],
+        "loadCmd": true,
+        "running": false,
+        "selSlot": 1
+      },
+      "expected": {
+        "valid": true,
+        "loadedID": 201
+      },
+      "note": "上下闭端点、上溢配比、下溢温度、末槽及越界槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:closed-limits",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-recipe-edge-2",
+      "inputs": {
+        "recipe": [
+          {
+            "recipeID": 201,
+            "totalRatio": 99,
+            "temperature": 30
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 101,
+            "temperature": 180
+          },
+          {
+            "recipeID": 203,
+            "totalRatio": 101.01,
+            "temperature": 100
+          },
+          {
+            "recipeID": 204,
+            "totalRatio": 100,
+            "temperature": 29.99
+          },
+          {
+            "recipeID": 205,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 206,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 207,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 208,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          }
+        ],
+        "loadCmd": true,
+        "running": false,
+        "selSlot": 2
+      },
+      "expected": {
+        "valid": true,
+        "loadedID": 201
+      },
+      "note": "上下闭端点、上溢配比、下溢温度、末槽及越界槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:closed-limits",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-recipe-edge-3",
+      "inputs": {
+        "recipe": [
+          {
+            "recipeID": 201,
+            "totalRatio": 99,
+            "temperature": 30
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 101,
+            "temperature": 180
+          },
+          {
+            "recipeID": 203,
+            "totalRatio": 101.01,
+            "temperature": 100
+          },
+          {
+            "recipeID": 204,
+            "totalRatio": 100,
+            "temperature": 29.99
+          },
+          {
+            "recipeID": 205,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 206,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 207,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 208,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          }
+        ],
+        "loadCmd": false,
+        "running": false,
+        "selSlot": 8
+      },
+      "expected": {
+        "valid": true,
+        "loadedID": 201
+      },
+      "note": "上下闭端点、上溢配比、下溢温度、末槽及越界槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:closed-limits",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-recipe-edge-4",
+      "inputs": {
+        "recipe": [
+          {
+            "recipeID": 201,
+            "totalRatio": 99,
+            "temperature": 30
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 101,
+            "temperature": 180
+          },
+          {
+            "recipeID": 203,
+            "totalRatio": 101.01,
+            "temperature": 100
+          },
+          {
+            "recipeID": 204,
+            "totalRatio": 100,
+            "temperature": 29.99
+          },
+          {
+            "recipeID": 205,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 206,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 207,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 208,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          }
+        ],
+        "loadCmd": true,
+        "running": false,
+        "selSlot": 2
+      },
+      "expected": {
+        "valid": true,
+        "loadedID": 202
+      },
+      "note": "上下闭端点、上溢配比、下溢温度、末槽及越界槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:closed-limits",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-recipe-edge-5",
+      "inputs": {
+        "recipe": [
+          {
+            "recipeID": 201,
+            "totalRatio": 99,
+            "temperature": 30
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 101,
+            "temperature": 180
+          },
+          {
+            "recipeID": 203,
+            "totalRatio": 101.01,
+            "temperature": 100
+          },
+          {
+            "recipeID": 204,
+            "totalRatio": 100,
+            "temperature": 29.99
+          },
+          {
+            "recipeID": 205,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 206,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 207,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 208,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          }
+        ],
+        "loadCmd": false,
+        "running": false,
+        "selSlot": 3
+      },
+      "expected": {
+        "valid": true,
+        "loadedID": 202
+      },
+      "note": "上下闭端点、上溢配比、下溢温度、末槽及越界槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:closed-limits",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-recipe-edge-6",
+      "inputs": {
+        "recipe": [
+          {
+            "recipeID": 201,
+            "totalRatio": 99,
+            "temperature": 30
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 101,
+            "temperature": 180
+          },
+          {
+            "recipeID": 203,
+            "totalRatio": 101.01,
+            "temperature": 100
+          },
+          {
+            "recipeID": 204,
+            "totalRatio": 100,
+            "temperature": 29.99
+          },
+          {
+            "recipeID": 205,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 206,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 207,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 208,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          }
+        ],
+        "loadCmd": true,
+        "running": false,
+        "selSlot": 3
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "上下闭端点、上溢配比、下溢温度、末槽及越界槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:closed-limits",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-recipe-edge-7",
+      "inputs": {
+        "recipe": [
+          {
+            "recipeID": 201,
+            "totalRatio": 99,
+            "temperature": 30
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 101,
+            "temperature": 180
+          },
+          {
+            "recipeID": 203,
+            "totalRatio": 101.01,
+            "temperature": 100
+          },
+          {
+            "recipeID": 204,
+            "totalRatio": 100,
+            "temperature": 29.99
+          },
+          {
+            "recipeID": 205,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 206,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 207,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 208,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          }
+        ],
+        "loadCmd": false,
+        "running": false,
+        "selSlot": 4
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "上下闭端点、上溢配比、下溢温度、末槽及越界槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:closed-limits",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-recipe-edge-8",
+      "inputs": {
+        "recipe": [
+          {
+            "recipeID": 201,
+            "totalRatio": 99,
+            "temperature": 30
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 101,
+            "temperature": 180
+          },
+          {
+            "recipeID": 203,
+            "totalRatio": 101.01,
+            "temperature": 100
+          },
+          {
+            "recipeID": 204,
+            "totalRatio": 100,
+            "temperature": 29.99
+          },
+          {
+            "recipeID": 205,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 206,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 207,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 208,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          }
+        ],
+        "loadCmd": true,
+        "running": false,
+        "selSlot": 4
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "上下闭端点、上溢配比、下溢温度、末槽及越界槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:closed-limits",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-recipe-edge-9",
+      "inputs": {
+        "recipe": [
+          {
+            "recipeID": 201,
+            "totalRatio": 99,
+            "temperature": 30
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 101,
+            "temperature": 180
+          },
+          {
+            "recipeID": 203,
+            "totalRatio": 101.01,
+            "temperature": 100
+          },
+          {
+            "recipeID": 204,
+            "totalRatio": 100,
+            "temperature": 29.99
+          },
+          {
+            "recipeID": 205,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 206,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 207,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 208,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          }
+        ],
+        "loadCmd": false,
+        "running": false,
+        "selSlot": 8
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "上下闭端点、上溢配比、下溢温度、末槽及越界槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:closed-limits",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-recipe-edge-10",
+      "inputs": {
+        "recipe": [
+          {
+            "recipeID": 201,
+            "totalRatio": 99,
+            "temperature": 30
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 101,
+            "temperature": 180
+          },
+          {
+            "recipeID": 203,
+            "totalRatio": 101.01,
+            "temperature": 100
+          },
+          {
+            "recipeID": 204,
+            "totalRatio": 100,
+            "temperature": 29.99
+          },
+          {
+            "recipeID": 205,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 206,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 207,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 208,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          }
+        ],
+        "loadCmd": true,
+        "running": false,
+        "selSlot": 8
+      },
+      "expected": {
+        "valid": true,
+        "loadedID": 208
+      },
+      "note": "上下闭端点、上溢配比、下溢温度、末槽及越界槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:closed-limits",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-recipe-edge-11",
+      "inputs": {
+        "recipe": [
+          {
+            "recipeID": 201,
+            "totalRatio": 99,
+            "temperature": 30
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 101,
+            "temperature": 180
+          },
+          {
+            "recipeID": 203,
+            "totalRatio": 101.01,
+            "temperature": 100
+          },
+          {
+            "recipeID": 204,
+            "totalRatio": 100,
+            "temperature": 29.99
+          },
+          {
+            "recipeID": 205,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 206,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 207,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 208,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          }
+        ],
+        "loadCmd": false,
+        "running": false,
+        "selSlot": 0
+      },
+      "expected": {
+        "valid": true,
+        "loadedID": 208
+      },
+      "note": "上下闭端点、上溢配比、下溢温度、末槽及越界槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:closed-limits",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-recipe-edge-12",
+      "inputs": {
+        "recipe": [
+          {
+            "recipeID": 201,
+            "totalRatio": 99,
+            "temperature": 30
+          },
+          {
+            "recipeID": 202,
+            "totalRatio": 101,
+            "temperature": 180
+          },
+          {
+            "recipeID": 203,
+            "totalRatio": 101.01,
+            "temperature": 100
+          },
+          {
+            "recipeID": 204,
+            "totalRatio": 100,
+            "temperature": 29.99
+          },
+          {
+            "recipeID": 205,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 206,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 207,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          },
+          {
+            "recipeID": 208,
+            "totalRatio": 100.0,
+            "temperature": 80.0
+          }
+        ],
+        "loadCmd": true,
+        "running": false,
+        "selSlot": 0
+      },
+      "expected": {
+        "valid": false,
+        "loadedID": 0
+      },
+      "note": "上下闭端点、上溢配比、下溢温度、末槽及越界槽。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:closed-limits",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "自主构思 / 行业经验改编",
+    "origin": "流程行业多产品罐装线按配方切换：赛题里常见'配方号 + 比例和 + 工艺温度'三元组，需要操作员选槽位后校验再投产。",
+    "adaptation": "把配方库简化为固定 8 槽数组，把'组分比例和必须为 100%'变成带容差的闭区间判定，从而把浮点边界与数组下标两类易错点放在同一题里。",
+    "review": "已收到lym修订；按返回规则技术验收，不自动登记全题人工批准。",
+    "review_revision": "v1.3-review-r8",
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r4",
+      "platform": "codesys",
+      "pid": "self-medium-01",
+      "rules": [
+        "Internal recipe temporary r -> selectedRecipe after native CODESYS token diagnostics",
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate",
+        "r4: explicit batch/pump/heater contracts; isolated sequence groups"
+      ],
+      "adapted_source_sha256": "fd63c1138a48edc30fe4949bdc8990db72b3ab3d98bef6159c33ba785d83178c",
+      "data_version": "v1.3-review-r8"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r8",
+      "kind": "platform_adapted",
+      "platform": "codesys",
+      "original_json": "progress/v13/upstream/selfmade/self-medium-01.json",
+      "original_sha256": "c287137a2e54dcc3042f3a1c1e07bb8d91511a48071801b41d7d76d40e72cba6",
+      "interface_changed": false,
+      "reference_source_sha256": "fd63c1138a48edc30fe4949bdc8990db72b3ab3d98bef6159c33ba785d83178c",
+      "comparison_scope": "Three changed contracts are excluded from the unchanged 32-task historical comparison; no candidate interface rewriting",
+      "working_json": "progress/v13_r8/datasets/selfmade/self-medium-01.json"
+    },
+    "human_process_review": {
+      "status": "lym_revision_received",
+      "reviewer": "刘晏铭",
+      "approved": false,
+      "evidence": "returned 13-task revision package; no completed per-task signature form supplied"
+    },
+    "lym_return": {
+      "received": "2026-11-10",
+      "archive_sha256": "bc6dfaf544cf88337dd5580d2a9c90f0262e68ed4b04397dc2043caa1d3268f1",
+      "source_member": "datasets/selfmade/self-medium-01.json",
+      "status": "revision_received",
+      "signed_record_found": false
+    },
+    "spec_revision": "v1.3-review-r8"
+  },
+  "language": "en",
+  "case_mode": "single",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

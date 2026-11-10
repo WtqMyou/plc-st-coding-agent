@@ -1,0 +1,1592 @@
+{
+  "pid": "public-medium-04",
+  "source": "public",
+  "difficulty": "medium",
+  "title": "Temperature Logic Control",
+  "requirements": "Write a function block FB to implement a temperature control logic. The program should include the following functions:\n1. Read the value of the temperature sensor through an analog input module.\n2. Compare the read temperature value TemperatureSensorInput with the set temperature value SetTemperature.\n3. If the actual temperature is lower than the set temperature, start the heater HeaterOutput.\n4. If the actual temperature is higher than the set temperature, turn off the heater HeaterOutput.\n5. Each scan represents 1 second. The fifth consecutive heating-demand scan triggers protection and already turns the heater off. Cooling starts on the next scan: two scans remain off; the third clears protection and re-evaluates the current input. Cooling advances independently of sensor readings and faults.\n6. Provide status indication, displaying the current temperature, set temperature, heater status, and whether overheating protection is triggered.\n7. Provide temperature sensor fault judgment, if the read temperature value TemperatureSensorInput is less than 0 or greater than 100, it is considered a sensor fault, and the heater should be turned off.\n本修订明确逐拍验收边界：每拍1秒。读数合法（0..100，含边界）且严格低于设定才有加热需求；等于设定或读数故障均关断并清连续加热计数。\n连续需求第5拍触发过热保护，当拍已关断；从下一拍计冷却，前两拍保持关断，第3拍解除保护并按当拍读数重新决策。冷却计数独立于温度和故障；若解除当拍重新加热，该拍为下一轮第1拍。\n连续低温时第1..4拍开，第5..7拍关，第8拍重新开。显示直通当前输入，HeaterStatus跟随HeaterOutput。",
+  "variables": [
+    {
+      "name": "TemperatureSensorInput",
+      "data_type": "REAL",
+      "description": "The input value of the temperature sensor, i.e., the actual temperature",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "SetTemperature",
+      "data_type": "REAL",
+      "description": "The set temperature value",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "CurrentTemperature",
+      "data_type": "REAL",
+      "description": "Display of the current temperature",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "SetTempDisplay",
+      "data_type": "REAL",
+      "description": "Display of the set temperature",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "HeaterStatus",
+      "data_type": "BOOL",
+      "description": "Display of the heater status",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "OverheatProtection",
+      "data_type": "BOOL",
+      "description": "Display of the overheating protection status",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "HeaterOutput",
+      "data_type": "BOOL",
+      "description": "The control output of the heater",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "传感器读数低于 0 或高于 100 时，加热输出必须为 FALSE。",
+      "ltl": "G((TemperatureSensorInput < 0.0 | TemperatureSensorInput > 100.0) -> !HeaterOutput)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "过热保护有效期间，加热输出必须被强制关断。",
+      "ltl": "G(OverheatProtection -> !HeaterOutput)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "读数等于或高于设定温度时关断加热。",
+      "ltl": "G((TemperatureSensorInput >= SetTemperature & TemperatureSensorInput <= 100.0) -> !HeaterOutput)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "无故障、无过热保护且读数低于设定温度时，加热输出必须为 TRUE（过载触发保护的当拍除外）。",
+      "ltl": "G((TemperatureSensorInput < SetTemperature & TemperatureSensorInput >= 0.0 & TemperatureSensorInput <= 100.0 & !OverheatProtection) -> HeaterOutput)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "过热保护连续 3 个周期后必须解除。",
+      "ltl": "G((OverheatProtection & X(OverheatProtection) & X(X(OverheatProtection))) -> X(X(X(!OverheatProtection))))",
+      "kind": "liveness",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "CurrentTemperature 等于传感器读数、SetTempDisplay 等于设定温度、HeaterStatus 跟随 HeaterOutput；连续加热 5 个扫描周期触发过热保护（1 个扫描周期代表 1s，平台无 TIME 类型）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "N10-S3",
+      "text": "11.10补充：实际读数达到或超过设定值时，加热输出为 FALSE，包括解除保护当拍。",
+      "ltl": "G(TemperatureSensorInput >= SetTemperature -> !HeaterOutput)",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S6",
+      "text": "11.10补充：显示值跟随当拍温度和设定值，状态指示跟随实际加热输出。",
+      "ltl": "G((CurrentTemperature = TemperatureSensorInput) AND (SetTempDisplay = SetTemperature) AND (HeaterStatus <-> HeaterOutput))",
+      "kind": "data",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S7",
+      "text": "11.10补充：连续四拍加热且当拍仍有有效热需求时触发保护；触发后再保持两拍。解除保护当拍如已加热，计入下一轮连续四拍。",
+      "ltl": "G(OverheatProtection <-> (((TemperatureSensorInput >= 0.0 AND TemperatureSensorInput <= 100.0 AND TemperatureSensorInput < SetTemperature) AND prev(HeaterOutput) AND prev(prev(HeaterOutput)) AND prev(prev(prev(HeaterOutput))) AND prev(prev(prev(prev(HeaterOutput))))) OR (prev(OverheatProtection) AND NOT (prev(prev(OverheatProtection)) AND prev(prev(prev(OverheatProtection)))))))",
+      "kind": "data",
+      "verified_by": "test_trace_audit"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "s1",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false,
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0
+      },
+      "note": "实际温度 20 低于设定 50 → 开加热，HeaterStatus 跟随，状态指示直通显示",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:original",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "s2",
+      "inputs": {
+        "TemperatureSensorInput": 45.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "HeaterOutput": true,
+        "OverheatProtection": false
+      },
+      "note": "仍低于设定（连续加热第 2 拍）→ 继续加热，未到 5 拍不触发保护",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:original",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s3",
+      "inputs": {
+        "TemperatureSensorInput": 55.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": false
+      },
+      "note": "实际温度 55 高于设定 50 → 关加热，连续计时清零",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:original",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s4",
+      "inputs": {
+        "TemperatureSensorInput": 50.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "HeaterOutput": false
+      },
+      "note": "边界：实际温度等于设定 50 → 不属于低于设定，不加热",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:original",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s5",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "连续加热第 5 拍（5s）→ 触发过热保护并立即强制关加热（边界：不为 \"超过 5s\" 留第 6 拍）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:original",
+      "cycles": 5,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s6",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "OverheatProtection": true
+      },
+      "note": "保护期间温度仍低于设定：不得恢复加热，继续冷却（已冷却 2 拍，3 拍未满）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:original",
+      "cycles": 2,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s7",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false,
+        "CurrentTemperature": 20.0
+      },
+      "note": "第 3 拍冷却结束 → 过热保护解除，本拍即恢复正常加热（温度仍低于设定）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:original",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s8",
+      "inputs": {
+        "TemperatureSensorInput": 0.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "HeaterOutput": true,
+        "CurrentTemperature": 0.0,
+        "OverheatProtection": false
+      },
+      "note": "边界：读数 0 不属于小于 0，不算故障 → 低于设定 50，继续加热",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:original",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s9",
+      "inputs": {
+        "TemperatureSensorInput": -5.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": false,
+        "CurrentTemperature": -5.0
+      },
+      "note": "传感器读数 -5 低于 0 → 判故障，禁止加热，故障优先于低温开加热",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:original",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s10",
+      "inputs": {
+        "TemperatureSensorInput": 120.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false
+      },
+      "note": "传感器读数 120 高于 100 → 判故障，禁止加热",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:original",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s11",
+      "inputs": {
+        "TemperatureSensorInput": 100.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "CurrentTemperature": 100.0,
+        "SetTempDisplay": 50.0
+      },
+      "note": "边界：读数 100 不算故障，但高于设定 50 → 关加热",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:original",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "s12",
+      "inputs": {
+        "TemperatureSensorInput": 30.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "故障恢复后温度 30 低于设定 → 重新开加热，保护标志保持 FALSE（复位恢复路径）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:original",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "boundary-low-1",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第1拍；冷却结束输入为low",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-low",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-low-2",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第2拍；冷却结束输入为low",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-low",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-low-3",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第3拍；冷却结束输入为low",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-low",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-low-4",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第4拍；冷却结束输入为low",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-low",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-low-5",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "独立八拍轨迹，第5拍；冷却结束输入为low",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-low",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-low-6",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "独立八拍轨迹，第6拍；冷却结束输入为low",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-low",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-low-7",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "独立八拍轨迹，第7拍；冷却结束输入为low",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-low",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-low-8",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第8拍；冷却结束输入为low",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-low",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-equal-1",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第1拍；冷却结束输入为equal",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-equal",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-equal-2",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第2拍；冷却结束输入为equal",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-equal",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-equal-3",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第3拍；冷却结束输入为equal",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-equal",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-equal-4",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第4拍；冷却结束输入为equal",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-equal",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-equal-5",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "独立八拍轨迹，第5拍；冷却结束输入为equal",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-equal",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-equal-6",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "独立八拍轨迹，第6拍；冷却结束输入为equal",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-equal",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-equal-7",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "独立八拍轨迹，第7拍；冷却结束输入为equal",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-equal",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-equal-8",
+      "inputs": {
+        "TemperatureSensorInput": 50.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 50.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第8拍；冷却结束输入为equal",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-equal",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-fault-1",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第1拍；冷却结束输入为fault",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-fault",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-fault-2",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第2拍；冷却结束输入为fault",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-fault",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-fault-3",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第3拍；冷却结束输入为fault",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-fault",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-fault-4",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第4拍；冷却结束输入为fault",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-fault",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-fault-5",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "独立八拍轨迹，第5拍；冷却结束输入为fault",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-fault",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-fault-6",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "独立八拍轨迹，第6拍；冷却结束输入为fault",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-fault",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-fault-7",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "独立八拍轨迹，第7拍；冷却结束输入为fault",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-fault",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "boundary-fault-8",
+      "inputs": {
+        "TemperatureSensorInput": -5.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": -5.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": false
+      },
+      "note": "独立八拍轨迹，第8拍；冷却结束输入为fault",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-fault",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "cooling-independent-1",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-cooling",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "cooling-independent-2",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-cooling",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "cooling-independent-3",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-cooling",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "cooling-independent-4",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-cooling",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "cooling-independent-5",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-cooling",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "cooling-independent-6",
+      "inputs": {
+        "TemperatureSensorInput": -5.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": -5.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-cooling",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "cooling-independent-7",
+      "inputs": {
+        "TemperatureSensorInput": 50.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 50.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-cooling",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "cooling-independent-8",
+      "inputs": {
+        "TemperatureSensorInput": 20.0,
+        "SetTemperature": 50.0
+      },
+      "expected": {
+        "CurrentTemperature": 20.0,
+        "SetTempDisplay": 50.0,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:heater-cooling",
+      "cycles": 1,
+      "expect_full": true
+    },
+    {
+      "tc_id": "peer-s1",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false,
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50
+      },
+      "note": "实际温度 20 低于设定 50 → 开加热，HeaterStatus 跟随，状态指示直通显示",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s2",
+      "inputs": {
+        "TemperatureSensorInput": 45,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": true,
+        "OverheatProtection": false
+      },
+      "note": "仍低于设定（连续加热第 2 拍）→ 继续加热，未到 5 拍不触发保护",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s3",
+      "inputs": {
+        "TemperatureSensorInput": 55,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": false
+      },
+      "note": "实际温度 55 高于设定 50 → 关加热，连续计时清零",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s4",
+      "inputs": {
+        "TemperatureSensorInput": 50,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false
+      },
+      "note": "边界：实际温度等于设定 50 → 不属于低于设定，不加热",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s5",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true
+      },
+      "note": "连续加热第 5 拍（5s）→ 触发过热保护并立即强制关加热（边界：不为 \"超过 5s\" 留第 6 拍）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 5,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s6",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "OverheatProtection": true
+      },
+      "note": "保护期间温度仍低于设定：不得恢复加热，继续冷却（已冷却 2 拍，3 拍未满）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 2,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s7",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false,
+        "CurrentTemperature": 20
+      },
+      "note": "第 3 拍冷却结束 → 过热保护解除，本拍即恢复正常加热（温度仍低于设定）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s8",
+      "inputs": {
+        "TemperatureSensorInput": 0,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": true,
+        "CurrentTemperature": 0,
+        "OverheatProtection": false
+      },
+      "note": "边界：读数 0 不属于小于 0，不算故障 → 低于设定 50，继续加热",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s9",
+      "inputs": {
+        "TemperatureSensorInput": -5,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": false,
+        "CurrentTemperature": -5
+      },
+      "note": "传感器读数 -5 低于 0 → 判故障，禁止加热，故障优先于低温开加热",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s10",
+      "inputs": {
+        "TemperatureSensorInput": 120,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false
+      },
+      "note": "传感器读数 120 高于 100 → 判故障，禁止加热",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s11",
+      "inputs": {
+        "TemperatureSensorInput": 100,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "CurrentTemperature": 100,
+        "SetTempDisplay": 50
+      },
+      "note": "边界：读数 100 不算故障，但高于设定 50 → 关加热",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s12",
+      "inputs": {
+        "TemperatureSensorInput": 30,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "故障恢复后温度 30 低于设定 → 重新开加热，保护标志保持 FALSE（复位恢复路径）",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s13_prep",
+      "inputs": {
+        "TemperatureSensorInput": 50,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "OverheatProtection": false
+      },
+      "note": "prep",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s13_heat",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "OverheatProtection": true
+      },
+      "note": "heat",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 5,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s13_cool",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "OverheatProtection": true
+      },
+      "note": "cool",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 2,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s13",
+      "inputs": {
+        "TemperatureSensorInput": 50,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "OverheatProtection": false,
+        "HeaterOutput": false,
+        "HeaterStatus": false
+      },
+      "note": "冷却第三拍按实际传感器读数解除保护并重新判定加热",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s14_prep",
+      "inputs": {
+        "TemperatureSensorInput": 50,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "OverheatProtection": false
+      },
+      "note": "prep",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s14_heat",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "OverheatProtection": true
+      },
+      "note": "heat",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 5,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s14_cool",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "OverheatProtection": true
+      },
+      "note": "cool",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 2,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s14",
+      "inputs": {
+        "TemperatureSensorInput": -5,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "OverheatProtection": false,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "CurrentTemperature": -5
+      },
+      "note": "冷却第三拍按实际传感器读数解除保护并重新判定加热",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s15",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false,
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50
+      },
+      "note": "从 s14 的无加热状态开始，连续低温第 1–4 拍供热。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 4,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s16",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true,
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50
+      },
+      "note": "第 5 拍启动第一轮保护。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s17",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true,
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50
+      },
+      "note": "第 6–7 拍保持保护。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 2,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s18",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false,
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50
+      },
+      "note": "第 8 拍解除保护、恢复供热，此拍已是新一轮的第一拍。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s19",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false,
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50
+      },
+      "note": "第 9–11 拍继续供热，第二轮累计到 4 拍。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 3,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s20",
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": true,
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50
+      },
+      "note": "第 12 拍已达到第二轮的 5 拍门槛，必须保护并关断。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-s21",
+      "inputs": {
+        "TemperatureSensorInput": 50,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": false,
+        "CurrentTemperature": 50,
+        "SetTempDisplay": 50
+      },
+      "note": "第二轮冷却 3 拍后解除，温度等于设定则保持关断。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:default",
+      "cycles": 3,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-changing-setpoint-1",
+      "inputs": {
+        "TemperatureSensorInput": 55,
+        "SetTemperature": 54
+      },
+      "expected": {
+        "CurrentTemperature": 55,
+        "SetTempDisplay": 54,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": false
+      },
+      "note": "改变公开设定值；当前拍比较实际温度并更新显示。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:changing-setpoint",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-changing-setpoint-2",
+      "inputs": {
+        "TemperatureSensorInput": 55,
+        "SetTemperature": 56
+      },
+      "expected": {
+        "CurrentTemperature": 55,
+        "SetTempDisplay": 56,
+        "HeaterOutput": true,
+        "HeaterStatus": true,
+        "OverheatProtection": false
+      },
+      "note": "改变公开设定值；当前拍比较实际温度并更新显示。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:changing-setpoint",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-changing-setpoint-3",
+      "inputs": {
+        "TemperatureSensorInput": 56,
+        "SetTemperature": 56
+      },
+      "expected": {
+        "CurrentTemperature": 56,
+        "SetTempDisplay": 56,
+        "HeaterOutput": false,
+        "HeaterStatus": false,
+        "OverheatProtection": false
+      },
+      "note": "改变公开设定值；当前拍比较实际温度并更新显示。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:changing-setpoint",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "upstream_review_claim": "",
+    "review": "已收到lym修订；按返回规则技术验收，不自动登记全题人工批准。",
+    "human_process_review": {
+      "status": "lym_revision_received",
+      "reviewer": "刘晏铭",
+      "approved": false,
+      "evidence": "returned 13-task revision package; no completed per-task signature form supplied"
+    },
+    "review_revision": "v1.3-review-r8",
+    "contract_change": "review2 verified correction; old scores are not overwritten",
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r4",
+      "platform": "codesys",
+      "pid": "public-medium-04",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate",
+        "r4: explicit batch/pump/heater contracts; isolated sequence groups"
+      ],
+      "adapted_source_sha256": "024d1c0319d70fcb5b829cd6d8b637ac05c7d64bb818d5c6832a4ce049f23de8",
+      "data_version": "v1.3-review-r8"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r8",
+      "kind": "platform_adapted",
+      "platform": "codesys",
+      "original_json": "progress/v13/upstream/public/public-medium-04.json",
+      "original_sha256": "bbb9537f4832cd638c542ac98601bb060d6ebf13db4b3ac7cfc10e85df0c3dcb",
+      "interface_changed": false,
+      "reference_source_sha256": "024d1c0319d70fcb5b829cd6d8b637ac05c7d64bb818d5c6832a4ce049f23de8",
+      "comparison_scope": "Three changed contracts are excluded from the unchanged 32-task historical comparison; no candidate interface rewriting",
+      "working_json": "progress/v13_r8/datasets/public/public-medium-04.json"
+    },
+    "lym_return": {
+      "received": "2026-11-10",
+      "archive_sha256": "bc6dfaf544cf88337dd5580d2a9c90f0262e68ed4b04397dc2043caa1d3268f1",
+      "source_member": "datasets/public/public-medium-04.json",
+      "status": "revision_received",
+      "signed_record_found": false
+    },
+    "spec_revision": "v1.3-review-r8"
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "# Temperature Logic Control\n\n- **Difficulty:** Medium (medium)\n\n## Requirements\n\nWrite a function block FB to implement a temperature control logic. The program should include the following functions:\n1. Read the value of the temperature sensor through an analog input module.\n2. Compare the read temperature value TemperatureSensorInput with the set temperature value SetTemperature.\n3. If the actual temperature is lower than the set temperature, start the heater HeaterOutput.\n4. If the actual temperature is higher than the set temperature, turn off the heater HeaterOutput.\n5. If the heater works continuously for more than a certain period (for convenience, using 5s), it should trigger an overheating protection, automatically turn off the heater, and must wait for a certain period (for convenience, using 3s) before the overheating protection can be lifted.\n6. Provide status indication, displaying the current temperature, set temperature, heater status, and whether overheating protection is triggered.\n7. Provide temperature sensor fault judgment, if the read temperature value TemperatureSensorInput is less than 0 or greater than 100, it is considered a sensor fault, and the heater should be turned off.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `TemperatureSensorInput` | `REAL` | The input value of the temperature sensor, i.e., the actual temperature |\n| Input | `SetTemperature` | `REAL` | The set temperature value |\n| Output | `CurrentTemperature` | `REAL` | Display of the current temperature |\n| Output | `SetTempDisplay` | `REAL` | Display of the set temperature |\n| Output | `HeaterStatus` | `BOOL` | Display of the heater status |\n| Output | `OverheatProtection` | `BOOL` | Display of the overheating protection status |\n| Output | `HeaterOutput` | `BOOL` | The control output of the heater |",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}

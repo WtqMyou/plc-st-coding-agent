@@ -1,0 +1,766 @@
+{
+  "pid": "self-medium-04",
+  "source": "selfmade",
+  "difficulty": "medium",
+  "title": "定量灌装阀控制（浮点累计与计数去抖）",
+  "requirements": "写一个功能块 FB，控制一条定量灌装工位。\n控制要求：\n1. startBtn 的上升沿开始一瓶的灌装：valveOpen 置 TRUE，并把内部累计体积清零；\n2. 每个扫描周期把 flowVol 累加到内部体积；**累计值达到或超过** targetVol 时立即关阀；\n3. 关阀后等待 doneSensor 为 TRUE，确认该瓶装满；\n4. **只有确认之后** fillsToday 才加 1；阀未确认就再次启动不得重复计数；\n5. 正在灌装过程中 startBtn 再次按下无效（不重新开始，也不重复计数）；\n6. resetBtn 的上升沿把 fillsToday 清零，并关闭灌装阀、清除内部累计。\nr6明确INT满量程约定：计数到32767后保持，继续完成灌装握手；合法复位后重新计数。人工工艺复审待确认。",
+  "variables": [
+    {
+      "name": "startBtn",
+      "data_type": "BOOL",
+      "description": "启动按钮（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "resetBtn",
+      "data_type": "BOOL",
+      "description": "复位按钮（上升沿有效）",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "doneSensor",
+      "data_type": "BOOL",
+      "description": "满瓶检测传感器",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "targetVol",
+      "data_type": "REAL",
+      "description": "目标灌装体积 mL",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "flowVol",
+      "data_type": "REAL",
+      "description": "本周期累计流量增量 mL",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "valveOpen",
+      "data_type": "BOOL",
+      "description": "灌装阀开命令",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "fillsToday",
+      "data_type": "INT",
+      "description": "今日完成瓶数",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "复位按钮上升沿必须在**当周期**把今日计数清零。",
+      "ltl": "G(rising(resetBtn) -> fillsToday = 0)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "开阀只允许发生在启动按钮的上升沿：阀从关到开的那一拍必须有新按下。",
+      "ltl": "G((!prev(valveOpen) AND valveOpen) -> rising(startBtn))",
+      "kind": "sequencing",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "除复位那一拍外，计数单调不减（不得回退）。",
+      "ltl": "G(!rising(resetBtn) -> fillsToday >= prev(fillsToday))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "每拍计数最多增加 1（不得因阀抖动重复计数）。",
+      "ltl": "G(fillsToday <= prev(fillsToday) + 1)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "计数只发生在满瓶确认之后：计数增加的那一拍 doneSensor 必须为真。",
+      "ltl": "G(fillsToday > prev(fillsToday) -> doneSensor)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "累计流量达到目标体积后，灌装阀必须在当周期关闭（涉及内部累计量，只在用例中校验）。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "N10-S2",
+      "text": "11.10补充：阀门本拍由关变开时，本拍必须有启动按钮上升沿；上电前阀门关闭。",
+      "ltl": "G(rising(valveOpen) -> rising(startBtn))",
+      "kind": "sequencing",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S7",
+      "text": "11.10补充：复位沿优先，关阀并归零。",
+      "ltl": "G(rising(resetBtn) -> !valveOpen)",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S8",
+      "text": "11.10补充：新瓶启动拍即计入流量，未达标开阀、达标当拍关阀。",
+      "ltl": "G((!rising(resetBtn) AND rising(startBtn) AND !prev(valveOpen)) -> (valveOpen <-> flowVol < targetVol))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S9",
+      "text": "11.10补充：运行中本拍无新增流量且目标不变，保持开阀。",
+      "ltl": "G((!rising(resetBtn) AND prev(valveOpen) AND flowVol = 0.0 AND targetVol = prev(targetVol)) -> valveOpen)",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S10",
+      "text": "11.10补充：非复位关阀且关阀拍尚未确认，下一拍没有复位或新启动而确认时，未饱和计数加一。",
+      "ltl": "G((prev(falling(valveOpen) AND !rising(resetBtn) AND !doneSensor) AND !rising(resetBtn) AND !rising(startBtn) AND doneSensor AND !prev(fillsToday = 32767)) -> fillsToday = prev(fillsToday) + 1)",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S11",
+      "text": "11.10补充：复位已清除待确认标志；其后未新启动时，确认信号不能计瓶。",
+      "ltl": "G((prev(rising(resetBtn)) AND !rising(resetBtn) AND !rising(startBtn)) -> fillsToday = prev(fillsToday))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S12",
+      "text": "11.10补充：首次启动贡献至少半个目标体积，下一拍无复位且不倒流仍开阀；第三拍再次启动且补入至少另一半时，须按原累计关阀。",
+      "ltl": "G((prev(prev(rising(startBtn) AND !prev(valveOpen) AND !rising(resetBtn) AND valveOpen AND flowVol + flowVol >= targetVol)) AND prev(!startBtn AND !rising(resetBtn) AND valveOpen AND flowVol >= 0.0 AND targetVol = prev(targetVol)) AND rising(startBtn) AND !rising(resetBtn) AND targetVol = prev(targetVol) AND flowVol + flowVol >= targetVol) -> !valveOpen)",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    },
+    {
+      "sid": "N10-S13",
+      "text": "11.10补充：本拍结束时新瓶仍在开阀灌装，确认信号不能给上一瓶计数。",
+      "ltl": "G((!rising(resetBtn) AND valveOpen) -> fillsToday = prev(fillsToday))",
+      "kind": "safety",
+      "verified_by": "test_trace_audit"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "b1",
+      "inputs": {
+        "startBtn": true,
+        "flowVol": 10.0,
+        "doneSensor": false
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 0
+      },
+      "note": "启动 → 开阀",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b2",
+      "inputs": {
+        "startBtn": true,
+        "flowVol": 10.0,
+        "doneSensor": false
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 0
+      },
+      "note": "按钮保持按住不得重复启动",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b3",
+      "inputs": {
+        "startBtn": true,
+        "flowVol": 0.0,
+        "doneSensor": false
+      },
+      "expected": {
+        "fillsToday": 0,
+        "valveOpen": false
+      },
+      "note": "复位优先：计数清零、关阀",
+      "const_inputs": {
+        "resetBtn": true,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b4",
+      "inputs": {
+        "startBtn": false,
+        "flowVol": 25.0,
+        "doneSensor": false
+      },
+      "expected": {
+        "valveOpen": false
+      },
+      "note": "复位后启动按钮还没按：阀必须关着，没启动就不许加料",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b5",
+      "inputs": {
+        "startBtn": true,
+        "flowVol": 25.0,
+        "doneSensor": false
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 0
+      },
+      "note": "上升沿再启动",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b6",
+      "inputs": {
+        "startBtn": false,
+        "flowVol": 25.0,
+        "doneSensor": false
+      },
+      "expected": {
+        "valveOpen": false,
+        "fillsToday": 0
+      },
+      "note": "累计 50 ≥ 目标 → 关阀，等确认",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b7",
+      "inputs": {
+        "startBtn": false,
+        "flowVol": 0.0,
+        "doneSensor": true
+      },
+      "expected": {
+        "fillsToday": 1
+      },
+      "note": "满瓶确认 → 计数 +1",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "b8",
+      "inputs": {
+        "startBtn": false,
+        "flowVol": 0.0,
+        "doneSensor": true
+      },
+      "expected": {
+        "fillsToday": 1
+      },
+      "note": "确认信号保持 → 不得重复计数",
+      "const_inputs": {
+        "resetBtn": false,
+        "targetVol": 50.0
+      },
+      "init": {},
+      "mode": "",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-abandon-1",
+      "inputs": {
+        "startBtn": true,
+        "resetBtn": false,
+        "doneSensor": false,
+        "targetVol": 50.0,
+        "flowVol": 25
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 0
+      },
+      "note": "新启动取消未确认的上一瓶；新瓶尚未另行灌满，确认信号无效。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:abandoned-bottle",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-abandon-2",
+      "inputs": {
+        "startBtn": false,
+        "resetBtn": false,
+        "doneSensor": false,
+        "targetVol": 50.0,
+        "flowVol": 25
+      },
+      "expected": {
+        "valveOpen": false,
+        "fillsToday": 0
+      },
+      "note": "新启动取消未确认的上一瓶；新瓶尚未另行灌满，确认信号无效。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:abandoned-bottle",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-abandon-3",
+      "inputs": {
+        "startBtn": true,
+        "resetBtn": false,
+        "doneSensor": false,
+        "targetVol": 50.0,
+        "flowVol": 25
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 0
+      },
+      "note": "新启动取消未确认的上一瓶；新瓶尚未另行灌满，确认信号无效。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:abandoned-bottle",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-abandon-4",
+      "inputs": {
+        "startBtn": false,
+        "resetBtn": false,
+        "doneSensor": true,
+        "targetVol": 50.0,
+        "flowVol": 0
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 0
+      },
+      "note": "新启动取消未确认的上一瓶；新瓶尚未另行灌满，确认信号无效。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:abandoned-bottle",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-edge-1",
+      "inputs": {
+        "startBtn": true,
+        "resetBtn": false,
+        "doneSensor": false,
+        "targetVol": 50.0,
+        "flowVol": 25
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 0
+      },
+      "note": "灌装中重复启动、零流量、到量关阀、仅确认一次及复位优先。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-edge",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-edge-2",
+      "inputs": {
+        "startBtn": false,
+        "resetBtn": false,
+        "doneSensor": false,
+        "targetVol": 50.0,
+        "flowVol": 0
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 0
+      },
+      "note": "灌装中重复启动、零流量、到量关阀、仅确认一次及复位优先。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-edge",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-edge-3",
+      "inputs": {
+        "startBtn": true,
+        "resetBtn": false,
+        "doneSensor": false,
+        "targetVol": 50.0,
+        "flowVol": 25
+      },
+      "expected": {
+        "valveOpen": false,
+        "fillsToday": 0
+      },
+      "note": "灌装中重复启动、零流量、到量关阀、仅确认一次及复位优先。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-edge",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-edge-4",
+      "inputs": {
+        "startBtn": false,
+        "resetBtn": false,
+        "doneSensor": true,
+        "targetVol": 50.0,
+        "flowVol": 0
+      },
+      "expected": {
+        "valveOpen": false,
+        "fillsToday": 1
+      },
+      "note": "灌装中重复启动、零流量、到量关阀、仅确认一次及复位优先。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-edge",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-edge-5",
+      "inputs": {
+        "startBtn": false,
+        "resetBtn": false,
+        "doneSensor": true,
+        "targetVol": 50.0,
+        "flowVol": 0
+      },
+      "expected": {
+        "valveOpen": false,
+        "fillsToday": 1
+      },
+      "note": "灌装中重复启动、零流量、到量关阀、仅确认一次及复位优先。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-edge",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-edge-6",
+      "inputs": {
+        "startBtn": true,
+        "resetBtn": false,
+        "doneSensor": false,
+        "targetVol": 50.0,
+        "flowVol": 25
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 1
+      },
+      "note": "灌装中重复启动、零流量、到量关阀、仅确认一次及复位优先。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-edge",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-edge-7",
+      "inputs": {
+        "startBtn": false,
+        "resetBtn": true,
+        "doneSensor": false,
+        "targetVol": 50.0,
+        "flowVol": 25
+      },
+      "expected": {
+        "valveOpen": false,
+        "fillsToday": 0
+      },
+      "note": "灌装中重复启动、零流量、到量关阀、仅确认一次及复位优先。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-edge",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-edge-8",
+      "inputs": {
+        "startBtn": false,
+        "resetBtn": false,
+        "doneSensor": true,
+        "targetVol": 50.0,
+        "flowVol": 0
+      },
+      "expected": {
+        "valveOpen": false,
+        "fillsToday": 0
+      },
+      "note": "灌装中重复启动、零流量、到量关阀、仅确认一次及复位优先。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:repeat-edge",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-limit-1",
+      "inputs": {
+        "startBtn": true,
+        "resetBtn": false,
+        "doneSensor": true,
+        "targetVol": 50.0,
+        "flowVol": 25.0
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 32766
+      },
+      "note": "INT 满计数仍灌装、确认后饱和，复位后继续计数。",
+      "const_inputs": {},
+      "init": {
+        "fillsToday": 32766
+      },
+      "mode": "sequence:peer:counter-limit",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-limit-2",
+      "inputs": {
+        "startBtn": false,
+        "resetBtn": false,
+        "doneSensor": true,
+        "targetVol": 50.0,
+        "flowVol": 25.0
+      },
+      "expected": {
+        "valveOpen": false,
+        "fillsToday": 32767
+      },
+      "note": "INT 满计数仍灌装、确认后饱和，复位后继续计数。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:counter-limit",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-limit-3",
+      "inputs": {
+        "startBtn": true,
+        "resetBtn": false,
+        "doneSensor": true,
+        "targetVol": 50.0,
+        "flowVol": 25.0
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 32767
+      },
+      "note": "INT 满计数仍灌装、确认后饱和，复位后继续计数。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:counter-limit",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-limit-4",
+      "inputs": {
+        "startBtn": false,
+        "resetBtn": false,
+        "doneSensor": true,
+        "targetVol": 50.0,
+        "flowVol": 25.0
+      },
+      "expected": {
+        "valveOpen": false,
+        "fillsToday": 32767
+      },
+      "note": "INT 满计数仍灌装、确认后饱和，复位后继续计数。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:counter-limit",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-limit-5",
+      "inputs": {
+        "startBtn": false,
+        "resetBtn": true,
+        "doneSensor": true,
+        "targetVol": 50.0,
+        "flowVol": 25.0
+      },
+      "expected": {
+        "valveOpen": false,
+        "fillsToday": 0
+      },
+      "note": "INT 满计数仍灌装、确认后饱和，复位后继续计数。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:counter-limit",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-limit-6",
+      "inputs": {
+        "startBtn": true,
+        "resetBtn": false,
+        "doneSensor": true,
+        "targetVol": 50.0,
+        "flowVol": 25.0
+      },
+      "expected": {
+        "valveOpen": true,
+        "fillsToday": 0
+      },
+      "note": "INT 满计数仍灌装、确认后饱和，复位后继续计数。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:counter-limit",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "peer-fill-limit-7",
+      "inputs": {
+        "startBtn": false,
+        "resetBtn": false,
+        "doneSensor": true,
+        "targetVol": 50.0,
+        "flowVol": 25.0
+      },
+      "expected": {
+        "valveOpen": false,
+        "fillsToday": 1
+      },
+      "note": "INT 满计数仍灌装、确认后饱和，复位后继续计数。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence:peer:counter-limit",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_type": "自主构思 / 行业经验改编",
+    "origin": "流程行业自动化赛项的灌装/称重工位核心逻辑：按体积或重量定量，并以满瓶检测作为计数确认。",
+    "adaptation": "把称重传感器抽象为'本周期流量增量 + 目标体积'，保留浮点累计的边界判定（>= 而非 >）与计数确认时序。",
+    "review": "已收到lym修订；按返回规则技术验收，不自动登记全题人工批准。",
+    "review_revision": "v1.3-review-r8",
+    "r9_spec_policy": {
+      "observer": null,
+      "changes": [],
+      "note": "Observer names are verification-only; candidate must implement only its public interface"
+    },
+    "platform_adaptation": {
+      "profile": "portable-frame-v5+v1.3-review-r4",
+      "platform": "codesys",
+      "pid": "self-medium-04",
+      "rules": [
+        "R9 observable formula policy; private candidate state is not a verification binding",
+        "Versioned v1.3 corrections; MC seconds supplied by offline run configuration",
+        "r2: independent invalid-sensor reset case and full-output test-contract gate",
+        "r4: explicit batch/pump/heater contracts; isolated sequence groups"
+      ],
+      "adapted_source_sha256": "b63608f72125c12a12013164e7fc24a7e1fa1458a87c92f28ccbb0e6e1246f35",
+      "data_version": "v1.3-review-r8"
+    },
+    "dataset_contract": {
+      "version": "v1.3-review-r8",
+      "kind": "platform_adapted",
+      "platform": "codesys",
+      "original_json": "progress/v13/upstream/selfmade/self-medium-04.json",
+      "original_sha256": "ffda836c2fc77e71c9e814a009f74908144c652d68687c41dc756fe77eecfd2b",
+      "interface_changed": false,
+      "reference_source_sha256": "b63608f72125c12a12013164e7fc24a7e1fa1458a87c92f28ccbb0e6e1246f35",
+      "comparison_scope": "Three changed contracts are excluded from the unchanged 32-task historical comparison; no candidate interface rewriting",
+      "working_json": "progress/v13_r8/datasets/selfmade/self-medium-04.json"
+    },
+    "human_process_review": {
+      "status": "lym_revision_received",
+      "reviewer": "刘晏铭",
+      "approved": false,
+      "evidence": "returned 13-task revision package; no completed per-task signature form supplied"
+    },
+    "lym_return": {
+      "received": "2026-11-10",
+      "archive_sha256": "bc6dfaf544cf88337dd5580d2a9c90f0262e68ed4b04397dc2043caa1d3268f1",
+      "source_member": "datasets/selfmade/self-medium-04.json",
+      "status": "revision_received",
+      "signed_record_found": false
+    },
+    "spec_revision": "v1.3-review-r8"
+  },
+  "language": "en",
+  "case_mode": "sequence",
+  "raw_text": "",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000,
+  "mc_max_seconds": 30.0,
+  "mc_inputs": {},
+  "mc_fixed_inputs": []
+}
