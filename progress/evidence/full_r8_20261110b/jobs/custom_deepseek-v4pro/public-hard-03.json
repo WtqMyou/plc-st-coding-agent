@@ -1,0 +1,2059 @@
+{
+  "pid": "public-hard-03",
+  "model": "deepseek-v4-pro-0813",
+  "provider": "custom",
+  "setting": "custom_deepseek-v4pro",
+  "max_iters": 2,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "TYPE ST_Recipe :\nSTRUCT\n    recipeID : INT;\n    ingredientType : INT;\n    ingredientRatio : REAL;\n    productionTemperature : REAL;\nEND_STRUCT\nEND_TYPE\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n    addRecipe : BOOL;\n    deleteRecipe : BOOL;\n    modifyRecipe : BOOL;\n    queryRecipe : BOOL;\n    recipeIn : ST_Recipe;\nEND_VAR\nVAR_OUTPUT\n    recipeAdded : BOOL;\n    recipeDeleted : BOOL;\n    recipeModified : BOOL;\n    recipeQueryResult : ST_Recipe;\n    error : BOOL;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    recipe : ARRAY[1..10] OF ST_Recipe;\nEND_VAR\nVAR\n    prevAdd : BOOL := FALSE;\n    prevDelete : BOOL := FALSE;\n    prevModify : BOOL := FALSE;\n    prevQuery : BOOL := FALSE;\n    riseAdd : BOOL;\n    riseDelete : BOOL;\n    riseModify : BOOL;\n    riseQuery : BOOL;\n    i : INT;\n    found : BOOL;\n    emptyIndex : INT;\nEND_VAR\n\n// 上升沿检测\nriseAdd := addRecipe AND NOT prevAdd;\nriseDelete := deleteRecipe AND NOT prevDelete;\nriseModify := modifyRecipe AND NOT prevModify;\nriseQuery := queryRecipe AND NOT prevQuery;\n\n// 默认输出（无请求沿时保持）\nrecipeAdded := FALSE;\nrecipeDeleted := FALSE;\nrecipeModified := FALSE;\nerror := FALSE;\nstatus := 0;\n\n// 优先级：查询 > 添加 > 删除 > 修改\nIF riseQuery THEN\n    // 查询请求\n    found := FALSE;\n    FOR i := 1 TO 10 DO\n        IF recipe[i].recipeID <> 0 AND recipe[i].recipeID = recipeIn.recipeID THEN\n            recipeQueryResult := recipe[i];\n            found := TRUE;\n            EXIT;\n        END_IF\n    END_FOR\n    IF NOT found THEN\n        error := TRUE;\n        status := 16#8001;\n        // 清空查询结果\n        recipeQueryResult.recipeID := 0;\n        recipeQueryResult.ingredientType := 0;\n        recipeQueryResult.ingredientRatio := 0.0;\n        recipeQueryResult.productionTemperature := 0.0;\n    END_IF\nELSIF riseAdd THEN\n    // 添加请求\n    found := FALSE;\n    FOR i := 1 TO 10 DO\n        IF recipe[i].recipeID <> 0 AND recipe[i].recipeID = recipeIn.recipeID THEN\n            found := TRUE;\n            EXIT;\n        END_IF\n    END_FOR\n    IF found THEN\n        error := TRUE;\n        status := 16#8002;\n    ELSE\n        emptyIndex := 0;\n        FOR i := 1 TO 10 DO\n            IF recipe[i].recipeID = 0 THEN\n                emptyIndex := i;\n                EXIT;\n            END_IF\n        END_FOR\n        IF emptyIndex = 0 THEN\n            error := TRUE;\n            status := 16#8003;\n        ELSE\n            recipe[emptyIndex] := recipeIn;\n            recipeAdded := TRUE;\n        END_IF\n    END_IF\nELSIF riseDelete THEN\n    // 删除请求\n    found := FALSE;\n    FOR i := 1 TO 10 DO\n        IF recipe[i].recipeID <> 0 AND recipe[i].recipeID = recipeIn.recipeID THEN\n            // 删除该槽，全部字段归零\n            recipe[i].recipeID := 0;\n            recipe[i].ingredientType := 0;\n            recipe[i].ingredientRatio := 0.0;\n            recipe[i].productionTemperature := 0.0;\n            found := TRUE;\n            EXIT;\n        END_IF\n    END_FOR\n    IF found THEN\n        recipeDeleted := TRUE;\n    ELSE\n        error := TRUE;\n        status := 16#8004;\n    END_IF\nELSIF riseModify THEN\n    // 修改请求\n    found := FALSE;\n    FOR i := 1 TO 10 DO\n        IF recipe[i].recipeID <> 0 AND recipe[i].recipeID = recipeIn.recipeID THEN\n            recipe[i] := recipeIn;\n            found := TRUE;\n            EXIT;\n        END_IF\n    END_FOR\n    IF found THEN\n        recipeModified := TRUE;\n    ELSE\n        error := TRUE;\n        status := 16#8005;\n    END_IF\nEND_IF\n\n// 更新上一周期信号\nprevAdd := addRecipe;\nprevDelete := deleteRecipe;\nprevModify := modifyRecipe;\nprevQuery := queryRecipe;\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 19,
+      "tests_total": 19,
+      "feedback": "自动测试：19/19。\nLTL 检查：violated。\n规约 S4 被违反，位置 1，公式 G(rising(deleteRecipe) -> recipeDeleted OR error)。\n规约 S5 被违反，位置 1，公式 G(rising(modifyRecipe) -> recipeModified OR error)。",
+      "prompt_tokens": 7083,
+      "completion_tokens": 5262,
+      "latency_s": 117.26600000000326,
+      "provider_error": "",
+      "verification_status": "violated",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 15.875,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-03_e6b07f8d05",
+          "source_sha256": "c8e4e1e1914390b93056b2a05455eb2731133cf056936165370e1c70b4b3d7b3",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "c8e4e1e1914390b93056b2a05455eb2731133cf056936165370e1c70b4b3d7b3",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 19,
+        "tests_passed": 19,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "h03-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 3,
+                  "ingredientRatio": 30.0,
+                  "productionTemperature": 115.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 1,
+                "ingredientRatio": 10.0,
+                "productionTemperature": 105.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 1,
+                "ingredientRatio": 10.0,
+                "productionTemperature": 105.0
+              }
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 2
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 3,
+                  "ingredientRatio": 30.0,
+                  "productionTemperature": 115.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 2,
+                "ingredientRatio": 20.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 0,
+                "ingredientType": 0,
+                "ingredientRatio": 0.0,
+                "productionTemperature": 0.0
+              }
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32770,
+              "recipeAdded": false
+            },
+            "actual": {
+              "error": true,
+              "status": 32770,
+              "recipeAdded": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeDeleted": true
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeDeleted": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 3
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 3,
+                  "ingredientRatio": 30.0,
+                  "productionTemperature": 115.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeModified": true
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeModified": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 33,
+                "ingredientRatio": 3.3,
+                "productionTemperature": 210.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 0,
+                "ingredientType": 0,
+                "ingredientRatio": 0.0,
+                "productionTemperature": 0.0
+              }
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32771,
+              "recipeAdded": false
+            },
+            "actual": {
+              "error": true,
+              "status": 32771,
+              "recipeAdded": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeDeleted": true
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeDeleted": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 2
+                },
+                {
+                  "recipeID": 3
+                },
+                {
+                  "recipeID": 4
+                },
+                {
+                  "recipeID": 11
+                },
+                {
+                  "recipeID": 6
+                },
+                {
+                  "recipeID": 7
+                },
+                {
+                  "recipeID": 8
+                },
+                {
+                  "recipeID": 9
+                },
+                {
+                  "recipeID": 10
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 2,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 4,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 11,
+                  "ingredientType": 11,
+                  "ingredientRatio": 110.0,
+                  "productionTemperature": 155.0
+                },
+                {
+                  "recipeID": 6,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 7,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 8,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 9,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 10,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32772
+            },
+            "actual": {
+              "error": true,
+              "status": 32772
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32773
+            },
+            "actual": {
+              "error": true,
+              "status": 32773
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 669,
+          "traces": 28288,
+          "specs_total": 11,
+          "specs_hold": 9,
+          "specs_violated": 2,
+          "specs_inconclusive": 0,
+          "violations": [
+            {
+              "id": "S4",
+              "formula": "G(rising(deleteRecipe) -> recipeDeleted OR error)",
+              "at": 1,
+              "explanation": "  反例出现在第 1 个快照（共 1 个）：\n      addrecipe         = True\n      deleterecipe      = True\n      emptyindex        = 1\n      error             = False\n      found             = False\n      i                 = 1\n      modifyrecipe      = False\n      prevadd           = True\n      prevdelete        = True\n      prevmodify        = False\n      prevquery         = False\n      queryrecipe       = False\n      recipe            = ArrayValue(lo=1, hi=10, items=[ST_Recipe{'recipeID': 1, 'ingredientType': 1, 'ingredientRatio': 10.0, 'productionTemperature': 105.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}])\n      recipeadded       = True\n      recipedeleted     = False\n      recipein          = ST_Recipe{'recipeID': 1, 'ingredientType': 1, 'ingredientRatio': 10.0, 'productionTemperature': 105.0}\n      recipemodified    = False\n      recipequeryresult = ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}\n      riseadd           = True\n      risedelete        = True\n      risemodify        = False\n      risequery         = False\n      status            = 0",
+              "trace": [
+                {
+                  "addrecipe": true,
+                  "deleterecipe": true,
+                  "modifyrecipe": false,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": true,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": false,
+                  "status": 0,
+                  "recipe": [
+                    {
+                      "recipeID": 1,
+                      "ingredientType": 1,
+                      "ingredientRatio": 10.0,
+                      "productionTemperature": 105.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "prevadd": true,
+                  "prevdelete": true,
+                  "prevmodify": false,
+                  "prevquery": false,
+                  "riseadd": true,
+                  "risedelete": true,
+                  "risemodify": false,
+                  "risequery": false,
+                  "i": 1,
+                  "found": false,
+                  "emptyindex": 1
+                }
+              ]
+            },
+            {
+              "id": "S5",
+              "formula": "G(rising(modifyRecipe) -> recipeModified OR error)",
+              "at": 1,
+              "explanation": "  反例出现在第 1 个快照（共 1 个）：\n      addrecipe         = True\n      deleterecipe      = False\n      emptyindex        = 1\n      error             = False\n      found             = False\n      i                 = 1\n      modifyrecipe      = True\n      prevadd           = True\n      prevdelete        = False\n      prevmodify        = True\n      prevquery         = False\n      queryrecipe       = False\n      recipe            = ArrayValue(lo=1, hi=10, items=[ST_Recipe{'recipeID': 1, 'ingredientType': 1, 'ingredientRatio': 10.0, 'productionTemperature': 105.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}])\n      recipeadded       = True\n      recipedeleted     = False\n      recipein          = ST_Recipe{'recipeID': 1, 'ingredientType': 1, 'ingredientRatio': 10.0, 'productionTemperature': 105.0}\n      recipemodified    = False\n      recipequeryresult = ST_Recipe{'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}\n      riseadd           = True\n      risedelete        = False\n      risemodify        = True\n      risequery         = False\n      status            = 0",
+              "trace": [
+                {
+                  "addrecipe": true,
+                  "deleterecipe": false,
+                  "modifyrecipe": true,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": true,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": false,
+                  "status": 0,
+                  "recipe": [
+                    {
+                      "recipeID": 1,
+                      "ingredientType": 1,
+                      "ingredientRatio": 10.0,
+                      "productionTemperature": 105.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "prevadd": true,
+                  "prevdelete": false,
+                  "prevmodify": true,
+                  "prevquery": false,
+                  "riseadd": true,
+                  "risedelete": false,
+                  "risemodify": true,
+                  "risequery": false,
+                  "i": 1,
+                  "found": false,
+                  "emptyindex": 1
+                }
+              ]
+            }
+          ],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.875,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-03_e6b07f8d05",
+            "source_sha256": "c8e4e1e1914390b93056b2a05455eb2731133cf056936165370e1c70b4b3d7b3",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "classification": "evaluated",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "group_counts": {
+            "sequence": 19
+          },
+          "group_policy": "fresh instance per sequence group; each single case fresh",
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "c8e4e1e1914390b93056b2a05455eb2731133cf056936165370e1c70b4b3d7b3",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "r7_model_check": {
+            "program": "public-hard-03",
+            "states_explored": 669,
+            "traces_explored": 28288,
+            "max_depth": 3,
+            "requested_depth": 8,
+            "complete_depth": 2,
+            "initial_inputs_attempted": 128,
+            "input_space_size": 128,
+            "all_hold": false,
+            "error": "",
+            "truncated": true,
+            "fixed_input_domains": {},
+            "specs": [
+              {
+                "id": "S1",
+                "formula": "G(status <> 0 -> error)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S2",
+                "formula": "G(error -> status = 32769 OR status = 32770 OR status = 32771 OR status = 32772 OR status = 32773)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S3",
+                "formula": "G(rising(addRecipe) -> recipeAdded OR error)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S4",
+                "formula": "G(rising(deleteRecipe) -> recipeDeleted OR error)",
+                "status": "违反",
+                "holds": false,
+                "contradicting": true,
+                "bounded": false,
+                "inconclusive": false,
+                "counterexample_at": 1,
+                "reason": "在第 1 个快照处违反"
+              },
+              {
+                "id": "S5",
+                "formula": "G(rising(modifyRecipe) -> recipeModified OR error)",
+                "status": "违反",
+                "holds": false,
+                "contradicting": true,
+                "bounded": false,
+                "inconclusive": false,
+                "counterexample_at": 1,
+                "reason": "在第 1 个快照处违反"
+              },
+              {
+                "id": "S6",
+                "formula": "G(rising(queryRecipe) -> error OR recipeQueryResult.recipeID <> 0)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S7",
+                "formula": "G(((NOT rising(queryRecipe) AND NOT rising(addRecipe) AND NOT rising(deleteRecipe) AND NOT rising(modifyRecipe)) -> (NOT recipeAdded AND NOT recipeDeleted AND NOT recipeModified AND NOT error AND status = 0)))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S8",
+                "formula": "G(((rising(queryRecipe) AND NOT rising(addRecipe) AND NOT rising(deleteRecipe) AND NOT rising(modifyRecipe)) -> ((NOT ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID)) -> (error AND status = 32769)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[1].recipeID AND recipeQueryResult.ingredientType = recipe[1].ingredientType AND recipeQueryResult.ingredientRatio = recipe[1].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[1].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[2].recipeID AND recipeQueryResult.ingredientType = recipe[2].ingredientType AND recipeQueryResult.ingredientRatio = recipe[2].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[2].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[3].recipeID AND recipeQueryResult.ingredientType = recipe[3].ingredientType AND recipeQueryResult.ingredientRatio = recipe[3].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[3].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[4].recipeID AND recipeQueryResult.ingredientType = recipe[4].ingredientType AND recipeQueryResult.ingredientRatio = recipe[4].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[4].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[5].recipeID AND recipeQueryResult.ingredientType = recipe[5].ingredientType AND recipeQueryResult.ingredientRatio = recipe[5].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[5].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[6].recipeID AND recipeQueryResult.ingredientType = recipe[6].ingredientType AND recipeQueryResult.ingredientRatio = recipe[6].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[6].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[7].recipeID AND recipeQueryResult.ingredientType = recipe[7].ingredientType AND recipeQueryResult.ingredientRatio = recipe[7].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[7].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[8].recipeID AND recipeQueryResult.ingredientType = recipe[8].ingredientType AND recipeQueryResult.ingredientRatio = recipe[8].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[8].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[9].recipeID AND recipeQueryResult.ingredientType = recipe[9].ingredientType AND recipeQueryResult.ingredientRatio = recipe[9].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[9].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[10].recipeID AND recipeQueryResult.ingredientType = recipe[10].ingredientType AND recipeQueryResult.ingredientRatio = recipe[10].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[10].productionTemperature)))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S9",
+                "formula": "G((((rising(addRecipe) AND NOT rising(queryRecipe) AND NOT rising(deleteRecipe) AND NOT rising(modifyRecipe)) AND recipeIn.recipeID <> 0) -> ((recipeAdded -> (NOT error AND status = 0 AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) -> (recipe[1].recipeID = recipeIn.recipeID AND recipe[1].ingredientType = recipeIn.ingredientType AND recipe[1].ingredientRatio = recipeIn.ingredientRatio AND recipe[1].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) -> (recipe[2].recipeID = recipeIn.recipeID AND recipe[2].ingredientType = recipeIn.ingredientType AND recipe[2].ingredientRatio = recipeIn.ingredientRatio AND recipe[2].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) -> (recipe[3].recipeID = recipeIn.recipeID AND recipe[3].ingredientType = recipeIn.ingredientType AND recipe[3].ingredientRatio = recipeIn.ingredientRatio AND recipe[3].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) -> (recipe[4].recipeID = recipeIn.recipeID AND recipe[4].ingredientType = recipeIn.ingredientType AND recipe[4].ingredientRatio = recipeIn.ingredientRatio AND recipe[4].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) -> (recipe[5].recipeID = recipeIn.recipeID AND recipe[5].ingredientType = recipeIn.ingredientType AND recipe[5].ingredientRatio = recipeIn.ingredientRatio AND recipe[5].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) -> (recipe[6].recipeID = recipeIn.recipeID AND recipe[6].ingredientType = recipeIn.ingredientType AND recipe[6].ingredientRatio = recipeIn.ingredientRatio AND recipe[6].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0 AND recipe[5].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) -> (recipe[7].recipeID = recipeIn.recipeID AND recipe[7].ingredientType = recipeIn.ingredientType AND recipe[7].ingredientRatio = recipeIn.ingredientRatio AND recipe[7].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0 AND recipe[5].recipeID <> 0 AND recipe[6].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) -> (recipe[8].recipeID = recipeIn.recipeID AND recipe[8].ingredientType = recipeIn.ingredientType AND recipe[8].ingredientRatio = recipeIn.ingredientRatio AND recipe[8].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0 AND recipe[5].recipeID <> 0 AND recipe[6].recipeID <> 0 AND recipe[7].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) -> (recipe[9].recipeID = recipeIn.recipeID AND recipe[9].ingredientType = recipeIn.ingredientType AND recipe[9].ingredientRatio = recipeIn.ingredientRatio AND recipe[9].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0 AND recipe[5].recipeID <> 0 AND recipe[6].recipeID <> 0 AND recipe[7].recipeID <> 0 AND recipe[8].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID) -> (recipe[10].recipeID = recipeIn.recipeID AND recipe[10].ingredientType = recipeIn.ingredientType AND recipe[10].ingredientRatio = recipeIn.ingredientRatio AND recipe[10].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0 AND recipe[5].recipeID <> 0 AND recipe[6].recipeID <> 0 AND recipe[7].recipeID <> 0 AND recipe[8].recipeID <> 0 AND recipe[9].recipeID <> 0)))) AND ((NOT recipeAdded AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID))) -> (error AND status = 32770)) AND ((NOT recipeAdded AND NOT ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID))) -> ((recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0 AND recipe[5].recipeID <> 0 AND recipe[6].recipeID <> 0 AND recipe[7].recipeID <> 0 AND recipe[8].recipeID <> 0 AND recipe[9].recipeID <> 0 AND recipe[10].recipeID <> 0) AND error AND status = 32771)))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S10",
+                "formula": "G(((rising(deleteRecipe) AND NOT rising(queryRecipe) AND NOT rising(addRecipe) AND NOT rising(modifyRecipe)) -> (NOT ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID)) AND (recipeDeleted -> (NOT error AND status = 0)) AND (NOT recipeDeleted -> (error AND status = 32772)))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S11",
+                "formula": "G(((rising(modifyRecipe) AND NOT rising(queryRecipe) AND NOT rising(addRecipe) AND NOT rising(deleteRecipe)) -> ((NOT ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID)) -> (error AND status = 32773 AND NOT recipeModified)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[1].recipeID = recipeIn.recipeID AND recipe[1].ingredientType = recipeIn.ingredientType AND recipe[1].ingredientRatio = recipeIn.ingredientRatio AND recipe[1].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[2].recipeID = recipeIn.recipeID AND recipe[2].ingredientType = recipeIn.ingredientType AND recipe[2].ingredientRatio = recipeIn.ingredientRatio AND recipe[2].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[3].recipeID = recipeIn.recipeID AND recipe[3].ingredientType = recipeIn.ingredientType AND recipe[3].ingredientRatio = recipeIn.ingredientRatio AND recipe[3].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[4].recipeID = recipeIn.recipeID AND recipe[4].ingredientType = recipeIn.ingredientType AND recipe[4].ingredientRatio = recipeIn.ingredientRatio AND recipe[4].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[5].recipeID = recipeIn.recipeID AND recipe[5].ingredientType = recipeIn.ingredientType AND recipe[5].ingredientRatio = recipeIn.ingredientRatio AND recipe[5].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[6].recipeID = recipeIn.recipeID AND recipe[6].ingredientType = recipeIn.ingredientType AND recipe[6].ingredientRatio = recipeIn.ingredientRatio AND recipe[6].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[7].recipeID = recipeIn.recipeID AND recipe[7].ingredientType = recipeIn.ingredientType AND recipe[7].ingredientRatio = recipeIn.ingredientRatio AND recipe[7].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[8].recipeID = recipeIn.recipeID AND recipe[8].ingredientType = recipeIn.ingredientType AND recipe[8].ingredientRatio = recipeIn.ingredientRatio AND recipe[8].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[9].recipeID = recipeIn.recipeID AND recipe[9].ingredientType = recipeIn.ingredientType AND recipe[9].ingredientRatio = recipeIn.ingredientRatio AND recipe[9].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[10].recipeID = recipeIn.recipeID AND recipe[10].ingredientType = recipeIn.ingredientType AND recipe[10].ingredientRatio = recipeIn.ingredientRatio AND recipe[10].productionTemperature = recipeIn.productionTemperature)))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              }
+            ]
+          },
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.16259859,
+      "actual_model": "deepseek-v4-pro-0813",
+      "solved": true,
+      "fully_verified": false
+    },
+    {
+      "idx": 1,
+      "code": "TYPE ST_Recipe :\nSTRUCT\n    recipeID : INT;\n    ingredientType : INT;\n    ingredientRatio : REAL;\n    productionTemperature : REAL;\nEND_STRUCT\nEND_TYPE\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n    addRecipe : BOOL;\n    deleteRecipe : BOOL;\n    modifyRecipe : BOOL;\n    queryRecipe : BOOL;\n    recipeIn : ST_Recipe;\nEND_VAR\nVAR_OUTPUT\n    recipeAdded : BOOL;\n    recipeDeleted : BOOL;\n    recipeModified : BOOL;\n    recipeQueryResult : ST_Recipe;\n    error : BOOL;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    recipe : ARRAY[1..10] OF ST_Recipe;\nEND_VAR\nVAR\n    prevAdd : BOOL := FALSE;\n    prevDelete : BOOL := FALSE;\n    prevModify : BOOL := FALSE;\n    prevQuery : BOOL := FALSE;\n    riseAdd : BOOL;\n    riseDelete : BOOL;\n    riseModify : BOOL;\n    riseQuery : BOOL;\n    i : INT;\n    found : BOOL;\n    emptyIndex : INT;\nEND_VAR\n\n    // 上升沿检测\n    riseAdd := addRecipe AND NOT prevAdd;\n    riseDelete := deleteRecipe AND NOT prevDelete;\n    riseModify := modifyRecipe AND NOT prevModify;\n    riseQuery := queryRecipe AND NOT prevQuery;\n\n    // 初始化输出\n    recipeAdded := FALSE;\n    recipeDeleted := FALSE;\n    recipeModified := FALSE;\n    error := FALSE;\n    status := 0;\n    recipeQueryResult.recipeID := 0;\n    recipeQueryResult.ingredientType := 0;\n    recipeQueryResult.ingredientRatio := 0.0;\n    recipeQueryResult.productionTemperature := 0.0;\n\n    // 处理查询（只读）\n    IF riseQuery THEN\n        found := FALSE;\n        FOR i := 1 TO 10 DO\n            IF recipe[i].recipeID <> 0 AND recipe[i].recipeID = recipeIn.recipeID THEN\n                recipeQueryResult := recipe[i];\n                found := TRUE;\n                EXIT;\n            END_IF\n        END_FOR\n        IF NOT found THEN\n            error := TRUE;\n            status := 16#8001;\n        END_IF\n    END_IF\n\n    // 处理添加（独立）\n    IF riseAdd THEN\n        found := FALSE;\n        FOR i := 1 TO 10 DO\n            IF recipe[i].recipeID <> 0 AND recipe[i].recipeID = recipeIn.recipeID THEN\n                found := TRUE;\n                EXIT;\n            END_IF\n        END_FOR\n        IF found THEN\n            error := TRUE;\n            status := 16#8002;\n        ELSE\n            emptyIndex := 0;\n            FOR i := 1 TO 10 DO\n                IF recipe[i].recipeID = 0 THEN\n                    emptyIndex := i;\n                    EXIT;\n                END_IF\n            END_FOR\n            IF emptyIndex = 0 THEN\n                error := TRUE;\n                status := 16#8003;\n            ELSE\n                recipe[emptyIndex] := recipeIn;\n                recipeAdded := TRUE;\n            END_IF\n        END_IF\n    END_IF\n\n    // 处理删除（独立）\n    IF riseDelete THEN\n        found := FALSE;\n        FOR i := 1 TO 10 DO\n            IF recipe[i].recipeID <> 0 AND recipe[i].recipeID = recipeIn.recipeID THEN\n                recipe[i].recipeID := 0;\n                recipe[i].ingredientType := 0;\n                recipe[i].ingredientRatio := 0.0;\n                recipe[i].productionTemperature := 0.0;\n                found := TRUE;\n                EXIT;\n            END_IF\n        END_FOR\n        IF found THEN\n            recipeDeleted := TRUE;\n        ELSE\n            error := TRUE;\n            status := 16#8004;\n        END_IF\n    END_IF\n\n    // 处理修改（独立）\n    IF riseModify THEN\n        found := FALSE;\n        FOR i := 1 TO 10 DO\n            IF recipe[i].recipeID <> 0 AND recipe[i].recipeID = recipeIn.recipeID THEN\n                recipe[i] := recipeIn;\n                found := TRUE;\n                EXIT;\n            END_IF\n        END_FOR\n        IF found THEN\n            recipeModified := TRUE;\n        ELSE\n            error := TRUE;\n            status := 16#8005;\n        END_IF\n    END_IF\n\n    // 更新上一周期信号\n    prevAdd := addRecipe;\n    prevDelete := deleteRecipe;\n    prevModify := modifyRecipe;\n    prevQuery := queryRecipe;\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 16,
+      "tests_total": 19,
+      "feedback": "自动测试：16/19。\n用例 h03-4，模式 sequence，行为不匹配，请检查 error, recipe, recipeAdded, status。\n用例 h03-6，模式 sequence，行为不匹配，请检查 error。\n用例 h03-7，模式 sequence，行为不匹配，请检查 error。\nLTL 检查：not_run。",
+      "prompt_tokens": 8184,
+      "completion_tokens": 4101,
+      "latency_s": 72.51600000000326,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 15.90700000000652,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-03_2bbad05bdc",
+          "source_sha256": "b2bc29e8b1459a67ce303cf4e36048858d30e55b948e357af315460311bdee35",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "b2bc29e8b1459a67ce303cf4e36048858d30e55b948e357af315460311bdee35",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 19,
+        "tests_passed": 16,
+        "pass_rate": 0.8421,
+        "failure_summary": "h03-4: recipe 期望 [{'recipeID': 1}, {'recipeID': 2}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}]，实际 [{'recipeID': 2, 'ingredientType': 2, 'ingredientRatio': 20.0, 'productionTemperature': 110.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}]",
+        "cases": [
+          {
+            "tc_id": "h03-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 3,
+                  "ingredientRatio": 30.0,
+                  "productionTemperature": 115.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 1,
+                "ingredientRatio": 10.0,
+                "productionTemperature": 105.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 0,
+                "ingredientType": 0,
+                "ingredientRatio": 0.0,
+                "productionTemperature": 0.0
+              }
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-4",
+            "passed": false,
+            "mode": "sequence",
+            "message": "recipe 期望 [{'recipeID': 1}, {'recipeID': 2}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}]，实际 [{'recipeID': 2, 'ingredientType': 2, 'ingredientRatio': 20.0, 'productionTemperature': 110.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}]",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 2
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 3,
+                  "ingredientRatio": 30.0,
+                  "productionTemperature": 115.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ]
+            },
+            "hint": "h03-4（新增 2 号配方 → 落在下一个空槽 2）：recipe 期望 [{'recipeID': 1}, {'recipeID': 2}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}, {'recipeID': 0}]，实际 [{'recipeID': 2, 'ingredientType': 2, 'ingredientRatio': 20.0, 'productionTemperature': 110.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}, {'recipeID': 0, 'ingredientType': 0, 'ingredientRatio': 0.0, 'productionTemperature': 0.0}]"
+          },
+          {
+            "tc_id": "h03-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 2,
+                "ingredientRatio": 20.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 0,
+                "ingredientType": 0,
+                "ingredientRatio": 0.0,
+                "productionTemperature": 0.0
+              }
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-6",
+            "passed": false,
+            "mode": "sequence",
+            "message": "error 期望 True，实际 False",
+            "expected": {
+              "error": true
+            },
+            "actual": {
+              "error": false
+            },
+            "hint": "h03-6（新增已存在的 1 号配方（数据不同）→ status=16#8002、库不变（负例，重复号））：error 期望 True，实际 False"
+          },
+          {
+            "tc_id": "h03-7",
+            "passed": false,
+            "mode": "sequence",
+            "message": "error 期望 False，实际 True",
+            "expected": {
+              "error": false
+            },
+            "actual": {
+              "error": true
+            },
+            "hint": "h03-7（删除 2 号配方 → 成功指示为真，槽 2 的 recipeID 清零）：error 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h03-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 3
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 3,
+                  "ingredientRatio": 30.0,
+                  "productionTemperature": 115.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeModified": true
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeModified": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 33,
+                "ingredientRatio": 3.3,
+                "productionTemperature": 210.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 0,
+                "ingredientType": 0,
+                "ingredientRatio": 0.0,
+                "productionTemperature": 0.0
+              }
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32771,
+              "recipeAdded": false
+            },
+            "actual": {
+              "error": true,
+              "status": 32771,
+              "recipeAdded": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeDeleted": true
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeDeleted": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 2
+                },
+                {
+                  "recipeID": 3
+                },
+                {
+                  "recipeID": 4
+                },
+                {
+                  "recipeID": 11
+                },
+                {
+                  "recipeID": 6
+                },
+                {
+                  "recipeID": 7
+                },
+                {
+                  "recipeID": 8
+                },
+                {
+                  "recipeID": 9
+                },
+                {
+                  "recipeID": 10
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 2,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 4,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 11,
+                  "ingredientType": 11,
+                  "ingredientRatio": 110.0,
+                  "productionTemperature": 155.0
+                },
+                {
+                  "recipeID": 6,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 7,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 8,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 9,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 10,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32772
+            },
+            "actual": {
+              "error": true,
+              "status": 32772
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32773
+            },
+            "actual": {
+              "error": true,
+              "status": 32773
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.90700000000652,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-03_2bbad05bdc",
+            "source_sha256": "b2bc29e8b1459a67ce303cf4e36048858d30e55b948e357af315460311bdee35",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "classification": "evaluated",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "group_counts": {
+            "sequence": 19
+          },
+          "group_policy": "fresh instance per sequence group; each single case fresh",
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "b2bc29e8b1459a67ce303cf4e36048858d30e55b948e357af315460311bdee35",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.14566257000000002,
+      "actual_model": "deepseek-v4-pro-0813",
+      "solved": false,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1794313361.852475,
+  "finished_at": 1794313551.646031,
+  "error": "",
+  "stop_reason": "max_candidates",
+  "run_signature": "",
+  "experiment_kind": "live",
+  "tests_total": 19,
+  "request_window_seconds": 451,
+  "prompt_version": "v2.5-task-specific-reset",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 24630,
+  "total_latency_s": 189.78200000000652,
+  "n_attempts": 2,
+  "job_done": true,
+  "study_plan_sha256": "5d34beeeeacd5265559418bf339d6cefa78c9bc504793ddbd387265486810ba8",
+  "complete_code": true
+}
