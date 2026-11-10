@@ -1,0 +1,932 @@
+{
+  "pid": "public-hard-01",
+  "model": "deepseek-v4-pro-0813",
+  "provider": "custom",
+  "setting": "custom_deepseek-v4pro",
+  "max_iters": 2,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    estop: BOOL;\n    opeMode: BOOL;\n    valveAStart: BOOL;\n    valveBStart: BOOL;\n    valveCStart: BOOL;\n    valveDStart: BOOL;\n    mixMotorStart: BOOL;\n    autoStart: BOOL;\n    processMode: BOOL;\n    levelSensor: INT;\n    mixMotorComplete: BOOL;\nEND_VAR\nVAR_OUTPUT\n    valveARun: BOOL;\n    valveBRun: BOOL;\n    valveCRun: BOOL;\n    valveDRun: BOOL;\n    mixMotorRun: BOOL;\nEND_VAR\nVAR\n    manualValveA: BOOL := FALSE;\n    manualValveB: BOOL := FALSE;\n    manualValveC: BOOL := FALSE;\n    manualValveD: BOOL := FALSE;\n    manualMixMotor: BOOL := FALSE;\n    autoStep: INT := 0;\n    prevValveAStart: BOOL := FALSE;\n    prevValveBStart: BOOL := FALSE;\n    prevValveCStart: BOOL := FALSE;\n    prevValveDStart: BOOL := FALSE;\n    prevMixMotorStart: BOOL := FALSE;\n    prevAutoStart: BOOL := FALSE;\n    prevMixMotorComplete: BOOL := FALSE;\n    prevOpeMode: BOOL := FALSE;\n    edgeValveAStart: BOOL;\n    edgeValveBStart: BOOL;\n    edgeValveCStart: BOOL;\n    edgeValveDStart: BOOL;\n    edgeMixMotorStart: BOOL;\n    edgeAutoStart: BOOL;\n    edgeMixMotorComplete: BOOL;\n    autoValveA: BOOL := FALSE;\n    autoValveB: BOOL := FALSE;\n    autoValveC: BOOL := FALSE;\n    autoValveD: BOOL := FALSE;\n    autoMixMotor: BOOL := FALSE;\nEND_VAR\n\nedgeValveAStart := valveAStart AND NOT prevValveAStart;\nedgeValveBStart := valveBStart AND NOT prevValveBStart;\nedgeValveCStart := valveCStart AND NOT prevValveCStart;\nedgeValveDStart := valveDStart AND NOT prevValveDStart;\nedgeMixMotorStart := mixMotorStart AND NOT prevMixMotorStart;\nedgeAutoStart := autoStart AND NOT prevAutoStart;\nedgeMixMotorComplete := mixMotorComplete AND NOT prevMixMotorComplete;\n\nIF estop THEN\n    IF opeMode = FALSE THEN\n        // Manual mode\n        IF edgeValveAStart THEN manualValveA := NOT manualValveA; END_IF;\n        IF edgeValveBStart THEN manualValveB := NOT manualValveB; END_IF;\n        IF edgeValveCStart THEN manualValveC := NOT manualValveC; END_IF;\n        IF edgeValveDStart THEN manualValveD := NOT manualValveD; END_IF;\n        IF edgeMixMotorStart THEN manualMixMotor := NOT manualMixMotor; END_IF;\n    ELSE\n        // Automatic mode\n        IF prevOpeMode = FALSE THEN\n            autoStep := 0;\n            autoValveA := FALSE;\n            autoValveB := FALSE;\n            autoValveC := FALSE;\n            autoValveD := FALSE;\n            autoMixMotor := FALSE;\n        END_IF;\n\n        CASE autoStep OF\n            0: // Idle\n                autoValveA := FALSE;\n                autoValveB := FALSE;\n                autoValveC := FALSE;\n                autoValveD := FALSE;\n                autoMixMotor := FALSE;\n                IF edgeAutoStart THEN\n                    autoValveA := TRUE;\n                    autoStep := 1;\n                END_IF;\n            1: // Valve A open\n                autoValveA := FALSE;\n                autoValveB := FALSE;\n                autoValveC := FALSE;\n                autoValveD := FALSE;\n                autoMixMotor := FALSE;\n                autoValveA := TRUE;\n                IF levelSensor >= 50 THEN\n                    autoValveA := FALSE;\n                    autoValveB := TRUE;\n                    autoStep := 2;\n                END_IF;\n            2: // Valve B open\n                autoValveA := FALSE;\n                autoValveB := FALSE;\n                autoValveC := FALSE;\n                autoValveD := FALSE;\n                autoMixMotor := FALSE;\n                autoValveB := TRUE;\n                IF levelSensor >= 80 THEN\n                    autoValveB := FALSE;\n                    IF processMode THEN\n                        autoValveC := TRUE;\n                        autoStep := 3;\n                    ELSE\n                        autoMixMotor := TRUE;\n                        autoStep := 4;\n                    END_IF;\n                END_IF;\n            3: // Valve C open\n                autoValveA := FALSE;\n                autoValveB := FALSE;\n                autoValveC := FALSE;\n                autoValveD := FALSE;\n                autoMixMotor := FALSE;\n                autoValveC := TRUE;\n                IF levelSensor >= 100 THEN\n                    autoValveC := FALSE;\n                    autoMixMotor := TRUE;\n                    autoStep := 4;\n                END_IF;\n            4: // Mixing motor running\n                autoValveA := FALSE;\n                autoValveB := FALSE;\n                autoValveC := FALSE;\n                autoValveD := FALSE;\n                autoMixMotor := FALSE;\n                autoMixMotor := TRUE;\n                IF edgeMixMotorComplete THEN\n                    autoMixMotor := FALSE;\n                    autoValveD := TRUE;\n                    autoStep := 0;\n                END_IF;\n        ELSE\n            autoStep := 0;\n            autoValveA := FALSE;\n            autoValveB := FALSE;\n            autoValveC := FALSE;\n            autoValveD := FALSE;\n            autoMixMotor := FALSE;\n        END_CASE;\n    END_IF;\nELSE\n    // Emergency stop\n    manualValveA := FALSE;\n    manualValveB := FALSE;\n    manualValveC := FALSE;\n    manualValveD := FALSE;\n    manualMixMotor := FALSE;\n    autoStep := 0;\n    autoValveA := FALSE;\n    autoValveB := FALSE;\n    autoValveC := FALSE;\n    autoValveD := FALSE;\n    autoMixMotor := FALSE;\nEND_IF;\n\n// Assign outputs\nIF estop = FALSE THEN\n    valveARun := FALSE;\n    valveBRun := FALSE;\n    valveCRun := FALSE;\n    valveDRun := FALSE;\n    mixMotorRun := FALSE;\nELSE\n    IF opeMode = FALSE THEN\n        valveARun := manualValveA;\n        valveBRun := manualValveB;\n        valveCRun := manualValveC;\n        valveDRun := manualValveD;\n        mixMotorRun := manualMixMotor;\n    ELSE\n        valveARun := autoValveA;\n        valveBRun := autoValveB;\n        valveCRun := autoValveC;\n        valveDRun := autoValveD;\n        mixMotorRun := autoMixMotor;\n    END_IF;\nEND_IF;\n\n// Update history\nprevValveAStart := valveAStart;\nprevValveBStart := valveBStart;\nprevValveCStart := valveCStart;\nprevValveDStart := valveDStart;\nprevMixMotorStart := mixMotorStart;\nprevAutoStart := autoStart;\nprevMixMotorComplete := mixMotorComplete;\nprevOpeMode := opeMode;\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 29,
+      "tests_total": 29,
+      "feedback": "自动测试：29/29。\nLTL 检查：truncated。",
+      "prompt_tokens": 2662,
+      "completion_tokens": 12128,
+      "latency_s": 199.89000000001397,
+      "provider_error": "",
+      "verification_status": "truncated",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 15.89100000000326,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-01_e78a40863d",
+          "source_sha256": "174225c82cf4ab60a192fc8b449d1f5fe68a9088539c4aa5aefd6ac975a1d641",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "174225c82cf4ab60a192fc8b449d1f5fe68a9088539c4aa5aefd6ac975a1d641",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 29,
+        "tests_passed": 29,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "H01",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H02",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H03",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H04",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H05",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": true,
+              "valveDRun": true,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": true,
+              "valveDRun": true,
+              "mixMotorRun": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H06",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H07",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H08",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H09",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-mix-1",
+            "passed": true,
+            "mode": "sequence:peer:exact-levels",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-mix-2",
+            "passed": true,
+            "mode": "sequence:peer:exact-levels",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-mix-3",
+            "passed": true,
+            "mode": "sequence:peer:exact-levels",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-mix-4",
+            "passed": true,
+            "mode": "sequence:peer:exact-levels",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-mix-5",
+            "passed": true,
+            "mode": "sequence:peer:exact-levels",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-mix-6",
+            "passed": true,
+            "mode": "sequence:peer:exact-levels",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-mix-7",
+            "passed": true,
+            "mode": "sequence:peer:exact-levels",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-mix-not-done",
+            "passed": true,
+            "mode": "sequence:peer:exact-levels",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-mix-8",
+            "passed": true,
+            "mode": "sequence:peer:exact-levels",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-manual-hold-1",
+            "passed": true,
+            "mode": "sequence:peer:manual-hold-B",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-manual-hold-2",
+            "passed": true,
+            "mode": "sequence:peer:manual-hold-B",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-mix-idle",
+            "passed": true,
+            "mode": "sequence:peer:auto-idle",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-idle-interlock-1",
+            "passed": true,
+            "mode": "sequence:peer:auto-idle",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-idle-interlock-2",
+            "passed": true,
+            "mode": "sequence:peer:auto-idle",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ha-idle-interlock-3",
+            "passed": true,
+            "mode": "sequence:peer:auto-idle",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 1047,
+          "traces": 55074,
+          "specs_total": 14,
+          "specs_hold": 14,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.89100000000326,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-01_e78a40863d",
+            "source_sha256": "174225c82cf4ab60a192fc8b449d1f5fe68a9088539c4aa5aefd6ac975a1d641",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "classification": "evaluated",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "group_counts": {
+            "sequence": 14,
+            "sequence:peer:exact-levels": 9,
+            "sequence:peer:manual-hold-B": 2,
+            "sequence:peer:auto-idle": 4
+          },
+          "group_policy": "fresh instance per sequence group; each single case fresh",
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "174225c82cf4ab60a192fc8b449d1f5fe68a9088539c4aa5aefd6ac975a1d641",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "r7_model_check": {
+            "program": "public-hard-01",
+            "states_explored": 1047,
+            "traces_explored": 55074,
+            "max_depth": 2,
+            "requested_depth": 8,
+            "complete_depth": 1,
+            "initial_inputs_attempted": 10240,
+            "input_space_size": 10240,
+            "all_hold": false,
+            "error": "",
+            "truncated": true,
+            "fixed_input_domains": {},
+            "specs": [
+              {
+                "id": "S1",
+                "formula": "G(estop = FALSE -> (valveARun = FALSE AND valveBRun = FALSE AND valveCRun = FALSE AND valveDRun = FALSE AND mixMotorRun = FALSE))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S2",
+                "formula": "G(opeMode = TRUE -> (NOT (valveARun = TRUE AND valveBRun = TRUE) AND NOT (valveARun = TRUE AND valveCRun = TRUE) AND NOT (valveBRun = TRUE AND valveCRun = TRUE)))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S3",
+                "formula": "G(opeMode = TRUE AND valveDRun = TRUE -> (valveARun = FALSE AND valveBRun = FALSE AND valveCRun = FALSE AND mixMotorRun = FALSE))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S4",
+                "formula": "G(opeMode = TRUE AND mixMotorRun = TRUE -> (valveARun = FALSE AND valveBRun = FALSE AND valveCRun = FALSE))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S5",
+                "formula": "G(rising(mixMotorComplete) AND opeMode = TRUE AND mixMotorRun = TRUE -> (mixMotorRun = FALSE AND valveDRun = TRUE))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S5",
+                "formula": "G(prev(opeMode) AND prev(mixMotorRun) AND opeMode AND estop AND mixMotorComplete -> (NOT mixMotorRun AND valveDRun))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S8",
+                "formula": "G(((opeMode AND estop AND rising(autoStart) AND (NOT prev(opeMode) OR prev((NOT valveARun AND NOT valveBRun AND NOT valveCRun AND NOT valveDRun AND NOT mixMotorRun)))) -> valveARun))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S9",
+                "formula": "G((((estop AND opeMode AND prev(opeMode)) AND prev(valveARun)) -> ((levelSensor < 50 -> valveARun) AND (levelSensor >= 50 -> (NOT valveARun AND valveBRun)))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S10",
+                "formula": "G((((estop AND opeMode AND prev(opeMode)) AND prev(valveBRun)) -> ((levelSensor < 80 -> valveBRun) AND (levelSensor >= 80 -> (NOT valveBRun AND ((valveCRun <-> processMode) AND (mixMotorRun <-> NOT processMode)))))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S11",
+                "formula": "G((((estop AND opeMode AND prev(opeMode)) AND prev(valveCRun)) -> ((levelSensor < 100 -> valveCRun) AND (levelSensor >= 100 -> (NOT valveCRun AND mixMotorRun)))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S12",
+                "formula": "G((((estop AND opeMode AND prev(opeMode)) AND prev(mixMotorRun) AND NOT mixMotorComplete) -> mixMotorRun))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S7",
+                "formula": "G(((estop AND NOT opeMode AND (NOT prev(TRUE) OR prev(estop AND NOT opeMode))) -> ((valveARun <-> NOT (rising(valveAStart) <-> prev(valveARun))) AND (valveBRun <-> NOT (rising(valveBStart) <-> prev(valveBRun))) AND (valveCRun <-> NOT (rising(valveCStart) <-> prev(valveCRun))) AND (valveDRun <-> NOT (rising(valveDStart) <-> prev(valveDRun))) AND (mixMotorRun <-> NOT (rising(mixMotorStart) <-> prev(mixMotorRun))))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S13",
+                "formula": "G((opeMode AND estop AND (NOT prev(opeMode) OR prev((NOT valveARun AND NOT valveBRun AND NOT valveCRun AND NOT valveDRun AND NOT mixMotorRun))) AND NOT rising(autoStart)) -> (NOT valveARun AND NOT valveBRun AND NOT valveCRun AND NOT valveDRun AND NOT mixMotorRun))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S14",
+                "formula": "G((NOT prev(prev(prev(prev(TRUE)))) AND NOT (valveAStart OR valveBStart OR valveCStart OR valveDStart OR mixMotorStart OR autoStart) AND NOT prev((valveAStart OR valveBStart OR valveCStart OR valveDStart OR mixMotorStart OR autoStart)) AND NOT prev(prev((valveAStart OR valveBStart OR valveCStart OR valveDStart OR mixMotorStart OR autoStart))) AND NOT prev(prev(prev((valveAStart OR valveBStart OR valveCStart OR valveDStart OR mixMotorStart OR autoStart))))) -> (NOT valveARun AND NOT valveBRun AND NOT valveCRun AND NOT valveDRun AND NOT mixMotorRun))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              }
+            ]
+          },
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.27761705999999997,
+      "actual_model": "deepseek-v4-pro-0813",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1794311954.5031433,
+  "finished_at": 1794312154.4046798,
+  "error": "",
+  "stop_reason": "functional_pass_formal_truncated",
+  "run_signature": "",
+  "experiment_kind": "live",
+  "tests_total": 29,
+  "request_window_seconds": 451,
+  "prompt_version": "v2.5-task-specific-reset",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 14790,
+  "total_latency_s": 199.89000000001397,
+  "n_attempts": 1,
+  "job_done": true,
+  "study_plan_sha256": "5d34beeeeacd5265559418bf339d6cefa78c9bc504793ddbd387265486810ba8",
+  "complete_code": true
+}
