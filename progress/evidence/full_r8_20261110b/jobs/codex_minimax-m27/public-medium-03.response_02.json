@@ -1,0 +1,100 @@
+{
+  "model": "minimax-m2.7",
+  "protocol": "chat",
+  "usage": {
+    "prompt_tokens": 8625,
+    "completion_tokens": 998,
+    "total_tokens": 9623,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "text_tokens": 0,
+      "audio_tokens": 0,
+      "image_tokens": 0
+    },
+    "completion_tokens_details": {
+      "text_tokens": 0,
+      "audio_tokens": 0,
+      "image_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "input_tokens_details": null,
+    "claude_cache_creation_5_m_tokens": 0,
+    "claude_cache_creation_1_h_tokens": 0,
+    "cost": "¥0.020932"
+  },
+  "finish_reason": "stop",
+  "message": {
+    "content": "\n```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger         : BOOL;\n    value           : LREAL;\n    windowSize      : INT;\n    reset           : BOOL;\nEND_VAR\nVAR_OUTPUT\n    average           : LREAL;\n    windowSizeReached : BOOL;\n    error             : BOOL;\n    status            : WORD;\nEND_VAR\nVAR\n    samples       : ARRAY[1..100] OF LREAL;\n    sampleCount   : INT := 0;\n    writeIndex    : INT := 0;\n    sum           : LREAL := 0.0;\n    prevTrigger   : BOOL := FALSE;\n    firstScan     : BOOL := TRUE;\n    i             : INT;\nEND_VAR\n\n    // Validate window size\n    IF windowSize < 1 OR windowSize > 100 THEN\n        error  := TRUE;\n        status := 16#8200;\n        average           := 0.0;\n        windowSizeReached := FALSE;\n        RETURN;\n    END_IF\n\n    error  := FALSE;\n    status := 16#0000;\n\n    // Reset\n    IF reset THEN\n        average           := 0.0;\n        windowSizeReached := FALSE;\n        sampleCount       := 0;\n        writeIndex        := 0;\n        sum               := 0.0;\n        firstScan         := FALSE;\n        prevTrigger       := FALSE;\n        RETURN;\n    END_IF\n\n    // Rising edge detection for trigger\n    IF cyclicExecution THEN\n        // cyclic mode: trigger has no effect\n        IF firstScan THEN\n            prevTrigger := FALSE;\n            firstScan   := FALSE;\n        END_IF\n        IF writeIndex < windowSize THEN\n            writeIndex          := writeIndex + 1;\n            samples[writeIndex] := value;\n            sum                 := sum + value;\n            sampleCount         := writeIndex;\n            IF sampleCount >= windowSize THEN\n                windowSizeReached := TRUE;\n                average           := sum / TO_LREAL(windowSize);\n            ELSE\n                average := sum / TO_LREAL(sampleCount);\n            END_IF\n        ELSE\n            // Window full: slide\n            sum := sum - samples[1];\n            FOR i := 1 TO 99 DO\n                samples[i] := samples[i + 1];\n            END_FOR\n            samples[windowSize] := value;\n            sum                 := sum + value;\n            windowSizeReached   := TRUE;\n            average             := sum / TO_LREAL(windowSize);\n        END_IF\n    ELSE\n        // Trigger mode\n        IF firstScan THEN\n            prevTrigger := trigger;\n            firstScan   := FALSE;\n        END_IF\n\n        IF trigger AND NOT prevTrigger THEN\n            // Rising edge on trigger: read one new sample\n            IF writeIndex < windowSize THEN\n                writeIndex          := writeIndex + 1;\n                samples[writeIndex] := value;\n                sum                 := sum + value;\n                sampleCount         := writeIndex;\n                IF sampleCount >= windowSize THEN\n                    windowSizeReached := TRUE;\n                    average           := sum / TO_LREAL(windowSize);\n                ELSE\n                    average := sum / TO_LREAL(sampleCount);\n                END_IF\n            ELSE\n                // Window full: slide\n                sum := sum - samples[1];\n                FOR i := 1 TO 99 DO\n                    samples[i] := samples[i + 1];\n                END_FOR\n                samples[windowSize] := value;\n                sum                 := sum + value;\n                windowSizeReached   := TRUE;\n                average             := sum / TO_LREAL(windowSize);\n            END_IF\n        END_IF\n\n        prevTrigger := trigger;\n    END_IF\n\n    // Handle windowSize shrinking below current sample count\n    IF windowSize < sampleCount THEN\n        sum := 0.0;\n        FOR i := 1 TO windowSize DO\n            samples[i] := samples[i + (sampleCount - windowSize)];\n            sum        := sum + samples[i];\n        END_FOR\n        sampleCount := windowSize;\n        writeIndex  := windowSize;\n        IF windowSizeReached THEN\n            average := sum / TO_LREAL(windowSize);\n        END_IF\n    END_IF\nEND_FUNCTION_BLOCK\n```",
+    "role": "assistant",
+    "reasoning_content": "I need to fix the issues:\n1. `LREAL(windowSize)` - LREAL is a type conversion function in some PLCs, but I should use `INT_TO_LREAL` or the TO type conversion syntax. In IEC 61131-3, the conversion is typically `TO_LREAL(windowSize)` or just rely on implicit conversion. Let me use `TO_LREAL()`.\n2. `i` is undeclared - need to add it to VAR section.\n\nLet me rewrite with proper IEC 61131-3 syntax.\n",
+    "reasoning_details": [
+      {
+        "type": "reasoning.text",
+        "id": "reasoning-text-1",
+        "format": "MiniMax-response-v1",
+        "index": 0,
+        "text": "I need to fix the issues:\n1. `LREAL(windowSize)` - LREAL is a type conversion function in some PLCs, but I should use `INT_TO_LREAL` or the TO type conversion syntax. In IEC 61131-3, the conversion is typically `TO_LREAL(windowSize)` or just rely on implicit conversion. Let me use `TO_LREAL()`.\n2. `i` is undeclared - need to add it to VAR section.\n\nLet me rewrite with proper IEC 61131-3 syntax.\n"
+      }
+    ]
+  },
+  "raw_response": {
+    "id": "req-tz71d6-1794325959706101655",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger         : BOOL;\n    value           : LREAL;\n    windowSize      : INT;\n    reset           : BOOL;\nEND_VAR\nVAR_OUTPUT\n    average           : LREAL;\n    windowSizeReached : BOOL;\n    error             : BOOL;\n    status            : WORD;\nEND_VAR\nVAR\n    samples       : ARRAY[1..100] OF LREAL;\n    sampleCount   : INT := 0;\n    writeIndex    : INT := 0;\n    sum           : LREAL := 0.0;\n    prevTrigger   : BOOL := FALSE;\n    firstScan     : BOOL := TRUE;\n    i             : INT;\nEND_VAR\n\n    // Validate window size\n    IF windowSize < 1 OR windowSize > 100 THEN\n        error  := TRUE;\n        status := 16#8200;\n        average           := 0.0;\n        windowSizeReached := FALSE;\n        RETURN;\n    END_IF\n\n    error  := FALSE;\n    status := 16#0000;\n\n    // Reset\n    IF reset THEN\n        average           := 0.0;\n        windowSizeReached := FALSE;\n        sampleCount       := 0;\n        writeIndex        := 0;\n        sum               := 0.0;\n        firstScan         := FALSE;\n        prevTrigger       := FALSE;\n        RETURN;\n    END_IF\n\n    // Rising edge detection for trigger\n    IF cyclicExecution THEN\n        // cyclic mode: trigger has no effect\n        IF firstScan THEN\n            prevTrigger := FALSE;\n            firstScan   := FALSE;\n        END_IF\n        IF writeIndex < windowSize THEN\n            writeIndex          := writeIndex + 1;\n            samples[writeIndex] := value;\n            sum                 := sum + value;\n            sampleCount         := writeIndex;\n            IF sampleCount >= windowSize THEN\n                windowSizeReached := TRUE;\n                average           := sum / TO_LREAL(windowSize);\n            ELSE\n                average := sum / TO_LREAL(sampleCount);\n            END_IF\n        ELSE\n            // Window full: slide\n            sum := sum - samples[1];\n            FOR i := 1 TO 99 DO\n                samples[i] := samples[i + 1];\n            END_FOR\n            samples[windowSize] := value;\n            sum                 := sum + value;\n            windowSizeReached   := TRUE;\n            average             := sum / TO_LREAL(windowSize);\n        END_IF\n    ELSE\n        // Trigger mode\n        IF firstScan THEN\n            prevTrigger := trigger;\n            firstScan   := FALSE;\n        END_IF\n\n        IF trigger AND NOT prevTrigger THEN\n            // Rising edge on trigger: read one new sample\n            IF writeIndex < windowSize THEN\n                writeIndex          := writeIndex + 1;\n                samples[writeIndex] := value;\n                sum                 := sum + value;\n                sampleCount         := writeIndex;\n                IF sampleCount >= windowSize THEN\n                    windowSizeReached := TRUE;\n                    average           := sum / TO_LREAL(windowSize);\n                ELSE\n                    average := sum / TO_LREAL(sampleCount);\n                END_IF\n            ELSE\n                // Window full: slide\n                sum := sum - samples[1];\n                FOR i := 1 TO 99 DO\n                    samples[i] := samples[i + 1];\n                END_FOR\n                samples[windowSize] := value;\n                sum                 := sum + value;\n                windowSizeReached   := TRUE;\n                average             := sum / TO_LREAL(windowSize);\n            END_IF\n        END_IF\n\n        prevTrigger := trigger;\n    END_IF\n\n    // Handle windowSize shrinking below current sample count\n    IF windowSize < sampleCount THEN\n        sum := 0.0;\n        FOR i := 1 TO windowSize DO\n            samples[i] := samples[i + (sampleCount - windowSize)];\n            sum        := sum + samples[i];\n        END_FOR\n        sampleCount := windowSize;\n        writeIndex  := windowSize;\n        IF windowSizeReached THEN\n            average := sum / TO_LREAL(windowSize);\n        END_IF\n    END_IF\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "I need to fix the issues:\n1. `LREAL(windowSize)` - LREAL is a type conversion function in some PLCs, but I should use `INT_TO_LREAL` or the TO type conversion syntax. In IEC 61131-3, the conversion is typically `TO_LREAL(windowSize)` or just rely on implicit conversion. Let me use `TO_LREAL()`.\n2. `i` is undeclared - need to add it to VAR section.\n\nLet me rewrite with proper IEC 61131-3 syntax.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "I need to fix the issues:\n1. `LREAL(windowSize)` - LREAL is a type conversion function in some PLCs, but I should use `INT_TO_LREAL` or the TO type conversion syntax. In IEC 61131-3, the conversion is typically `TO_LREAL(windowSize)` or just rely on implicit conversion. Let me use `TO_LREAL()`.\n2. `i` is undeclared - need to add it to VAR section.\n\nLet me rewrite with proper IEC 61131-3 syntax.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794325962,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 8625,
+      "completion_tokens": 998,
+      "total_tokens": 9623,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.020932"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
