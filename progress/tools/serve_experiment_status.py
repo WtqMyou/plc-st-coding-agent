@@ -103,6 +103,23 @@ table{{border-collapse:collapse;width:100%;font-size:14px}}td,th{{padding:10px;t
 
 def page():
     active = load(ACTIVE_POINTER)
+    if active.get('mode') == 'review_r8_first_candidate':
+        selected = (REPO / active['config']).resolve()
+        if not selected.is_relative_to(REPO.resolve()):raise RuntimeError('Study config outside repository')
+        cfg = load(selected); root = Path(cfg['campaign_root']).resolve()
+        if not root.is_relative_to((Path(cfg['platform_root'])/'evidence/real_experiments').resolve()):raise RuntimeError('Study output outside experiment archive')
+        summary=load(root/'study_summary.json'); state=load(root/'study_state.json'); plan=load(root/'study_plan.json')
+        ledger=load(Path(cfg['budget_ledger_path'])); status=state.get('state','preparing')
+        labels={'preparing':'免费预检中','prepared':'准备完成，尚未调用模型','running':'模型实验进行中','completed':'12题次已结束','stopped':'实验已停止，请检查原因'}
+        if status=='running' and not registered_process_alive(load(root/'active_run.json')):status='stopped'
+        rows=[]
+        for row in summary.get('rows',[]):
+            values=[('自研' if row['framework']=='custom' else 'Codex')+' / '+row['model_id'],str(row['recorded'])+'/3',
+                str(row['complete_code'])+'/3',str(row['codesys_passed'])+'/3',str(row['solved'])+'/3',
+                str(row['tests_passed'])+'/101',row['calls'],row['mc_executed'],str(round(row['wall_seconds']/60,1))+'分钟']
+            rows.append('<tr>'+''.join('<td>'+escape(str(x))+'</td>' for x in values)+'</tr>')
+        error='<p>停止原因：'+escape(str(state['error']))+'</p>' if state.get('error') else ''
+        return '''<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="15"><title>三题四组首候选实验</title><style>body{background:#f3f6fa;color:#243349;font:16px/1.8 system-ui,"Microsoft YaHei",sans-serif;margin:0}main{max-width:1160px;margin:auto;padding:28px 20px}section{background:white;border:1px solid #dce3ed;padding:20px;border-radius:10px;margin:18px 0}.scroll{overflow:auto}table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:10px;border-bottom:1px solid #e1e7ef;text-align:left}a{color:#175eac}</style><main><h1>三题四组首候选实验</h1><section><h2>'''+labels.get(status,status)+'''</h2><p>已归档 '''+str(summary.get('recorded',0))+'''/12题次；每题只请求一次，不补发、不修复。</p><p>当前题次：'''+escape(str(state.get('current_job','—')))+'''</p>'''+error+'''</section><section><h2>各组结果</h2><div class="scroll"><table><tr><th>组别</th><th>归档</th><th>结构完整</th><th>CODESYS</th><th>功能整题</th><th>功能断言</th><th>请求</th><th>形式检查</th><th>耗时</th></tr>'''+''.join(rows)+'''</table></div><p>结构完整只表示解析得到完整功能块；编译、接口和逻辑另行检查。形式检查的违反、截断、未决分别保留，功能通过不等于形式证明。</p></section><section><h2>费用与范围</h2><p>本轮计入 ¥'''+str(summary.get('study_increment_cny',0))+''' / 5；共享账本 ¥'''+str(ledger.get('spent_cny',0))+''' / 75。累计保护上限43.409603元。</p><p>免费预检后的12次最坏预留：¥'''+str(plan.get('worst_reservation_cny','—'))+'''。按配置计价及未知预留统计，不代替供应商账单。</p><p>只测试果酱泵、多泵、闸门；每组3题101条断言，不外推全35题或稳定框架优势。</p><p><a href="/v13-r8-review.html">查看本轮题目口径</a> · <a href="https://github.com/WtqMyou/plc-st-coding-agent/tree/main/progress/evidence/review_r8_first_candidate_20261110_v2">GitHub实验记录</a></p></section></main></html>'''
     if active.get('mode') == 'offline_review':
         return offline_page()
     selected_cfg = (REPO / active['config']).resolve() if active.get('config') else CFG
