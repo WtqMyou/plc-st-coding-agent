@@ -1,5 +1,11 @@
 # 复核r8三题四组首候选
 
+实验已完成：12题次、12次请求，无重试；本轮计入1.305793元，累计39.715396元，耗时约31.8分钟。两组DeepSeek及自研MiniMax均3/3题、101/101断言；Codex MiniMax为1/3题、57/101断言。11份送CODESYS编译均通过，另1份语法失败未送编译。10次形式检查均截断，2次未执行。
+
+[最终报告](../evidence/review_r8_first_candidate_20261110_v2/结果分析.md) · [费用明细](../evidence/review_r8_first_candidate_20261110_v2/本轮费用明细.json) · [验收清单](../evidence/review_r8_first_candidate_20261110_v2/release_manifest.json) · [下载验收包](../三题四组首候选验收包_20261110.zip)
+
+完整证据已通过重现检查：`python -B -X utf8 progress/tools/analyze_review_r8_first_candidate.py check`。需在原工程及原本地账本环境执行；验收包用于阅读、保存和核对文件摘要，不是独立编译环境。
+
 已完成免费准备：101项既有回归加19项实验检查，真实Codex CLI的6条通道及自研6条通道均用本地假响应验证。最终12次最大预留4.475600元，本轮新增上限5元，累计上限43.409603元。形式时限在实验入口明确设为30秒，题库原文件不改动。
 
 [冻结方案](实验方案.md) · [实时状态](http://127.0.0.1:8882/status.html) · [记录快照](../evidence/review_r8_first_candidate_20261110_v2/实验状态.md)
