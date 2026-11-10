@@ -1,0 +1,1924 @@
+{
+  "pid": "public-hard-05",
+  "model": "MiniMax-M2.7",
+  "provider": "custom",
+  "setting": "custom_minimax-m27",
+  "max_iters": 2,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    ManualMode : BOOL;\n    SingleStepMode : BOOL;\n    SingleCycleMode : BOOL;\n    ContinuousMode : BOOL;\n    EmergencyStop : BOOL;\n    Start : BOOL;\n    DownButton : BOOL;\n    UpButton : BOOL;\n    LeftButton : BOOL;\n    RightButton : BOOL;\n    GripButton : BOOL;\n    ReleaseButton : BOOL;\n    DownLimitSwitch : BOOL;\n    UpLimitSwitch : BOOL;\n    LeftLimitSwitch : BOOL;\n    RightLimitSwitch : BOOL;\n    GripLimitSwitch : BOOL;\n    ReleaseLimitSwitch : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    MoveDown : BOOL := FALSE;\n    MoveUp : BOOL := FALSE;\n    MoveLeft : BOOL := FALSE;\n    MoveRight : BOOL := FALSE;\n    ActivateGrip : BOOL := FALSE;\n    ActivateRelease : BOOL := FALSE;\nEND_VAR\n\nVAR\n    StepIndex : INT := 0;\n    CurrentStepActive : BOOL := FALSE;\n    PrevStart : BOOL := FALSE;\n    PrevAutoMode : BOOL := FALSE;\n    StartRising : BOOL := FALSE;\n    AutoMode : BOOL := FALSE;\nEND_VAR\n\nBEGIN\n    // Emergency stop: highest priority, disables all outputs immediately\n    IF NOT EmergencyStop THEN\n        MoveDown := FALSE;\n        MoveUp := FALSE;\n        MoveLeft := FALSE;\n        MoveRight := FALSE;\n        ActivateGrip := FALSE;\n        ActivateRelease := FALSE;\n        RETURN;\n    END_IF\n\n    // Detect rising edge on Start\n    StartRising := Start AND NOT PrevStart;\n    PrevStart := Start;\n\n    // Determine auto mode flag\n    AutoMode := SingleStepMode OR SingleCycleMode OR ContinuousMode;\n\n    // Initialize on first entry to auto mode (rising edge of AutoMode)\n    IF AutoMode AND NOT PrevAutoMode THEN\n        StepIndex := 0;\n        CurrentStepActive := TRUE;\n        IF NOT Start THEN\n            StartRising := FALSE;\n        END_IF;\n    END_IF;\n    PrevAutoMode := AutoMode;\n\n    // Single step mode: advance on rising edge of Start, only when current step is done\n    IF SingleStepMode AND StartRising AND NOT CurrentStepActive THEN\n        StepIndex := (StepIndex + 1) MOD 8;\n        CurrentStepActive := TRUE;\n    END_IF;\n\n    // Continuous/Single Cycle mode: auto advance when current step is done\n    IF (SingleCycleMode OR ContinuousMode) AND CurrentStepActive THEN\n        CASE StepIndex OF\n            0:\n                IF DownLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            1:\n                IF GripLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            2:\n                IF UpLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            3:\n                IF RightLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            4:\n                IF DownLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            5:\n                IF ReleaseLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            6:\n                IF UpLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            7:\n                IF LeftLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n        END_CASE\n    END_IF;\n\n    // Advance step index when step is done in continuous/single cycle mode\n    IF (SingleCycleMode OR ContinuousMode) AND NOT CurrentStepActive THEN\n        IF StepIndex < 7 THEN\n            StepIndex := StepIndex + 1;\n            CurrentStepActive := TRUE;\n        ELSIF ContinuousMode THEN\n            StepIndex := 0;\n            CurrentStepActive := TRUE;\n        END_IF\n    END_IF\n\n    // Execute current step in auto mode\n    IF AutoMode AND CurrentStepActive THEN\n        CASE StepIndex OF\n            0:\n                MoveDown := NOT DownLimitSwitch;\n            1:\n                ActivateGrip := NOT GripLimitSwitch;\n            2:\n                MoveUp := NOT UpLimitSwitch;\n            3:\n                MoveRight := NOT RightLimitSwitch;\n            4:\n                MoveDown := NOT DownLimitSwitch;\n            5:\n                ActivateRelease := NOT ReleaseLimitSwitch;\n            6:\n                MoveUp := NOT UpLimitSwitch;\n            7:\n                MoveLeft := NOT LeftLimitSwitch;\n        END_CASE\n    END_IF;\n\n    // Clear outputs when step is done (single step mode: waiting for next Start;\n    // continuous/single cycle: sequence complete, waiting to restart)\n    IF NOT CurrentStepActive THEN\n        MoveDown := FALSE;\n        MoveUp := FALSE;\n        MoveLeft := FALSE;\n        MoveRight := FALSE;\n        ActivateGrip := FALSE;\n        ActivateRelease := FALSE;\n    END_IF\n\n    // Manual mode: direct button control with limit switch safety\n    IF ManualMode THEN\n        MoveUp := UpButton AND NOT DownButton AND NOT UpLimitSwitch;\n        MoveDown := DownButton AND NOT UpButton AND NOT DownLimitSwitch;\n        MoveLeft := LeftButton AND NOT RightButton AND NOT LeftLimitSwitch;\n        MoveRight := RightButton AND NOT LeftButton AND NOT RightLimitSwitch;\n        ActivateGrip := GripButton AND NOT ReleaseButton AND NOT GripLimitSwitch;\n        ActivateRelease := ReleaseButton AND NOT GripButton AND NOT ReleaseLimitSwitch;\n    END_IF\nEND_FUNCTION_BLOCK",
+      "compiles": false,
+      "tests_passed": 0,
+      "tests_total": 88,
+      "feedback": "静态检查或接口契约失败：\n第 41 行 [E_BAD_STMT] 无法解析的语句，遇到 'IF'\n第 1 行 [E_NO_POU] 没有找到 FUNCTION_BLOCK / FUNCTION / PROGRAM 定义\nLTL 检查：not_run。",
+      "prompt_tokens": 3126,
+      "completion_tokens": 14259,
+      "latency_s": 265.655999999959,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "4dd317b7f99dde4d8e79b3f99ee8310a821f28abfae0308f8a9ffe64570bacae",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 41,
+            "code": "E_BAD_STMT",
+            "message": "无法解析的语句，遇到 'IF'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_NO_POU",
+            "message": "没有找到 FUNCTION_BLOCK / FUNCTION / PROGRAM 定义"
+          }
+        ],
+        "tests_total": 88,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态类型检查失败",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "classification": "candidate_static_error",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "4dd317b7f99dde4d8e79b3f99ee8310a821f28abfae0308f8a9ffe64570bacae",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.099808758,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    },
+    {
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    ManualMode : BOOL;\n    SingleStepMode : BOOL;\n    SingleCycleMode : BOOL;\n    ContinuousMode : BOOL;\n    EmergencyStop : BOOL;\n    Start : BOOL;\n    DownButton : BOOL;\n    UpButton : BOOL;\n    LeftButton : BOOL;\n    RightButton : BOOL;\n    GripButton : BOOL;\n    ReleaseButton : BOOL;\n    DownLimitSwitch : BOOL;\n    UpLimitSwitch : BOOL;\n    LeftLimitSwitch : BOOL;\n    RightLimitSwitch : BOOL;\n    GripLimitSwitch : BOOL;\n    ReleaseLimitSwitch : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    MoveDown : BOOL := FALSE;\n    MoveUp : BOOL := FALSE;\n    MoveLeft : BOOL := FALSE;\n    MoveRight : BOOL := FALSE;\n    ActivateGrip : BOOL := FALSE;\n    ActivateRelease : BOOL := FALSE;\nEND_VAR\n\nVAR\n    StepIndex : INT := 0;\n    CurrentStepActive : BOOL := FALSE;\n    PrevStart : BOOL := FALSE;\n    PrevAutoMode : BOOL := FALSE;\n    StartRising : BOOL := FALSE;\n    AutoMode : BOOL := FALSE;\nEND_VAR\n\n    IF NOT EmergencyStop THEN\n        MoveDown := FALSE;\n        MoveUp := FALSE;\n        MoveLeft := FALSE;\n        MoveRight := FALSE;\n        ActivateGrip := FALSE;\n        ActivateRelease := FALSE;\n        RETURN;\n    END_IF\n\n    StartRising := Start AND NOT PrevStart;\n    PrevStart := Start;\n\n    AutoMode := SingleStepMode OR SingleCycleMode OR ContinuousMode;\n\n    IF AutoMode AND NOT PrevAutoMode THEN\n        StepIndex := 0;\n        CurrentStepActive := TRUE;\n    END_IF;\n    PrevAutoMode := AutoMode;\n\n    IF SingleStepMode AND StartRising AND NOT CurrentStepActive THEN\n        StepIndex := (StepIndex + 1) MOD 8;\n        CurrentStepActive := TRUE;\n    END_IF;\n\n    IF (SingleCycleMode OR ContinuousMode) AND CurrentStepActive THEN\n        CASE StepIndex OF\n            0:\n                IF DownLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            1:\n                IF GripLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            2:\n                IF UpLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            3:\n                IF RightLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            4:\n                IF DownLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            5:\n                IF ReleaseLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            6:\n                IF UpLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n            7:\n                IF LeftLimitSwitch THEN\n                    CurrentStepActive := FALSE;\n                END_IF\n        END_CASE\n    END_IF;\n\n    IF (SingleCycleMode OR ContinuousMode) AND NOT CurrentStepActive THEN\n        IF StepIndex < 7 THEN\n            StepIndex := StepIndex + 1;\n            CurrentStepActive := TRUE;\n        ELSIF ContinuousMode THEN\n            StepIndex := 0;\n            CurrentStepActive := TRUE;\n        END_IF\n    END_IF;\n\n    IF AutoMode AND CurrentStepActive THEN\n        CASE StepIndex OF\n            0:\n                MoveDown := NOT DownLimitSwitch;\n            1:\n                ActivateGrip := NOT GripLimitSwitch;\n            2:\n                MoveUp := NOT UpLimitSwitch;\n            3:\n                MoveRight := NOT RightLimitSwitch;\n            4:\n                MoveDown := NOT DownLimitSwitch;\n            5:\n                ActivateRelease := NOT ReleaseLimitSwitch;\n            6:\n                MoveUp := NOT UpLimitSwitch;\n            7:\n                MoveLeft := NOT LeftLimitSwitch;\n        END_CASE\n    END_IF;\n\n    IF NOT CurrentStepActive THEN\n        MoveDown := FALSE;\n        MoveUp := FALSE;\n        MoveLeft := FALSE;\n        MoveRight := FALSE;\n        ActivateGrip := FALSE;\n        ActivateRelease := FALSE;\n    END_IF;\n\n    IF ManualMode THEN\n        MoveUp := UpButton AND NOT DownButton AND NOT UpLimitSwitch;\n        MoveDown := DownButton AND NOT UpButton AND NOT DownLimitSwitch;\n        MoveLeft := LeftButton AND NOT RightButton AND NOT LeftLimitSwitch;\n        MoveRight := RightButton AND NOT LeftButton AND NOT RightLimitSwitch;\n        ActivateGrip := GripButton AND NOT ReleaseButton AND NOT GripLimitSwitch;\n        ActivateRelease := ReleaseButton AND NOT GripButton AND NOT ReleaseLimitSwitch;\n    END_IF\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 46,
+      "tests_total": 88,
+      "feedback": "自动测试：46/88。\n用例 h05-12，模式 sequence，行为不匹配，请检查 MoveDown。\n用例 h05-13，模式 sequence，行为不匹配，请检查 MoveDown, MoveLeft, MoveRight, MoveUp。\n用例 h05-14，模式 sequence，行为不匹配，请检查 MoveDown, MoveLeft, MoveRight, MoveUp。\n用例 h05-15，模式 sequence，行为不匹配，请检查 MoveDown, MoveLeft, MoveRight, MoveUp。\n用例 h05-16，模式 sequence，行为不匹配，请检查 MoveDown, MoveLeft, MoveRight, MoveUp。\n用例 h05-17，模式 sequence，行为不匹配，请检查 MoveDown, MoveLeft, MoveRight, MoveUp。\nLTL 检查：not_run。",
+      "prompt_tokens": 4329,
+      "completion_tokens": 2252,
+      "latency_s": 43.90600000001723,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 15.85899999999674,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-05_c2eeb89761",
+          "source_sha256": "030199dff76aeaed483d9ea7b99073ddcdcdf3b49a747fd589c0f0872aacd619",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "030199dff76aeaed483d9ea7b99073ddcdcdf3b49a747fd589c0f0872aacd619",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 88,
+        "tests_passed": 46,
+        "pass_rate": 0.5227,
+        "failure_summary": "h05-12: MoveDown 期望 False，实际 True",
+        "cases": [
+          {
+            "tc_id": "h05-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": true
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": true,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": true,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-12",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "h05-12（切到单步模式：模式切换立刻清掉自动动作，未按 Start 不动作（负例））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-13",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveRight 期望 False，实际 True",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true
+            },
+            "hint": "h05-13（单步第 1 次按 Start → 执行预置程序第 1 步：下（MoveDown=1））：MoveRight 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-14",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveRight 期望 False，实际 True",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true
+            },
+            "hint": "h05-14（单步执行中松开 Start → 动作继续走到位，不因松手中断（负例））：MoveRight 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-15",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveRight 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true
+            },
+            "hint": "h05-15（单步到下位 → 停住并等下一次 Start 确认，不再输出动作（负例））：MoveRight 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-16",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveRight 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true
+            },
+            "hint": "h05-16（单步第 2 次按 Start → 第 2 步：抓（ActivateGrip=1））：MoveRight 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-17",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveRight 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true
+            },
+            "hint": "h05-17（单步靠 GripLimitSwitch 确认抓取完成 → 停住等确认（负例））：MoveRight 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-18",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveUp 期望 True，实际 False",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": true
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false
+            },
+            "hint": "h05-18（单步第 3 次按 Start → 第 3 步：上（MoveUp=1），程序顺序 下→抓→上 成立）：MoveUp 期望 True，实际 False"
+          },
+          {
+            "tc_id": "h05-19",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "h05-19（切到单循环模式：自动动作复位，未按 Start 不动作（负例））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-20",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveRight 期望 False，实际 True",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true
+            },
+            "hint": "h05-20（单循环按 Start → 第 1 步：下（MoveDown=1））：MoveRight 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-21",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "h05-21（单循环到下位 → 当拍自动进入第 2 步：抓（ActivateGrip=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-22",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "h05-22（单循环抓取完成 → 自动第 3 步：上（MoveUp=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-23",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "h05-23（单循环到上位 → 自动第 4 步：右（MoveRight=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-24",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveUp 期望 False，实际 True",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": true
+            },
+            "hint": "h05-24（单循环到右位 → 自动第 5 步：下（MoveDown=1））：MoveUp 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-25",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "h05-25（单循环到右下位 → 自动第 6 步：放（ActivateRelease=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-26",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "h05-26（单循环 ReleaseLimitSwitch 确认放料完成 → 自动第 7 步：上（MoveUp=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-27",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "h05-27（单循环到上位 → 自动第 8 步：左（MoveLeft=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-28",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-29",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "h05-29（切到连续模式：自动动作复位，未按 Start 不动作（负例））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-30",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-31",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "h05-31（连续模式：前 5 步已完成（各到位开关都为 1）→ 当拍推进到第 6 步：放（ActivateRelease=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-32",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "h05-32（连续模式：第 6、7 步完成 → 推进到第 8 步：左（MoveLeft=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-33",
+            "passed": false,
+            "mode": "sequence",
+            "message": "ActivateGrip 期望 False，实际 True",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true
+            },
+            "hint": "h05-33（连续模式：第 8 步回左到位 → 环回第 1 步重新下行（MoveDown=1，连续循环关键断言））：ActivateGrip 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-34",
+            "passed": false,
+            "mode": "sequence",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "h05-34（连续循环进行中：第 1 步到位 → 进入第 2 步抓（准备被急停打断））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "h05-35",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-36",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-37",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h05-38",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-1",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-2",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-3",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-4",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-5",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-6",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-7",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-8",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-9",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": true
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-10",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": true,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": true,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-11",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-12",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "peer-h05-12（切到单步模式：模式切换立刻清掉自动动作，未按 Start 不动作（负例））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-13",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveRight 期望 False，实际 True",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true
+            },
+            "hint": "peer-h05-13（单步第 1 次按 Start → 执行预置程序第 1 步：下（MoveDown=1））：MoveRight 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-14",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveRight 期望 False，实际 True",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true
+            },
+            "hint": "peer-h05-14（单步执行中松开 Start → 动作继续走到位，不因松手中断（负例））：MoveRight 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-15",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveRight 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true
+            },
+            "hint": "peer-h05-15（单步到下位 → 停住并等下一次 Start 确认，不再输出动作（负例））：MoveRight 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-16",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveRight 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true
+            },
+            "hint": "peer-h05-16（单步第 2 次按 Start → 第 2 步：抓（ActivateGrip=1））：MoveRight 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-17",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveRight 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true
+            },
+            "hint": "peer-h05-17（单步靠 GripLimitSwitch 确认抓取完成 → 停住等确认（负例））：MoveRight 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-18",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveUp 期望 True，实际 False",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": true
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false
+            },
+            "hint": "peer-h05-18（单步第 3 次按 Start → 第 3 步：上（MoveUp=1），程序顺序 下→抓→上 成立）：MoveUp 期望 True，实际 False"
+          },
+          {
+            "tc_id": "peer-h05-19",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "peer-h05-19（切到单循环模式：自动动作复位，未按 Start 不动作（负例））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-20",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveRight 期望 False，实际 True",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true
+            },
+            "hint": "peer-h05-20（单循环按 Start → 第 1 步：下（MoveDown=1））：MoveRight 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-21",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "peer-h05-21（单循环到下位 → 当拍自动进入第 2 步：抓（ActivateGrip=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-22",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "peer-h05-22（单循环抓取完成 → 自动第 3 步：上（MoveUp=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-23",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "peer-h05-23（单循环到上位 → 自动第 4 步：右（MoveRight=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-24",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveUp 期望 False，实际 True",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": true
+            },
+            "hint": "peer-h05-24（单循环到右位 → 自动第 5 步：下（MoveDown=1））：MoveUp 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-25",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "peer-h05-25（单循环到右下位 → 自动第 6 步：放（ActivateRelease=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-26",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "peer-h05-26（单循环 ReleaseLimitSwitch 确认放料完成 → 自动第 7 步：上（MoveUp=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-27",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "peer-h05-27（单循环到上位 → 自动第 8 步：左（MoveLeft=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-28",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-29",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "peer-h05-29（切到连续模式：自动动作复位，未按 Start 不动作（负例））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-30",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-31",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "peer-h05-31（连续模式：前 5 步已完成（各到位开关都为 1）→ 当拍推进到第 6 步：放（ActivateRelease=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-32",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "peer-h05-32（连续模式：第 6、7 步完成 → 推进到第 8 步：左（MoveLeft=1））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-33",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "ActivateGrip 期望 False，实际 True",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true
+            },
+            "hint": "peer-h05-33（连续模式：第 8 步回左到位 → 环回第 1 步重新下行（MoveDown=1，连续循环关键断言））：ActivateGrip 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-34",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "MoveDown 期望 False，实际 True",
+            "expected": {
+              "MoveDown": false
+            },
+            "actual": {
+              "MoveDown": true
+            },
+            "hint": "peer-h05-34（连续循环进行中：第 1 步到位 → 进入第 2 步抓（准备被急停打断））：MoveDown 期望 False，实际 True"
+          },
+          {
+            "tc_id": "peer-h05-35",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-36",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-37",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-38",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-down-start",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": true,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-down-limit",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-up-start",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": true,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-up-limit",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-left-start",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": true,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": true,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-left-limit",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-right-start",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": true,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-right-limit",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-grip-start",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": true,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-grip-limit",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-release-start",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": true
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-h05-release-limit",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "actual": {
+              "MoveDown": false,
+              "MoveUp": false,
+              "MoveLeft": false,
+              "MoveRight": false,
+              "ActivateGrip": false,
+              "ActivateRelease": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.85899999999674,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-05_c2eeb89761",
+            "source_sha256": "030199dff76aeaed483d9ea7b99073ddcdcdf3b49a747fd589c0f0872aacd619",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "classification": "evaluated",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "group_counts": {
+            "sequence": 38,
+            "sequence:peer:default": 50
+          },
+          "group_policy": "fresh instance per sequence group; each single case fresh",
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "030199dff76aeaed483d9ea7b99073ddcdcdf3b49a747fd589c0f0872aacd619",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.022126082999999998,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1794315641.7056828,
+  "finished_at": 1794315951.28115,
+  "error": "",
+  "stop_reason": "max_candidates",
+  "run_signature": "",
+  "experiment_kind": "live",
+  "tests_total": 88,
+  "request_window_seconds": 451,
+  "prompt_version": "v2.5-task-specific-reset",
+  "solved": false,
+  "first_try": false,
+  "best_attempt": 1,
+  "fully_verified": false,
+  "compile_rate": 0.5,
+  "total_tokens": 23966,
+  "total_latency_s": 309.56199999997625,
+  "n_attempts": 2,
+  "job_done": true,
+  "study_plan_sha256": "5d34beeeeacd5265559418bf339d6cefa78c9bc504793ddbd387265486810ba8",
+  "complete_code": true
+}
