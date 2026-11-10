@@ -1,0 +1,74 @@
+{
+  "model": "deepseek-v4-pro-0813",
+  "protocol": "responses",
+  "usage": {
+    "input_tokens": 1564,
+    "output_tokens": 4889,
+    "total_tokens": 6453,
+    "input_tokens_details": {
+      "cached_tokens": 0
+    },
+    "output_tokens_details": {
+      "reasoning_tokens": 4642
+    },
+    "cost": "¥0.057702"
+  },
+  "finish_reason": "completed",
+  "message": {
+    "content": "```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    VISCOSITY_OK : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceMs : DINT;\n    CycleMs : DINT;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN : BOOL;\n    PUMP_MAINT_DUE : BOOL;\n    PUMP_RUNTIME_ACC : LINT;\nEND_VAR\nVAR\n    valid_duration : LINT := 0;\nEND_VAR\n\nIF PASTE_E_STOP_NC AND VISCOSITY_OK THEN\n    valid_duration := valid_duration + CycleMs;\nELSE\n    valid_duration := 0;\nEND_IF\n\nVFD_RUN := (PASTE_E_STOP_NC AND VISCOSITY_OK) AND (valid_duration >= DebounceMs);\n\nIF VFD_RUN THEN\n    PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + CycleMs;\nEND_IF\n\nPUMP_MAINT_DUE := (PUMP_RUNTIME_ACC >= 1800000000);\n\nEND_FUNCTION_BLOCK\n```"
+  },
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794310405,
+    "id": "resp_021794310404016e1d4082764930dbbed2aa61ee6ceaee4743a16",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179431040569300000000000000000000ffffac1537c1c01dea",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "我们需要回答用户要求：只输出一个 ```st 代码块，包含 FUNCTION_BLOCK FB 的实现，实现Jam Pump Debouncing and Runtime Maintenance。必须遵循规格，接口给定。只能使用 IEC 61131-3 ST，CODESYS/OpenPLC。需要仔细分析需求。\n\n需要实现的功能块：\n\n接口：\nVAR_INPUT\n    VISCOSITY_OK : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceMs : DINT; (* 1..3600000 *)\n    CycleMs : DINT; (* 1..3600000 *)\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN : BOOL;\n    PUMP_MAINT_DUE : BOOL;\n    PUMP_RUNTIME_ACC : LINT;\nEND_VAR\n还需要VAR存储状态：连续有效时间累积，以及可能的历史输入和前次VFD_RUN等，用于边沿检测和属性验证。\n\n题目要求：\n- 在启动时，输出和elapsed counters为零。所以需要内部状态变量初始化为0，包括累计有效时间、运行累计时间、前一周期输入状态、前一周期VFD_RUN？以及可能前两周期有效状态？但性质验证中提到的prev可能只是用于验证，实际代码中我们需要正确实现。\n\n分析需求：\n\n1. 去抖逻辑：当PASTE_E_STOP_NC 和 VISCOSITY_OK 都为TRUE时，启动/继续一个连续有效持续时间计时器。如果任一为FALSE，立即停止泵并丢弃去抖持续时间；下一个有效期间从零开始。\n\n2. 需要累计“当前不间断有效持续时间”：每个调用周期，当两个输入都为TRUE时，加上当前CycleMs到该持续时间。\n\n3. 运行判定：VFD_RUN 应为 TRUE 当且仅当该持续时间达到当前DebounceMs（注意DebounceMs可能变化？规格里说当前DebounceMs，可变化，但性质里也提到如果上一拍运行且本拍阈值不增则必须运行）。所以需要计算当前持续时间（包含本扫描的CycleMs后）是否 >= DebounceMs。\n\n4. 如果任一输入为FALSE，立即停止泵并丢弃持续时间。即使之前在运行，也要停止，并且持续时间清零。\n\n5. 关于VFD_RUN的边沿情况：第S6、S7、S8性质涉及第一拍和第二拍的行为。我们应确保逻辑满足这些性质。\n\n6. 另外维护运行时间：每当VFD_RUN为TRUE时，将该扫描的完整CycleMs加到PUMP_RUNTIME_ACC，包括合格扫描。当VFD_RUN为FALSE时，保持PUMP_RUNTIME_ACC不变。\n\n7. PUMP_MAINT_DUE = (PUMP_RUNTIME_ACC >= 1800000000) 且仅当此时为TRUE。\n\n需确保实现符合这些性质。\n\n关键点：我们需要在扫描周期内先更新有效持续时间（如果输入有效），然后决定VFD_RUN，然后根据VFD_RUN更新运行时间。\n\n注意：性质中提到“连续有效段的第一拍仅在本次调用时间达到当前阈值时启动。” 这意味着在第一拍（前一次输入无效，本拍有效）时，持续时间只有本拍的CycleMs（因为前一次无效持续时间被清零）。所以判断条件：如果本拍是有效段的第一拍，则 VFD_RUN 应该等于 (CycleMs >= DebounceMs)。\n\n如果本拍是有效段的第二拍（前一次有效，前两次无效），则持续时间是本拍CycleMs + 前一拍CycleMs，判断条件为 (CycleMs + prev_CycleMs >= DebounceMs)。这些在计算中自然成立，如果我们正确累加持续时间。\n\n性质S8说：如果有效且 (CycleMs >= DebounceMs 或者 (prev_VFD_RUN AND DebounceMs <= prev_DebounceMs)) 则 VFD_RUN必须为TRUE。其中prev_DebounceMs是上一拍的DebounceMs（可能变化）。这要求如果上一拍运行且当前DebounceMs不增加，则本拍继续运行（因为持续时间不会减少，如果有效且阈值不增加，则肯定仍满足）。这实际是单调性保证。我们的实现只要正确比较即可满足。\n\n所以算法：\n- 内部变量：\n    valid_duration : LINT? 但规格说DebounceMs和CycleMs是DINT，最大1..3600000，所以有效持续时间可能超过DINT范围吗？多个扫描周期的CycleMs累加，多少个周期？可能很多周期，因为DebounceMs最大3600000，而每个CycleMs最小1，最大可能需要累加多个周期？但DebounceMs是阈值，有效持续时间只在达到阈值前需要累加，一旦达到运行，持续时间可能继续增长？题目没有明确说当运行后持续时间是否继续增长？去抖通常一旦达到阈值就启动，在持续有效期间是否继续累加并不重要，但后续判断只要阈值不增加，泵保持运行。如果阈值增加超过已累计的持续时间，可能需要重新等待？但规格说“Run in this scan iff this duration has reached the current DebounceMs.” 这意味着每次扫描都检查持续时间 >= DebounceMs。如果DebounceMs增加了，可能由运行变为停止？但性质S8说如果上拍运行且DebounceMs不增则必须运行，暗示如果DebounceMs增加，可能泵停止？但是根据“持续有效段”定义，持续时间应该是一直累积直到输入无效。所以如果DebounceMs增加，可能需要更长时间才达到新阈值。所以持续时间应该继续累积，没有上限，只要输入有效就累加，直到无效才清零。因此我们需要保持有效持续时间，每次有效输入就加CycleMs。那么它可能变得很大，超过DINT范围吗？如果长时间有效（例如几天），累积的毫秒数可能超过LINT？但题目说“Executions exceeding the LINT range are outside this benchmark.” 所以我们可以用LINT来存储有效持续时间，因为可能运行很久。但DebounceMs是DINT，比较LINT和DINT没问题（DINT会转为LINT）。CycleMs也是DINT，累加时转换为LINT。使用LINT安全。\n\n但是要注意：如果泵已经运行，之后DebounceMs可能变大，则可能需要继续累计直到达到新阈值？但是根据需求描述“If PASTE_E_STOP_NC and VISCOSITY_OK are both TRUE, add that interval to the current uninterrupted valid duration. Run in this scan iff this duration has reached the current DebounceMs.” 所以即使运行后，也继续累加，然后判断是否 >= DebounceMs，如果DebounceMs增加导致当前持续时间<DebounceMs，泵会停止，但持续时间不会清零，继续累加直到再次达到。这样是符合描述的。性质S8的“本拍阈值不增”保证如果上拍运行且阈值不变或变小，则持续时间肯定>=新的阈值（因为上拍持续时间>=上拍阈值>=本拍阈值），所以运行保持。\n\n所以有效持续时间必须一直累加，只要输入有效，直到无效清零。\n\n因此：\n- VAR valid_duration : LINT; (* current uninterrupted valid duration in ms *)\n- VAR prev_inputs_valid : BOOL; (* previous scan both inputs TRUE *)\n- VAR prev_prev_inputs_valid : BOOL; (* for edge detection? 可能不需要，因为性质验证用到，但代码不需要显式边沿，只需正确累加即可 *)\n- 还需要保存上一拍VFD_RUN用于？可能不需要，但性质S4/S5只是验证，我们代码只需正确更新运行时间即可。但为了S8，我们需要知道prev_VFD_RUN和prev_DebounceMs，但我们的判断基于持续时间，可能不需要显式prev_VFD_RUN，只要正确计算持续时间，自然满足S8。不过实现时可能需要保存prev_VFD_RUN以防万一？但题目没有要求输出prev，但可能需要内部知道状态。\n\n为了确保正确性，我们实现如下：\n\n每个扫描周期：\n1. 读取输入。\n2. 计算当前是否有效：valid_inputs := PASTE_E_STOP_NC AND VISCOSITY_OK;\n3. 如果 valid_inputs = TRUE，则 valid_duration := valid_duration + CycleMs; 否则 valid_duration := 0; （丢弃）\n4. 如果 valid_inputs = TRUE AND valid_duration >= DebounceMs，则 VFD_RUN := TRUE; 否则 VFD_RUN := FALSE;\n   - 注意：当 valid_inputs = FALSE 时，valid_duration刚清零，所以VFD_RUN为FALSE，符合立即停止。\n5. 更新运行时间：如果 VFD_RUN = TRUE，则 PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + CycleMs; 否则保持不变。\n6. PUMP_MAINT_DUE := (PUMP_RUNTIME_ACC >= 1800000000);\n7. 最后保存历史：prev_inputs_valid := valid_inputs; 可能还需要保存prev_prev_inputs_valid，但不需要，因为算法不依赖边沿。但用于验证的性质可能检查边沿，但我们代码不需要显式边沿检测，只要算法正确即可。\n\n但有一个潜在问题：在步骤4中，如果 valid_inputs = TRUE 且 valid_duration >= DebounceMs，则 VFD_RUN=TRUE。当 valid_inputs = FALSE 时，valid_duration=0，所以 VFD_RUN=FALSE。这符合S1,S2。但是S6说：连续有效段的第一拍，VFD_RUN <-> CycleMs >= DebounceMs。我们的实现中，第一拍有效时，前一拍无效，valid_duration在上一拍被清零，本拍加CycleMs，所以 valid_duration = CycleMs，比较CycleMs >= DebounceMs，正好符合。S7第二拍：valid_duration = CycleMs + prev_CycleMs，比较，符合。因此正确。\n\n注意：我们需要确保在无效输入时，valid_duration清零。但根据描述“Either input being FALSE immediately stops the pump and discards the debounce duration; the next valid period starts at zero.” 所以清零。\n\n运行时间：S4要求当VFD_RUN为FALSE时，累计运行时间与上一拍相同，不清零也不增加。我们的步骤5满足：如果VFD_RUN = FALSE，则不动PUMP_RUNTIME_ACC。\n\nS5要求当VFD_RUN为TRUE时，增量等于CycleMs。我们加CycleMs。\n\nS3维护提示：当累计达到1800000000毫秒时，PUMP_MAINT_DUE应为TRUE，且仅当此时。我们赋值`PUMP_MAINT_DUE := (PUMP_RUNTIME_ACC >= 1800000000);` 这满足双条件：当>=时为TRUE，当<时为FALSE。但要确保只有累积到阈值才TRUE，不会因为其他原因TRUE。没问题。\n\n注意：PUMP_RUNTIME_ACC是LINT，可能很大，但题目说不会超过LINT范围。DebounceMs是DINT，最大3600000，所以持续时间可能超过DINT范围吗？如果泵一直有效运行很久，valid_duration会不断累加，可能超过DINT范围，但DebounceMs只有DINT，比较时会转换为LINT，所以valid_duration应该用LINT。\n\n还需要考虑初始状态：VAR区变量默认初始值为0（假设PLC默认初始化），但题目要求启动时输出和elapsed counters为零。所以VAR变量在首次调用时应为0。在CODESYS中，VAR变量默认初始化为0，除非显式初始化。我们可以不显式初始化，依赖默认。为了明确，可以在VAR声明时赋初值，例如 valid_duration : LINT := 0; 但语法允许。不过要确保不会因为未初始化导致问题。在ST中，VAR块内变量自动初始化为默认值（0），但最好显式初始化以提高可读性和确定性。但题目没有禁止。我们可以写：valid_duration : LINT := 0; 但接口变量不应初始化？输出变量默认0。对于VAR内部变量可以初始化。\n\n我们还得注意：在功能块中，VAR变量是静态的，跨扫描保持。因此我们使用VAR区。\n\n现在输出代码。\n\n潜在问题：有效持续时间累加可能溢出LINT，但题目说超出范围不考虑。但我们使用LINT，足够大。\n\n还需要注意，DebounceMs和CycleMs是DINT，可能为0？规格说1..3600000，但我们不检查范围，直接使用。\n\nST语法：使用 := 赋值，IF ... THEN ... ELSE ... END_IF; 关系运算符 >=, <=, =, <> 等。注意使用 AND, OR, NOT。\n\n我们需要在代码块内实现完整的FUNCTION_BLOCK FB ... END_FUNCTION_BLOCK。\n\n注意：要求“只输出一个```st 代码块，代码块外不要写任何解释。” 最终输出应该是：\n\n```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    VISCOSITY_OK : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceMs : DINT;\n    CycleMs : DINT;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN : BOOL;\n    PUMP_MAINT_DUE : BOOL;\n    PUMP_RUNTIME_ACC : LINT;\nEND_VAR\nVAR\n    valid_duration : LINT := 0;\n    prev_inputs_valid : BOOL := FALSE; (* maybe not needed, but can keep *)\n    prev_prev_inputs_valid : BOOL := FALSE; (* not used *)\nEND_VAR\n\n(* Body *)\nIF PASTE_E_STOP_NC AND VISCOSITY_OK THEN\n    valid_duration := valid_duration + CycleMs;\nELSE\n    valid_duration := 0;\nEND_IF\n\nIF PASTE_E_STOP_NC AND VISCOSITY_OK AND (valid_duration >= DebounceMs) THEN\n    VFD_RUN := TRUE;\nELSE\n    VFD_RUN := FALSE;\nEND_IF\n\nIF VFD_RUN THEN\n    PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + CycleMs;\nEND_IF\n\nPUMP_MAINT_DUE := (PUMP_RUNTIME_ACC >= 1800000000);\n\n(* Update history if needed *)\nprev_inputs_valid := PASTE_E_STOP_NC AND VISCOSITY_OK;\n(* prev_prev_inputs_valid := prev_inputs_valid; if needed for future, but not used *)\n\nEND_FUNCTION_BLOCK\n```\n\n但问题：在ST中，`PUMP_MAINT_DUE := (PUMP_RUNTIME_ACC >= 1800000000);` 括号表达式返回BOOL，可以赋值。但要注意运算符优先级，最好写成 `PUMP_MAINT_DUE := (PUMP_RUNTIME_ACC >= 1800000000);` 没问题。\n\nprevest变量其实不需要，我们可以省略prev_inputs_valid，但为了清晰可以保留但不使用。但题目要求所有中间变量在VAR区显式声明，我们声明了却未使用可能会引起警告，但通常不会错误。最好只保留需要的变量。我们只需要valid_duration。所以可以去掉prev_inputs_valid。\n\n检查性质S6,S7需要prev输入状态，但那是验证者使用的，我们的算法不依赖边沿，所以不需要存储。性质会自动验证。所以内部变量只需valid_duration。\n\n但有一个微妙的点：如何保证在输入由TRUE变为FALSE时，valid_duration被清零，而VFD_RUN也立即变FALSE？我们的代码：IF valid THEN valid_duration := valid_duration + CycleMs; ELSE valid_duration := 0; END_IF; 然后判断 VFD_RUN := valid AND (valid_duration >= DebounceMs)。当valid=FALSE时，valid_duration=0，VFD_RUN=FALSE，符合。\n\n但是有没有可能 valid_duration 在无效期间没有被清零？因为ELSE分支每次无效扫描都执行清零，所以没问题。\n\n还需要考虑：如果输入有效但 valid_duration 在加CycleMs之前已经是很大，且DebounceMs较小，那么VFD_RUN一直TRUE，没问题。如果DebounceMs变大，VFD_RUN可能变为FALSE，但valid_duration继续累加，直到再次达到阈值。正确。\n\n关于运行时间：在VFD_RUN从TRUE变为FALSE的扫描中，该扫描VFD_RUN=FALSE，所以不会加CycleMs。应该吗？规格说“When VFD_RUN is TRUE add this scan's full CycleMs to PUMP_RUNTIME_ACC, including the qualifying scan.” 在泵停止的扫描，VFD_RUN已经是FALSE，所以不应该加。如果泵在上一扫描是TRUE，本扫描由于输入无效或阈值增加变为FALSE，那么本扫描CycleMs不计入运行时间，这是符合的，因为泵在本扫描没有运行（VFD_RUN=FALSE）。S5说当VFD_RUN为TRUE时加CycleMs，所以停止扫描不加，正确。\n\n另外，如果输入无效迅速恢复，但valid_duration已清零，需要重新积累，正确。\n\n最后，输出PUMP_RUNTIME_ACC是LINT，我们直接更新。\n\n还需要确保代码符合IEC 61131-3语法：功能块名称是FB，END_FUNCTION_BLOCK。不要用分号结束？一般不需要，但某些系统可能需要。CODESYS中END_FUNCTION_BLOCK后不加分号。保持简单。\n\n现在考虑是否有必要处理DebounceMs变化时的性质S8：如果prev_VFD_RUN=TRUE且DebounceMs <= prev_DebounceMs，并且本拍有效，则VFD_RUN必须TRUE。我们的实现：当有效时，valid_duration累加，然后比较valid_duration >= DebounceMs。如果prev_VFD_RUN=TRUE，说明上一拍valid_duration_prev >= prev_DebounceMs。本拍valid_duration = valid_duration_prev + CycleMs >= prev_DebounceMs + CycleMs。因为CycleMs >0。如果本拍DebounceMs <= prev_DebounceMs，那么valid_duration >= prev_DebounceMs >= DebounceMs，所以VFD_RUN=TRUE。满足。如果DebounceMs增加超过prev_DebounceMs，则可能valid_duration < DebounceMs，VFD_RUN可能停止，这符合性质（性质只保证如果阈值不增则运行）。所以正确。\n\n因此代码很简洁。\n\n注意接口中DebounceMs和CycleMs是DINT，我们直接加CycleMs时，ST会将DINT自动转换为LINT。有效持续时间是LINT，所以没有溢出问题。\n\n为了更严谨，可以显式转换：valid_duration := valid_duration + TO_LINT(CycleMs); 但通常不需要。但为了安全，可以写TO_LINT(CycleMs)。但题目没要求，标准ST允许DINT与LINT运算，结果LINT。可以不用。\n\n考虑边界：CycleMs为正，DebounceMs为正，比较LINT和DINT，DINT会被提升为LINT，没问题。\n\n最终代码应该如下：\n\n```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    VISCOSITY_OK : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceMs : DINT;\n    CycleMs : DINT;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN : BOOL;\n    PUMP_MAINT_DUE : BOOL;\n    PUMP_RUNTIME_ACC : LINT;\nEND_VAR\nVAR\n    valid_duration : LINT := 0;\nEND_VAR\n\nIF PASTE_E_STOP_NC AND VISCOSITY_OK THEN\n    valid_duration := valid_duration + CycleMs;\nELSE\n    valid_duration := 0;\nEND_IF\n\nVFD_RUN := (PASTE_E_STOP_NC AND VISCOSITY_OK) AND (valid_duration >= DebounceMs);\n\nIF VFD_RUN THEN\n    PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + CycleMs;\nEND_IF\n\nPUMP_MAINT_DUE := (PUMP_RUNTIME_ACC >= 1800000000);\n\nEND_FUNCTION_BLOCK\n```\n\n检查：在VFD_RUN赋值中，我们使用了AND，确保输入有效。当输入无效时，VFD_RUN=FALSE，即使valid_duration曾经很大，但我们已经清零了，但表达式仍然包含输入有效，所以FALSE。实际上，由于valid_duration在无效时被清零，即使不加输入有效条件，VFD_RUN也为FALSE，但加上更安全。另外注意优先级：`(PASTE_E_STOP_NC AND VISCOSITY_OK) AND (valid_duration >= DebounceMs)` 会先计算括号内，再AND，没问题。\n\n运行时间更新使用IF VFD_RUN THEN ... END_IF; 在当次扫描中，VFD_RUN已经计算完毕，所以加CycleMs。符合规格。\n\n维护提示赋值是布尔表达式，没问题。\n\n此代码完全符合需求。\n\n但是否需要处理启动时VFD_RUN初始为FALSE？VAR默认初始化VFD_RUN为FALSE（因为输出变量也是VAR区？实际上输出变量属于VAR_OUTPUT，也是功能块变量，默认初始值为FALSE或0），所以启动时满足。我们不需要显式初始化输出。\n\nVAR valid_duration : LINT := 0; 初始为0，正确。\n\n所以最终输出这个代码块。\n\n注意：问题要求“只输出一个```st 代码块，代码块外不要写任何解释。” 所以我们只输出代码块。\n\n另外，代码块语言为st，所以写```st。\n\n最终答案。"
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    VISCOSITY_OK : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceMs : DINT;\n    CycleMs : DINT;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN : BOOL;\n    PUMP_MAINT_DUE : BOOL;\n    PUMP_RUNTIME_ACC : LINT;\nEND_VAR\nVAR\n    valid_duration : LINT := 0;\nEND_VAR\n\nIF PASTE_E_STOP_NC AND VISCOSITY_OK THEN\n    valid_duration := valid_duration + CycleMs;\nELSE\n    valid_duration := 0;\nEND_IF\n\nVFD_RUN := (PASTE_E_STOP_NC AND VISCOSITY_OK) AND (valid_duration >= DebounceMs);\n\nIF VFD_RUN THEN\n    PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + CycleMs;\nEND_IF\n\nPUMP_MAINT_DUE := (PUMP_RUNTIME_ACC >= 1800000000);\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179431046795800000000000000000000ffffac1537c1146b0b",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 1564,
+      "output_tokens": 4889,
+      "total_tokens": 6453,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 4642
+      },
+      "cost": "¥0.057702"
+    }
+  }
+}
