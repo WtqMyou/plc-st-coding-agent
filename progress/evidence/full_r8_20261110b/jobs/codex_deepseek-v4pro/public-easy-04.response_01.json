@@ -1,0 +1,74 @@
+{
+  "model": "deepseek-v4-pro-0813",
+  "protocol": "responses",
+  "usage": {
+    "input_tokens": 8584,
+    "output_tokens": 2389,
+    "total_tokens": 10973,
+    "input_tokens_details": {
+      "cached_tokens": 6144
+    },
+    "output_tokens_details": {
+      "reasoning_tokens": 2115
+    },
+    "cost": "¥0.03488"
+  },
+  "finish_reason": "completed",
+  "message": {
+    "content": "```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    VISCOSITY_OK     : BOOL;\n    PASTE_E_STOP_NC  : BOOL;\n    DebounceMs       : DINT;\n    CycleMs          : DINT;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN          : BOOL;\n    PUMP_MAINT_DUE   : BOOL;\n    PUMP_RUNTIME_ACC : LINT;\nEND_VAR\nVAR\n    validDuration    : LINT := 0;\n    runtimeAccum     : LINT := 0;\nEND_VAR\n\nIF VISCOSITY_OK AND PASTE_E_STOP_NC THEN\n    validDuration := validDuration + DINT_TO_LINT(CycleMs);\n    VFD_RUN := validDuration >= DINT_TO_LINT(DebounceMs);\nELSE\n    validDuration := 0;\n    VFD_RUN := FALSE;\nEND_IF;\n\nIF VFD_RUN THEN\n    runtimeAccum := runtimeAccum + DINT_TO_LINT(CycleMs);\nEND_IF;\n\nPUMP_RUNTIME_ACC := runtimeAccum;\nPUMP_MAINT_DUE := runtimeAccum >= LINT#1800000000;\n\nEND_FUNCTION_BLOCK\n```"
+  },
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794310526,
+    "id": "resp_021794310524958f0644a9747ad3d38d721f78a849566c61f7aac",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179431052612500000000000000000000ffffac155396c82ae8",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need answer only one st code block. Need implement FB exactly. Need understand formal semantics and tricky conditions S8. Need be careful.\n\nWe need ST for CODESYS, no comments? Can include comments? User says only code block no explanation outside. Inside allowed comments maybe not needed. Need complete.\n\nWe need derive algorithm.\n\nInputs: VISCOSITY_OK BOOL, PASTE_E_STOP_NC BOOL, DebounceMs DINT, CycleMs DINT.\nOutputs: VFD_RUN, PUMP_MAINT_DUE, PUMP_RUNTIME_ACC LINT.\nStatic VAR: elapsed duration? Actually need continuous uninterrupted valid duration accumulated by CycleMs full cycles. On each invocation \"count full CycleMs since previous invocation. If both TRUE add interval to current uninterrupted valid duration. Run in this scan iff this duration has reached current DebounceMs. Either input false stops and discards duration; next valid starts zero. CycleMs varies.\"\n\nSo maintain validAccum DINT/LINT? DINT max 3,600,000 per scan, possibly many cycles can exceed DINT, but thresholds max 3,600,000; can cap at threshold perhaps? Need property S6 etc comparing. Use LINT internal for safe duration. Output only runtime LINT. On each valid scan: if both inputs TRUE, validDuration := validDuration + CycleMs. Then VFD_RUN := validDuration >= DebounceMs. If either false, validDuration := 0, VFD_RUN false. It says first valid period starts at zero, then add this scan full CycleMs? \"On each invocation count the full CycleMs since previous invocation. If ... both TRUE, add that interval to current uninterrupted valid duration. Run in this scan iff this duration has reached current DebounceMs.\" So yes first valid scan validDuration = CycleMs; run iff CycleMs >= threshold (S6). Second valid scan duration CycleMs+prev CycleMs; run iff total >= current threshold (S7). Good.\n\nRuntime accumulation: \"When VFD_RUN is TRUE add this scan's full CycleMs to PUMP_RUNTIME_ACC, including the qualifying scan. Otherwise preserve.\" Should add whenever output VFD_RUN true in this invocation, including first qualification and all subsequent. Use based on computed VFD_RUN. If false preserve. Need output LINT. Every scan assign PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + CycleMs if VFD_RUN. But note VAR_INPUT not writable; output is writable? CODESYS VAR_OUTPUT can be read and written inside FB generally yes. We can maintain internal static accum then assign output. Better static internal runtimeAccum LINT. At startup zero. Then if VFD_RUN true, runtimeAccum := runtimeAccum + CycleMs. output = runtimeAccum. Maintenance based on runtimeAccum >= 1800000000.\n\nS4 says when VFD_RUN false, PUMP_RUNTIME_ACC = prev(PUMP_RUNTIME_ACC). Output sampled end. Fine.\n\nFormal S6 for first valid scan uses CycleMs >= DebounceMs. Our validDuration starts zero then add this scan. correct.\nS7 second valid scan uses CycleMs + prev(CycleMs) >= DebounceMs. Our validDuration = prev validDuration + cycle = CycleMs + prevCycle. correct.\nS8: if both valid AND (CycleMs >= DebounceMs OR (prev(VFD_RUN) AND DebounceMs <= prev(DebounceMs))) -> VFD_RUN. Our formula validDuration>=Debounce. Since validDuration includes cycle and all accumulated. If CycleMs >= threshold yes run. If prev(VFD_RUN) true then previous validDuration >= previous threshold. This scan validDuration >= prev threshold + cycle, and current threshold <= previous threshold, so yes. Good.\nCould there be issue first valid scan where previous validDuration accumulated before a false, yes false resets.\n\nNeed no hidden. Static variables perhaps validDuration LINT; runtimeAccum LINT. Startup zero by default BUT CODESYS retains variables VAR? \"VAR area static variables\" initialized zero? In FB instance, VAR without RETAIN initialized on cold start to 0; retain maybe persistent. Benchmark zero outputs at startup. We don't specifically initialize every scan. VAR declarations with := 0 perhaps. Do it for clarity. But if user calls \"At startup outputs and elapsed counters are zero.\" VAR initial values zero. Good.\n\nNeed ensure internal variable types. validDuration LINT maybe comparisons with DINT. runtimeAccum LINT. Could use DINT for validDuration? Thresholds and cycle max 3.6e6, multiple scans accumulation can exceed DINT up to 2.147e9 only ~596 hours; not impossible? But once valid run qualified, validDuration could continue to grow indefinitely with repeated scans if no reset, beyond DINT after many hours. Use LINT. Cycle DINT converted. Good.\n\nNeed ordering with history? No explicit need? To satisfy S6/S7, we don't need prev variables in code, but hidden evaluator perhaps uses actual. We just implement direct. But the phrase \"边沿先计算再更新历史\" is general, not specific. We can avoid edge history. Need maybe reset priority: safety inputs false immediately stops and discards debounce duration. implement if NOT valid then VFD_RUN false; validDur=0. Need S1/S2. Since AND false, yes.\n\nNeed runtime accumulation includes qualifying scan. We use computed VFD_RUN. Good.\n\nPotential nuance: \"At startup the outputs and elapsed counters are zero.\" The output variables declared VAR_OUTPUT default false/0. `PUMP_RUNTIME_ACC` LINT output default? Need assign 0? At execution, if VFD false, preserve old output, which is zero initially. Fine. But to ensure zero initial explicitly maybe output assignment from internal. We'll maintain internal :=0 and assign every scan. For validDuration :=0.\n\nST syntax:\nFUNCTION_BLOCK FB\nVAR_INPUT\n    VISCOSITY_OK: BOOL;\n    PASTE_E_STOP_NC: BOOL;\n    DebounceMs: DINT;\n    CycleMs: DINT;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN: BOOL;\n    PUMP_MAINT_DUE: BOOL;\n    PUMP_RUNTIME_ACC: LINT;\nEND_VAR\nVAR\n    validDuration: LINT := 0;\n    runtimeAccum: LINT := 0;\nEND_VAR\n\nIF VISCOSITY_OK AND PASTE_E_STOP_NC THEN\n    validDuration := validDuration + DINT_TO_LINT(CycleMs);\n    VFD_RUN := validDuration >= DINT_TO_LINT(DebounceMs);\nELSE\n    validDuration := 0;\n    VFD_RUN := FALSE;\nEND_IF;\n\nIF VFD_RUN THEN\n    runtimeAccum := runtimeAccum + DINT_TO_LINT(CycleMs);\nEND_IF;\nPUMP_RUNTIME_ACC := runtimeAccum;\nPUMP_MAINT_DUE := runtimeAccum >= 1800000000;\n\nThis is a literal 1800000000; type inference LINT due other operand? ST comparison LINT >= DINT maybe implicit conversion? CODESYS supports? Numeric literal 1800000000 is DINT maybe max 2,147,483,647, so valid DINT. Comparing LINT to DINT perhaps allowed with implicit? In IEC, types must be same, but many systems implicit. Better use LINT literal? CODESYS supports typed literal LINT#1800000000. Yes use `LINT#1800000000`. `DINT_TO_LINT`. User only numeric ms. Good.\n\nNeed consider DebounceMs <= prev(DebounceMs) S8 and changing thresholds. Our formula accumulates with current cycle but threshold current. If previous run and threshold unchanged/lower, yes run. If threshold increases to above current accumulated maybe false. S8 only specifies lower/eq run. Correct. If `CycleMs >= DebounceMs` always run. Fine.\n\nPotential issue: requirement says \"When VFD_RUN is TRUE add this scan's full CycleMs to PUMP_RUNTIME_ACC\" including qualifying scan. We add using VFD_RUN computed after validDuration update. good.\n\nPotential issue S4 says when VFD_RUN false, runtime acc preserve. We do.\n\nPotential issue `validDuration` should perhaps cap? no.\n\nPotential issue if DebounceMs is 0? Statement positive 1..3600000, but if 0 first scan run. Our comparison runs if duration >=0. Fine. Could be DINT invalid? no.\n\nPotential issue if inputs false at startup, validDuration 0. Good.\n\nPotential issue \"Run in this scan iff this duration has reached current DebounceMs.\" If valid inputs true and validDuration previously >= current threshold, VFD_RUN remains true each scan (adding cycle). If threshold increases, can turn false and valid duration continues; runtime not added (VFD false). If later threshold decreases or enough duration, run again without reset because inputs remained true. Is that intended? A \"current uninterrupted valid duration\" continues if inputs valid continuously. yes.\n\nNeed maybe assign output always. If FB output variables could retain previous values if not assigned? CODESYS output defaults but we assign each scan for VFD and due/acc. Good.\n\nLet's ponder S8: `prev(DebounceMs)` means threshold from previous invocation. Our direct algorithm ensures if prev run and threshold not increased, run. But what about first second scan with threshold lower and Cycle small? Stored duration includes previous cycle + current > previous threshold > new threshold, so yes. Fine.\n\nNow answer only code block. No explanations. Ensure no comments maybe. Need one st code block.\n\nCould include `LINT#1800000000`. Should be exactly. The interface order. No VAR_IN_OUT. User says implement interface exactly. Yes.\n\nLet's produce."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    VISCOSITY_OK     : BOOL;\n    PASTE_E_STOP_NC  : BOOL;\n    DebounceMs       : DINT;\n    CycleMs          : DINT;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN          : BOOL;\n    PUMP_MAINT_DUE   : BOOL;\n    PUMP_RUNTIME_ACC : LINT;\nEND_VAR\nVAR\n    validDuration    : LINT := 0;\n    runtimeAccum     : LINT := 0;\nEND_VAR\n\nIF VISCOSITY_OK AND PASTE_E_STOP_NC THEN\n    validDuration := validDuration + DINT_TO_LINT(CycleMs);\n    VFD_RUN := validDuration >= DINT_TO_LINT(DebounceMs);\nELSE\n    validDuration := 0;\n    VFD_RUN := FALSE;\nEND_IF;\n\nIF VFD_RUN THEN\n    runtimeAccum := runtimeAccum + DINT_TO_LINT(CycleMs);\nEND_IF;\n\nPUMP_RUNTIME_ACC := runtimeAccum;\nPUMP_MAINT_DUE := runtimeAccum >= LINT#1800000000;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179431055973100000000000000000000ffffac155396b697f2",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 8584,
+      "output_tokens": 2389,
+      "total_tokens": 10973,
+      "input_tokens_details": {
+        "cached_tokens": 6144
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 2115
+      },
+      "cost": "¥0.03488"
+    }
+  }
+}
