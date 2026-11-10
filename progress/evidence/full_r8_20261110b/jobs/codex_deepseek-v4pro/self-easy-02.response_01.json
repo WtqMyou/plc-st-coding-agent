@@ -1,0 +1,74 @@
+{
+  "model": "deepseek-v4-pro-0813",
+  "protocol": "responses",
+  "usage": {
+    "input_tokens": 8494,
+    "output_tokens": 869,
+    "total_tokens": 9363,
+    "input_tokens_details": {
+      "cached_tokens": 6144
+    },
+    "output_tokens_details": {
+      "reasoning_tokens": 609
+    },
+    "cost": "¥0.01835"
+  },
+  "finish_reason": "completed",
+  "message": {
+    "content": "```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    tankLevel       : REAL;\n    outletFlow      : REAL;\n    inletPermit     : BOOL;\n    resetBtn        : BOOL;\nEND_VAR\nVAR_OUTPUT\n    pumpRun         : BOOL;\n    alarmHigh       : BOOL;\n    alarmLow        : BOOL;\n    outletValveOpen : BOOL;\nEND_VAR\nVAR\n    prevResetBtn    : BOOL := FALSE;\n    prevAlarmHigh   : BOOL := FALSE;\n    prevAlarmLow    : BOOL := FALSE;\n    risingReset     : BOOL;\nEND_VAR\n\nrisingReset := resetBtn AND NOT prevResetBtn;\n\nalarmHigh := (tankLevel >= 85.0) OR (prevAlarmHigh AND NOT risingReset);\nalarmLow  := (tankLevel <= 15.0) OR (prevAlarmLow  AND NOT risingReset);\n\npumpRun := inletPermit AND NOT alarmHigh AND NOT alarmLow;\n\noutletValveOpen := NOT alarmLow;\n\nprevResetBtn  := resetBtn;\nprevAlarmHigh := alarmHigh;\nprevAlarmLow  := alarmLow;\nEND_FUNCTION_BLOCK\n```"
+  },
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794330899,
+    "id": "resp_02179433089791261e61b6be4ea80d80d16a59ce3c2929c7cc4e5",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179433089908000000000000000000000ffffac159b18965559",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "我们只需要提供代码块。需要满足接口。要实现。\n\n逻辑：\n\nVAR_INPUT tankLevel REAL; outletFlow REAL; inletPermit BOOL; resetBtn BOOL.\nOUTPUT pumpRun, alarmHigh, alarmLow, outletValveOpen BOOL.\nVAR prevResetBtn BOOL:=FALSE; alarmHighPrev BOOL:=FALSE? 根据性质 N10-S2: G(tankLevel <85 -> alarmHigh <-> (prev(alarmHigh) AND !rising(resetBtn))). 但高液位条件同拍 alarmHigh = true (S1)。 N10-S6 low: alarmLow <-> (tankLevel<=15 OR (prev(alarmLow) AND !rising(resetBtn))). 高类似：alarmHigh <-> (tankLevel>=85 OR (prev(alarmHigh) AND !rising(resetBtn))). 这样 natural. all output same end cycle. rising reset = resetBtn AND NOT prevResetBtn. prevResetBtn updated after outputs presumably each scan. Initial prevResetBtn FALSE, alarms FALSE.\n\nNeed careful ordering: outputs computed from prevResetBtn, alarmHighPrev, alarmLowPrev. Then update prevResetBtn:=resetBtn; alarmHighPrev:=alarmHigh; etc. Since variables in VAR static and assignments can be interleaved? In PLC ST, assignments update immediately. But if use separate variable for prev alarms and assign to outputs. E.g.\n\nIF resetBtn AND NOT prevResetBtn THEN\n  IF NOT (tankLevel >= 85.0) THEN alarmHigh := FALSE; ELSE alarmHigh := TRUE; END_IF;\n  IF NOT (tankLevel <=15.0) THEN alarmLow := FALSE; ELSE alarmLow:=TRUE; END_IF;\nELSE\n  IF tankLevel>=85 THEN alarmHigh:=TRUE; ELSE alarmHigh:=prevAlarmHigh; END_IF;\n  IF tankLevel<=15 THEN alarmLow:=TRUE; ELSE alarmLow:=prevAlarmLow; END_IF;\nEND_IF;\npumpRun := inletPermit AND NOT alarmHigh AND NOT alarmLow;\noutletValveOpen := NOT alarmLow;\nprevAlarmHigh := alarmHigh; prevAlarmLow := alarmLow; prevResetBtn := resetBtn;\n\nThis satisfies. Danger priority: during reset edge if condition still true keep true; if gone clear.\n\nPotential cowens? If both condition true and same edge, both latch. fine. If reset held: rising false, normal branch, latch persists based condition, no new resets. If reset held and condition gone during hold, no rise so alarm remains until release and press again. yes.\n\nNeed no comments? fine. Could include no OUTLET flow use. Need output outletValveOpen = not alarmLow including reset plate. yes.\n\nNeed CODE only. Ensure syntax CODESYS. Use comparison REAL with 85.0. Use AND NOT. Could use explicit. Implement."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    tankLevel       : REAL;\n    outletFlow      : REAL;\n    inletPermit     : BOOL;\n    resetBtn        : BOOL;\nEND_VAR\nVAR_OUTPUT\n    pumpRun         : BOOL;\n    alarmHigh       : BOOL;\n    alarmLow        : BOOL;\n    outletValveOpen : BOOL;\nEND_VAR\nVAR\n    prevResetBtn    : BOOL := FALSE;\n    prevAlarmHigh   : BOOL := FALSE;\n    prevAlarmLow    : BOOL := FALSE;\n    risingReset     : BOOL;\nEND_VAR\n\nrisingReset := resetBtn AND NOT prevResetBtn;\n\nalarmHigh := (tankLevel >= 85.0) OR (prevAlarmHigh AND NOT risingReset);\nalarmLow  := (tankLevel <= 15.0) OR (prevAlarmLow  AND NOT risingReset);\n\npumpRun := inletPermit AND NOT alarmHigh AND NOT alarmLow;\n\noutletValveOpen := NOT alarmLow;\n\nprevResetBtn  := resetBtn;\nprevAlarmHigh := alarmHigh;\nprevAlarmLow  := alarmLow;\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179433090932000000000000000000000ffffac159b1859eb38",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 8494,
+      "output_tokens": 869,
+      "total_tokens": 9363,
+      "input_tokens_details": {
+        "cached_tokens": 6144
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 609
+      },
+      "cost": "¥0.01835"
+    }
+  }
+}
