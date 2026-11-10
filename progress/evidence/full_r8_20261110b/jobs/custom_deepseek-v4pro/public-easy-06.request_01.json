@@ -1,0 +1,21 @@
+{
+  "model": "deepseek-v4-pro-0813",
+  "protocol": "responses",
+  "max_tokens": 16384,
+  "timeout_seconds": 420,
+  "parameters": {
+    "reasoning": {
+      "effort": "low"
+    }
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "你是一名精通 IEC 61131-3 结构化文本（ST）的 PLC 工程师，正在为工业自动化控制场景编写功能块。\n\n硬性要求：\n1. 只输出**一个** ```st 代码块，代码块外不要写任何解释。\n2. 必须实现题目指定的功能块名与完整接口声明（VAR_INPUT / VAR_OUTPUT / VAR_IN_OUT / VAR），\n   变量名、类型、方向与题目接口表**逐个一致**，不得增删、不得改名、不得改类型。\n3. 所有中间变量必须在 VAR 区显式声明；不得使用未声明的变量。\n4. VAR_INPUT 在功能块内部只读，需要写入的形参必须用 VAR_IN_OUT。\n5. 代码要能在真实 PLC 上编译：每个 IF / FOR / CASE / WHILE 都要正确闭合，\n   END_FUNCTION_BLOCK 结尾。\n6. 不要用注释掉的代码\"占位\"，不要留 TODO。\n7. 目标为 CODESYS 3.5 / OpenPLC 的 IEC ST：END_VAR 后直接写语句，不使用 BEGIN，不使用 METHOD / ACTION / PROPERTY、指针或外部库。\n8. 返回简洁的完整实现；不附测试程序或重复实现。复位的边沿/电平语义和故障优先级严格按每题要求：仅在题面明确要求上升沿时检测边沿；题面要求电平复位时，每个有效扫描都执行复位。不要将某一题的复位约定套用到其它题。\n仅输出完整 FUNCTION_BLOCK FB 及必要 TYPE。不要使用 METHOD、ACTION、PROPERTY、指针或外部定时器。变量避免 s、r、dt、if 等保留名；位移采用 SHL/SHR 函数。数组上下界和类型转换须显式检查。"
+    },
+    {
+      "role": "user",
+      "content": "# 任务：Aeration Blower Delayed Start\n\n## 需求\nControl a wastewater-treatment aeration blower with a low-dissolved-oxygen demand, a 5-second start delay, emergency-stop priority and start-cycle counting.\n\n1. Start delay timing when both DO_LOW and AERATION_E_STOP_NC are TRUE. Allow BLOWER_RUN to become TRUE only after these conditions have remained satisfied for 5 seconds.\n2. If DO_LOW becomes FALSE or an emergency stop occurs, immediately disable BLOWER_RUN and reset the start timer, whether timing is incomplete or complete. A new demand must wait the full 5 seconds again.\n3. Increment AERATION_BLOWER_CYCLE_COUNT once on each FALSE-to-TRUE transition of BLOWER_RUN. Do not count repeatedly during continuous operation.\n4. At power-up, initialize the blower to OFF and the start count to zero. The start delay gates a BOOL enable; no continuous speed ramp is required.\n\n## 接口定义（必须逐字实现，不得改动）\n\n功能块名：`FB`（FUNCTION_BLOCK FB）\n\n| 变量名 | 类型 | 方向 | 说明 |\n| --- | --- | --- | --- |\n| DO_LOW | BOOL | INPUT | Dissolved oxygen is below its threshold and aeration is needed. |\n| AERATION_E_STOP_NC | BOOL | INPUT | TRUE means the emergency stop is inactive; FALSE means it is active. |\n| BLOWER_RUN | BOOL | OUTPUT | Blower motor-contactor run command. |\n| AERATION_BLOWER_CYCLE_COUNT | UINT | OUTPUT | Count of actual blower starts. |\n\n## 必须满足的形式化性质\n- [S1] 当急停按下（AERATION_E_STOP_NC=FALSE）时，鼓风机运行命令必须为 FALSE。\n  LTL: `G(NOT AERATION_E_STOP_NC -> NOT BLOWER_RUN)`\n- [S2] 当低氧需求为 FALSE 时，鼓风机运行命令必须为 FALSE。\n  LTL: `G(NOT DO_LOW -> NOT BLOWER_RUN)`\n- [S3] 鼓风机连续运行期间（本拍与上一拍都在运行）启动计数不得增加。\n  LTL: `G(BLOWER_RUN AND prev(BLOWER_RUN) -> AERATION_BLOWER_CYCLE_COUNT = prev(AERATION_BLOWER_CYCLE_COUNT))`\n- [S4] 上电初始化后 5 个扫描周期内不得启动（以周期数代替 5 秒延时），且计数只在运行命上升沿加 1（由 e06-1..e06-7 用例验证的数据性质）。\n- [N10-S5] 11.10补充：连续五拍低氧且急停释放才启动，需求中断须重新等待。\n  LTL: `G(BLOWER_RUN <-> ((DO_LOW AND AERATION_E_STOP_NC) AND prev(((DO_LOW AND AERATION_E_STOP_NC) AND prev(((DO_LOW AND AERATION_E_STOP_NC) AND prev(((DO_LOW AND AERATION_E_STOP_NC) AND prev((DO_LOW AND AERATION_E_STOP_NC))))))))))`\n- [N10-S6] 11.10补充：可表示范围内每次启动沿计一次，其他拍保持计数。原题未约定65535后再次启动的溢出处理。\n  LTL: `G(((rising(BLOWER_RUN) AND NOT prev(AERATION_BLOWER_CYCLE_COUNT = 65535)) -> AERATION_BLOWER_CYCLE_COUNT = prev(AERATION_BLOWER_CYCLE_COUNT) + 1) AND (NOT rising(BLOWER_RUN) -> AERATION_BLOWER_CYCLE_COUNT = prev(AERATION_BLOWER_CYCLE_COUNT)))`\n\n## 补充说明\n- 功能块在**每个扫描周期**被调用一次，输出在周期结束时被采样。\n- 不要假设任何隐藏的定时器或全局变量；需要跨周期记住的状态请用 VAR 区静态变量。\n\n请直接给出完整的 ```st 代码块。\n实现检查清单：接口匹配；复位/安全优先；状态保持；边沿先计算再更新历史；数组边界；扫描周期。"
+    }
+  ]
+}
