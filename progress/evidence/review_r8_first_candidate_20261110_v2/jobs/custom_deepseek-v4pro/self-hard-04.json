@@ -1,0 +1,935 @@
+{
+  "pid": "self-hard-04",
+  "model": "deepseek-v4-pro-0813",
+  "provider": "custom",
+  "setting": "custom_deepseek-v4pro",
+  "max_iters": 1,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    demand: INT;\n    runHours: ARRAY[1..5] OF LINT;\n    rotated: BOOL;\nEND_VAR\nVAR_OUTPUT\n    leadPump: INT;\n    lagPump: INT;\n    runningCount: INT;\nEND_VAR\nVAR\n    lastDemandClipped: INT := 0;\n    lastLeadPump: INT := 0;\n    lastLagPump: INT := 0;\n    lastRunningCount: INT := 0;\n    clippedDemand: INT;\n    minPump: INT;\n    i: INT;\nEND_VAR\n\n// 裁剪需求\nclippedDemand := demand;\nIF clippedDemand < 0 THEN\n    clippedDemand := 0;\nEND_IF;\nIF clippedDemand > 5 THEN\n    clippedDemand := 5;\nEND_IF;\nrunningCount := clippedDemand;\n\n// 处理主泵和备泵\nIF clippedDemand = 0 THEN\n    // 需求为零：清空主备泵\n    leadPump := 0;\n    lagPump := 0;\nELSE\n    // 正需求\n    IF lastDemandClipped = 0 THEN\n        // 初选主泵：全场（工时，泵号）最小\n        minPump := 1;\n        FOR i := 2 TO 5 DO\n            IF runHours[i] < runHours[minPump] THEN\n                minPump := i;\n            ELSIF runHours[i] = runHours[minPump] AND i < minPump THEN\n                minPump := i;\n            END_IF;\n        END_FOR;\n        leadPump := minPump;\n    ELSE\n        // 已有主泵：默认保持\n        leadPump := lastLeadPump;\n        // 轮换请求处理\n        IF rotated THEN\n            // 计算全场最小泵\n            minPump := 1;\n            FOR i := 2 TO 5 DO\n                IF runHours[i] < runHours[minPump] THEN\n                    minPump := i;\n                ELSIF runHours[i] = runHours[minPump] AND i < minPump THEN\n                    minPump := i;\n                END_IF;\n            END_FOR;\n            // 只有当前主泵工时比最小泵多严格超过50小时才换主\n            IF runHours[lastLeadPump] - runHours[minPump] > 50 THEN\n                leadPump := minPump;\n            END_IF;\n        END_IF;\n    END_IF;\n\n    // 备泵选择\n    IF clippedDemand = 1 THEN\n        lagPump := 0;\n    ELSIF clippedDemand >= 2 THEN\n        // 需要备泵，判断是否需重选\n        IF (lastDemandClipped = 0) OR (leadPump <> lastLeadPump) OR (clippedDemand > lastDemandClipped) THEN\n            // 选排除当前主泵后的最小泵\n            IF leadPump <> 1 THEN\n                minPump := 1;\n            ELSE\n                minPump := 2;\n            END_IF;\n            FOR i := 1 TO 5 DO\n                IF i <> leadPump THEN\n                    IF runHours[i] < runHours[minPump] THEN\n                        minPump := i;\n                    ELSIF runHours[i] = runHours[minPump] AND i < minPump THEN\n                        minPump := i;\n                    END_IF;\n                END_IF;\n            END_FOR;\n            lagPump := minPump;\n        ELSE\n            // 保持上拍备泵\n            lagPump := lastLagPump;\n        END_IF;\n    ELSE\n        lagPump := 0;\n    END_IF;\nEND_IF;\n\n// 更新历史状态\nlastDemandClipped := clippedDemand;\nlastLeadPump := leadPump;\nlastLagPump := lagPump;\nlastRunningCount := runningCount;\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 40,
+      "tests_total": 40,
+      "feedback": "",
+      "prompt_tokens": 2375,
+      "completion_tokens": 8442,
+      "latency_s": 154.670999999973,
+      "provider_error": "",
+      "verification_status": "truncated",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 17.655999999959022,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-04_8e0839d332",
+          "source_sha256": "b03bcea40f3e050739ea0f891b4e5e89fd0a6a96a7609fdb9bc3bd58866d2736",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "b03bcea40f3e050739ea0f891b4e5e89fd0a6a96a7609fdb9bc3bd58866d2736",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 40,
+        "tests_passed": 40,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "p1",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "leadPump": 0,
+              "lagPump": 0,
+              "runningCount": 0
+            },
+            "actual": {
+              "leadPump": 0,
+              "lagPump": 0,
+              "runningCount": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p2",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 0,
+              "runningCount": 1
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 0,
+              "runningCount": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p3",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 5,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 5,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p4",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 5
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p5",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "leadPump": 0,
+              "lagPump": 0,
+              "runningCount": 0
+            },
+            "actual": {
+              "leadPump": 0,
+              "lagPump": 0,
+              "runningCount": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-p4",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "runningCount": 5
+            },
+            "actual": {
+              "runningCount": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p1",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "leadPump": 0,
+              "lagPump": 0,
+              "runningCount": 0
+            },
+            "actual": {
+              "leadPump": 0,
+              "lagPump": 0,
+              "runningCount": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p2",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 0,
+              "runningCount": 1
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 0,
+              "runningCount": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p3",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 5,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 5,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p4",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "runningCount": 5
+            },
+            "actual": {
+              "runningCount": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p5",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "runningCount": 0,
+              "leadPump": 0,
+              "lagPump": 0
+            },
+            "actual": {
+              "runningCount": 0,
+              "leadPump": 0,
+              "lagPump": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p6",
+            "passed": true,
+            "mode": "sequence:pump",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p7",
+            "passed": true,
+            "mode": "sequence:pump",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p8",
+            "passed": true,
+            "mode": "sequence:pump",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p9",
+            "passed": true,
+            "mode": "sequence:pump",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p10",
+            "passed": true,
+            "mode": "sequence:pump",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 1,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 1,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p11",
+            "passed": true,
+            "mode": "sequence:pump",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 1,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 1,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p12",
+            "passed": true,
+            "mode": "sequence:pump",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 1,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 1,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p13",
+            "passed": true,
+            "mode": "sequence:pump",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 0,
+              "runningCount": 1
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 0,
+              "runningCount": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p14",
+            "passed": true,
+            "mode": "sequence:pump",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 1,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 1,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p15",
+            "passed": true,
+            "mode": "sequence:pump",
+            "message": "",
+            "expected": {
+              "leadPump": 0,
+              "lagPump": 0,
+              "runningCount": 0
+            },
+            "actual": {
+              "leadPump": 0,
+              "lagPump": 0,
+              "runningCount": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p16",
+            "passed": true,
+            "mode": "sequence:pump",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p17",
+            "passed": true,
+            "mode": "sequence:pump",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "p18",
+            "passed": true,
+            "mode": "sequence:pump",
+            "message": "",
+            "expected": {
+              "leadPump": 3,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 3,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-p18",
+            "passed": true,
+            "mode": "sequence:peer:wide-hours",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 3,
+              "runningCount": 4
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 3,
+              "runningCount": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-p19",
+            "passed": true,
+            "mode": "sequence:peer:wide-hours",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 3,
+              "runningCount": 5
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 3,
+              "runningCount": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p6",
+            "passed": true,
+            "mode": "sequence:upgrade-seq",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p7",
+            "passed": true,
+            "mode": "sequence:upgrade-seq",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p8",
+            "passed": true,
+            "mode": "sequence:upgrade-seq",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 2
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p9",
+            "passed": true,
+            "mode": "sequence:upgrade-seq",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 2
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p10",
+            "passed": true,
+            "mode": "sequence:upgrade-seq",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 1,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 1,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p11",
+            "passed": true,
+            "mode": "sequence:upgrade-seq",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 1
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p12",
+            "passed": true,
+            "mode": "sequence:upgrade-seq",
+            "message": "",
+            "expected": {
+              "leadPump": 0,
+              "lagPump": 0,
+              "runningCount": 0
+            },
+            "actual": {
+              "leadPump": 0,
+              "lagPump": 0,
+              "runningCount": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p13",
+            "passed": true,
+            "mode": "sequence:upgrade-seq",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 1,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 1,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p14",
+            "passed": true,
+            "mode": "sequence:upgrade-seq",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 3,
+              "runningCount": 3
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 3,
+              "runningCount": 3
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p15",
+            "passed": true,
+            "mode": "sequence:upgrade-seq",
+            "message": "",
+            "expected": {
+              "leadPump": 0,
+              "lagPump": 0,
+              "runningCount": 0
+            },
+            "actual": {
+              "leadPump": 0,
+              "lagPump": 0,
+              "runningCount": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p16",
+            "passed": true,
+            "mode": "sequence:upgrade-seq",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p17",
+            "passed": true,
+            "mode": "sequence:upgrade-seq",
+            "message": "",
+            "expected": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "actual": {
+              "leadPump": 1,
+              "lagPump": 2,
+              "runningCount": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p18",
+            "passed": true,
+            "mode": "sequence:upgrade-wide-hours",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 3,
+              "runningCount": 4
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 3,
+              "runningCount": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "upgrade-p19",
+            "passed": true,
+            "mode": "sequence:upgrade-wide-hours",
+            "message": "",
+            "expected": {
+              "leadPump": 2,
+              "lagPump": 3,
+              "runningCount": 5
+            },
+            "actual": {
+              "leadPump": 2,
+              "lagPump": 3,
+              "runningCount": 5
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 83,
+          "traces": 37262,
+          "specs_total": 9,
+          "specs_hold": 9,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 17.655999999959022,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-04_8e0839d332",
+            "source_sha256": "b03bcea40f3e050739ea0f891b4e5e89fd0a6a96a7609fdb9bc3bd58866d2736",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "classification": "evaluated",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "group_counts": {
+            "single": 11,
+            "sequence:pump": 13,
+            "sequence:peer:wide-hours": 2,
+            "sequence:upgrade-seq": 12,
+            "sequence:upgrade-wide-hours": 2
+          },
+          "group_policy": "fresh instance per sequence group; each single case fresh",
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "b03bcea40f3e050739ea0f891b4e5e89fd0a6a96a7609fdb9bc3bd58866d2736",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "r7_model_check": {
+            "program": "self-hard-04",
+            "states_explored": 83,
+            "traces_explored": 37262,
+            "max_depth": 3,
+            "requested_depth": 8,
+            "complete_depth": 2,
+            "initial_inputs_attempted": 288,
+            "input_space_size": 288,
+            "all_hold": false,
+            "error": "",
+            "truncated": true,
+            "fixed_input_domains": {},
+            "specs": [
+              {
+                "id": "S1",
+                "formula": "G(((demand < 0 -> runningCount = 0) AND (demand > 5 -> runningCount = 5) AND ((demand >= 0 AND demand <= 5) -> runningCount = demand)))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S2",
+                "formula": "G(((demand > 0 -> (leadPump >= 1 AND leadPump <= 5)) AND (demand = 1 -> lagPump = 0) AND (demand >= 2 -> (lagPump >= 1 AND lagPump <= 5 AND leadPump <> lagPump))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S3",
+                "formula": "G((prev(leadPump >= 1 AND leadPump <= 5) AND leadPump >= 1 AND leadPump <= 5 AND leadPump <> prev(leadPump) AND demand > 0) -> runHours[prev(leadPump)] - runHours[leadPump] > 50)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S4",
+                "formula": "G(demand <= 0 -> leadPump = 0 & lagPump = 0)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S5",
+                "formula": "G(demand <= 0 -> runningCount = 0)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S6",
+                "formula": "G((NOT rotated & prev((leadPump <> 0)) & demand > 0) -> leadPump = prev(leadPump))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S7",
+                "formula": "G(((demand > 0 AND leadPump >= 1 AND leadPump <= 5 AND (NOT prev(leadPump <> 0) OR (rotated AND prev(leadPump >= 1 AND leadPump <= 5) AND runHours[prev(leadPump)] - MIN(runHours[1],runHours[2],runHours[3],runHours[4],runHours[5]) > 50))) -> ((runHours[leadPump] < runHours[1] OR (runHours[leadPump] = runHours[1] AND leadPump <= 1)) AND (runHours[leadPump] < runHours[2] OR (runHours[leadPump] = runHours[2] AND leadPump <= 2)) AND (runHours[leadPump] < runHours[3] OR (runHours[leadPump] = runHours[3] AND leadPump <= 3)) AND (runHours[leadPump] < runHours[4] OR (runHours[leadPump] = runHours[4] AND leadPump <= 4)) AND (runHours[leadPump] < runHours[5] OR (runHours[leadPump] = runHours[5] AND leadPump <= 5)))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S8",
+                "formula": "G(((demand >= 2 AND lagPump >= 1 AND lagPump <= 5 AND (leadPump <> prev(leadPump) OR runningCount > prev(runningCount))) -> ((leadPump = 1 OR (runHours[lagPump] < runHours[1] OR (runHours[lagPump] = runHours[1] AND lagPump <= 1))) AND (leadPump = 2 OR (runHours[lagPump] < runHours[2] OR (runHours[lagPump] = runHours[2] AND lagPump <= 2))) AND (leadPump = 3 OR (runHours[lagPump] < runHours[3] OR (runHours[lagPump] = runHours[3] AND lagPump <= 3))) AND (leadPump = 4 OR (runHours[lagPump] < runHours[4] OR (runHours[lagPump] = runHours[4] AND lagPump <= 4))) AND (leadPump = 5 OR (runHours[lagPump] < runHours[5] OR (runHours[lagPump] = runHours[5] AND lagPump <= 5))))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S9",
+                "formula": "G(((demand >= 2 AND leadPump = prev(leadPump) AND runningCount <= prev(runningCount)) -> lagPump = prev(lagPump)))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              }
+            ]
+          },
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.19695411,
+      "actual_model": "deepseek-v4-pro-0813",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1794291522.9284334,
+  "finished_at": 1794291677.5946496,
+  "error": "",
+  "stop_reason": "one_candidate_complete",
+  "run_signature": "",
+  "experiment_kind": "live",
+  "tests_total": 40,
+  "request_window_seconds": 450,
+  "prompt_version": "v2.5-task-specific-reset",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 10817,
+  "total_latency_s": 154.670999999973,
+  "n_attempts": 1,
+  "complete_code": true,
+  "study_plan_sha256": "dd5d2d7d30c613e6e5a9f895816466dbdec7887ef11e17ec94cb872fc31ad274",
+  "r8_snapshot_sha256": "064d83fd4b66e06f4f8603896874ffeef7a8b7e770247c55595d013e586ce51f"
+}
