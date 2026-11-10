@@ -1,0 +1,671 @@
+{
+  "pid": "public-medium-06",
+  "model": "deepseek-v4-pro-0813",
+  "provider": "custom",
+  "setting": "custom_deepseek-v4pro",
+  "max_iters": 2,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    THICKNESS_FAULT : BOOL;\n    THICKNESS_SIGNAL_VALID : BOOL;\n    CUTTING_RUN : BOOL;\n    FaultTimestamp : DINT;\n    CycleTime : TIME;\nEND_VAR\nVAR_OUTPUT\n    THICKNESS_ALARM : BOOL;\n    Slab_Fault_Counter : UINT;\n    Slab_Runtime_Accumulator : LINT;\n    Slab_Fault_History : ARRAY[0..4] OF DINT;\nEND_VAR\nVAR\n    prev_valid_fault : BOOL := FALSE;\n    hold_counter : UINT := 0;\n    fault_count_val : UINT := 0;\n    runtime_acc_val : LINT := 0;\n    history_internal : ARRAY[0..4] OF DINT := [0,0,0,0,0];\n    valid_fault : BOOL;\n    rising_fault : BOOL;\n    alarm_val : BOOL;\nEND_VAR\n\n// 计算有效故障组合及其上升沿\nvalid_fault := THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT;\nrising_fault := valid_fault AND NOT prev_valid_fault;\n\n// 报警输出计算\nIF NOT THICKNESS_SIGNAL_VALID THEN\n    alarm_val := FALSE;\nELSIF THICKNESS_FAULT THEN\n    alarm_val := TRUE;\nELSE\n    IF hold_counter < 25 THEN\n        alarm_val := TRUE;\n    ELSE\n        alarm_val := FALSE;\n    END_IF;\nEND_IF;\n\n// 故障计数与历史更新（仅有效故障上升沿）\nIF rising_fault THEN\n    IF fault_count_val < 65535 THEN\n        fault_count_val := fault_count_val + 1;\n    END_IF;\n    // 历史移位：先移高索引，再写新值\n    history_internal[4] := history_internal[3];\n    history_internal[3] := history_internal[2];\n    history_internal[2] := history_internal[1];\n    history_internal[1] := history_internal[0];\n    history_internal[0] := FaultTimestamp;\nEND_IF;\n\n// 运行时间累积：仅在合格扫描时加一\nIF CUTTING_RUN AND THICKNESS_SIGNAL_VALID AND NOT THICKNESS_FAULT THEN\n    runtime_acc_val := runtime_acc_val + 1;\nEND_IF;\n\n// 更新保持计数器\nIF NOT THICKNESS_SIGNAL_VALID THEN\n    hold_counter := 0;\nELSIF THICKNESS_FAULT THEN\n    hold_counter := 0;\nELSE\n    IF alarm_val THEN\n        hold_counter := hold_counter + 1;\n    END_IF;\nEND_IF;\n\n// 更新上一周期有效故障状态\nprev_valid_fault := valid_fault;\n\n// 输出赋值\nTHICKNESS_ALARM := alarm_val;\nSlab_Fault_Counter := fault_count_val;\nSlab_Runtime_Accumulator := runtime_acc_val;\nSlab_Fault_History[0] := history_internal[0];\nSlab_Fault_History[1] := history_internal[1];\nSlab_Fault_History[2] := history_internal[2];\nSlab_Fault_History[3] := history_internal[3];\nSlab_Fault_History[4] := history_internal[4];\nEND_FUNCTION_BLOCK",
+      "compiles": false,
+      "tests_passed": 0,
+      "tests_total": 15,
+      "feedback": "静态检查或接口契约失败：\n第 20 行 [E_BAD_EXPR] 表达式中意外的 '['\n第 1 行 [E_NO_POU] 没有找到 FUNCTION_BLOCK / FUNCTION / PROGRAM 定义\nLTL 检查：not_run。",
+      "prompt_tokens": 2696,
+      "completion_tokens": 9301,
+      "latency_s": 144.8279999999795,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "b9ea1281c7a45a3366f68a9ea342b066c2d4a5dd358fb43148262637776d17c1",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 20,
+            "code": "E_BAD_EXPR",
+            "message": "表达式中意外的 '['"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_NO_POU",
+            "message": "没有找到 FUNCTION_BLOCK / FUNCTION / PROGRAM 定义"
+          }
+        ],
+        "tests_total": 15,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态类型检查失败",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "classification": "candidate_static_error",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "b9ea1281c7a45a3366f68a9ea342b066c2d4a5dd358fb43148262637776d17c1",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.21755888999999998,
+      "actual_model": "deepseek-v4-pro-0813",
+      "solved": false,
+      "fully_verified": false
+    },
+    {
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    THICKNESS_FAULT : BOOL;\n    THICKNESS_SIGNAL_VALID : BOOL;\n    CUTTING_RUN : BOOL;\n    FaultTimestamp : DINT;\n    CycleTime : TIME;\nEND_VAR\nVAR_OUTPUT\n    THICKNESS_ALARM : BOOL;\n    Slab_Fault_Counter : UINT;\n    Slab_Runtime_Accumulator : LINT;\n    Slab_Fault_History : ARRAY[0..4] OF DINT;\nEND_VAR\nVAR\n    prev_valid_fault : BOOL := FALSE;\n    hold_counter : UINT := 0;\n    fault_count_val : UINT := 0;\n    runtime_acc_val : LINT := 0;\n    history_internal : ARRAY[0..4] OF DINT;\n    valid_fault : BOOL;\n    rising_fault : BOOL;\n    alarm_val : BOOL;\nEND_VAR\n\n// 计算有效故障组合及其上升沿\nvalid_fault := THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT;\nrising_fault := valid_fault AND NOT prev_valid_fault;\n\n// 报警输出计算\nIF NOT THICKNESS_SIGNAL_VALID THEN\n    alarm_val := FALSE;\nELSIF THICKNESS_FAULT THEN\n    alarm_val := TRUE;\nELSE\n    IF hold_counter < 25 THEN\n        alarm_val := TRUE;\n    ELSE\n        alarm_val := FALSE;\n    END_IF;\nEND_IF;\n\n// 故障计数与历史更新（仅有效故障上升沿）\nIF rising_fault THEN\n    IF fault_count_val < 65535 THEN\n        fault_count_val := fault_count_val + 1;\n    END_IF;\n    // 历史移位：先移高索引，再写新值\n    history_internal[4] := history_internal[3];\n    history_internal[3] := history_internal[2];\n    history_internal[2] := history_internal[1];\n    history_internal[1] := history_internal[0];\n    history_internal[0] := FaultTimestamp;\nEND_IF;\n\n// 运行时间累积：仅在合格扫描时加一\nIF CUTTING_RUN AND THICKNESS_SIGNAL_VALID AND NOT THICKNESS_FAULT THEN\n    runtime_acc_val := runtime_acc_val + 1;\nEND_IF;\n\n// 更新保持计数器\nIF NOT THICKNESS_SIGNAL_VALID THEN\n    hold_counter := 0;\nELSIF THICKNESS_FAULT THEN\n    hold_counter := 0;\nELSE\n    IF alarm_val THEN\n        hold_counter := hold_counter + 1;\n    END_IF;\nEND_IF;\n\n// 更新上一周期有效故障状态\nprev_valid_fault := valid_fault;\n\n// 输出赋值\nTHICKNESS_ALARM := alarm_val;\nSlab_Fault_Counter := fault_count_val;\nSlab_Runtime_Accumulator := runtime_acc_val;\nSlab_Fault_History[0] := history_internal[0];\nSlab_Fault_History[1] := history_internal[1];\nSlab_Fault_History[2] := history_internal[2];\nSlab_Fault_History[3] := history_internal[3];\nSlab_Fault_History[4] := history_internal[4];\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 14,
+      "tests_total": 15,
+      "feedback": "自动测试：14/15。\n用例 M06-01，模式 sequence，行为不匹配，请检查 THICKNESS_ALARM。\nLTL 检查：not_run。",
+      "prompt_tokens": 3516,
+      "completion_tokens": 2862,
+      "latency_s": 53.28200000000652,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 15.875,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-06_b309aaf406",
+          "source_sha256": "f0a7fbd8bbdb26f6445308a58cba5450636654ce3784333464ef8521c794cbf1",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "f0a7fbd8bbdb26f6445308a58cba5450636654ce3784333464ef8521c794cbf1",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 15,
+        "tests_passed": 14,
+        "pass_rate": 0.9333,
+        "failure_summary": "M06-01: THICKNESS_ALARM 期望 False，实际 True",
+        "cases": [
+          {
+            "tc_id": "M06-01",
+            "passed": false,
+            "mode": "sequence",
+            "message": "THICKNESS_ALARM 期望 False，实际 True",
+            "expected": {
+              "THICKNESS_ALARM": false
+            },
+            "actual": {
+              "THICKNESS_ALARM": true
+            },
+            "hint": "M06-01（承接上电：计数/累积/历史全 0；切割运行且无故障 → 累积 1 拍（CycleTime 恒 0，运行时间以扫描周期计数，见约定 §7））：THICKNESS_ALARM 期望 False，实际 True"
+          },
+          {
+            "tc_id": "M06-02",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                100,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-03",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 1,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                100,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 1,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-04",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 2,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                200,
+                100,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 2,
+              "Slab_Runtime_Accumulator": 1,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-05",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 2,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                200,
+                100,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 2,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-06",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 3,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                300,
+                200,
+                100,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 3,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-07",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 3,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                300,
+                200,
+                100,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 3,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-08",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 4,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                400,
+                300,
+                200,
+                100,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 4,
+              "Slab_Runtime_Accumulator": 27,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-09",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 4,
+              "Slab_Runtime_Accumulator": 28,
+              "Slab_Fault_History": [
+                400,
+                300,
+                200,
+                100,
+                0
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 4,
+              "Slab_Runtime_Accumulator": 28,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 5,
+              "Slab_Runtime_Accumulator": 28,
+              "Slab_Fault_History": [
+                500,
+                400,
+                300,
+                200,
+                100
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 5,
+              "Slab_Runtime_Accumulator": 28,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 5,
+              "Slab_Runtime_Accumulator": 29,
+              "Slab_Fault_History": [
+                500,
+                400,
+                300,
+                200,
+                100
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 5,
+              "Slab_Runtime_Accumulator": 29,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 6,
+              "Slab_Runtime_Accumulator": 29,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 6,
+              "Slab_Runtime_Accumulator": 29,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-hold-500ms-1",
+            "passed": true,
+            "mode": "sequence:peer:hold-500ms",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-hold-500ms-2",
+            "passed": true,
+            "mode": "sequence:peer:hold-500ms",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "actual": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-hold-500ms-3",
+            "passed": true,
+            "mode": "sequence:peer:hold-500ms",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "actual": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.875,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-06_b309aaf406",
+            "source_sha256": "f0a7fbd8bbdb26f6445308a58cba5450636654ce3784333464ef8521c794cbf1",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "classification": "evaluated",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "group_counts": {
+            "sequence": 12,
+            "sequence:peer:hold-500ms": 3
+          },
+          "group_policy": "fresh instance per sequence group; each single case fresh",
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "f0a7fbd8bbdb26f6445308a58cba5450636654ce3784333464ef8521c794cbf1",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.08604522,
+      "actual_model": "deepseek-v4-pro-0813",
+      "solved": false,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1794328976.1488657,
+  "finished_at": 1794329174.2645066,
+  "error": "",
+  "stop_reason": "max_candidates",
+  "run_signature": "",
+  "experiment_kind": "live",
+  "tests_total": 15,
+  "request_window_seconds": 451,
+  "prompt_version": "v2.5-task-specific-reset",
+  "solved": false,
+  "first_try": false,
+  "best_attempt": 1,
+  "fully_verified": false,
+  "compile_rate": 0.5,
+  "total_tokens": 18375,
+  "total_latency_s": 198.10999999998603,
+  "n_attempts": 2,
+  "job_done": true,
+  "study_plan_sha256": "5d34beeeeacd5265559418bf339d6cefa78c9bc504793ddbd387265486810ba8",
+  "complete_code": true
+}
