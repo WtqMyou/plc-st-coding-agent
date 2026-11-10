@@ -1,0 +1,730 @@
+{
+  "pid": "public-medium-03",
+  "model": "deepseek-v4-pro-0813",
+  "provider": "custom",
+  "setting": "custom_deepseek-v4pro",
+  "max_iters": 2,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger : BOOL;\n    value : LREAL;\n    windowSize : INT;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    average : LREAL;\n    windowSizeReached : BOOL;\n    error : BOOL;\n    status : WORD;\nEND_VAR\nVAR\n    buffer : ARRAY [0..99] OF LREAL;\n    count : INT := 0;\n    writeIndex : INT := 0;\n    lastTrigger : BOOL := FALSE;\n    rising : BOOL;\n    sum : LREAL;\n    i : INT;\n    startIndex : INT;\n    validRead : BOOL;\n    firstScan : BOOL := TRUE;\nEND_VAR\n\n// 首次扫描初始化\nIF firstScan THEN\n    count := 0;\n    writeIndex := 0;\n    average := 0.0;\n    windowSizeReached := FALSE;\n    firstScan := FALSE;\nEND_IF\n\n// 计算 trigger 上升沿\nrising := trigger AND NOT lastTrigger;\n\n// 设置错误状态与状态码\nIF (windowSize < 1) OR (windowSize > 100) THEN\n    error := TRUE;\n    status := 16#8200;\nELSE\n    error := FALSE;\n    status := 16#0000;\nEND_IF\n\n// 复位处理（优先级高于读取）\nIF reset THEN\n    count := 0;\n    writeIndex := 0;\n    average := 0.0;\n    windowSizeReached := FALSE;\n    lastTrigger := trigger;  // 防止复位解除后当前高电平被误判为上升沿\nELSE\n    // 判断是否有读取请求\n    IF cyclicExecution THEN\n        validRead := TRUE;\n    ELSE\n        validRead := rising;\n    END_IF\n\n    IF validRead THEN\n        // 仅在窗口合法时更新\n        IF NOT error THEN\n            // 窗口缩小可能使 count 大于 windowSize，截断至窗口大小\n            IF count > windowSize THEN\n                count := windowSize;\n            END_IF\n\n            // 写入新样本（环形缓冲区）\n            buffer[writeIndex] := value;\n            writeIndex := (writeIndex + 1) MOD 100;\n            IF count < windowSize THEN\n                count := count + 1;\n            END_IF\n\n            // 计算移动平均\n            IF count > 0 THEN\n                sum := 0.0;\n                startIndex := (writeIndex - count + 100) MOD 100;\n                FOR i := 0 TO count - 1 DO\n                    sum := sum + buffer[(startIndex + i) MOD 100];\n                END_FOR\n                average := sum / INT_TO_LREAL(count);\n            ELSE\n                average := 0.0;\n            END_IF\n\n            // 设置窗口满标志\n            IF count >= windowSize THEN\n                windowSizeReached := TRUE;\n            ELSE\n                windowSizeReached := FALSE;\n            END_IF\n        END_IF\n    END_IF\nEND_IF\n\n// 更新 lastTrigger（对所有情况执行，复位分支已设置相同值，此处保持一致性）\nlastTrigger := trigger;\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 14,
+      "tests_total": 17,
+      "feedback": "自动测试：14/17。\n用例 s8，模式 sequence，行为不匹配，请检查 average。\n用例 s9，模式 sequence，行为不匹配，请检查 average。\n用例 s10，模式 sequence，行为不匹配，请检查 average。\nLTL 检查：not_run。",
+      "prompt_tokens": 1272,
+      "completion_tokens": 10135,
+      "latency_s": 170.28099999995902,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 15.764999999955762,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-03_89b8d1cfc2",
+          "source_sha256": "e1e1500bf287c1ca61e560953eb8bf19949d09d025c307a1a0775d508c385a1b",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "e1e1500bf287c1ca61e560953eb8bf19949d09d025c307a1a0775d508c385a1b",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 17,
+        "tests_passed": 14,
+        "pass_rate": 0.8235,
+        "failure_summary": "s8: average 期望 57.5，实际 66.66666666666667",
+        "cases": [
+          {
+            "tc_id": "s1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 10.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 10.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 15.0,
+              "windowSizeReached": true
+            },
+            "actual": {
+              "average": 15.0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 25.0
+            },
+            "actual": {
+              "average": 25.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 30.0
+            },
+            "actual": {
+              "average": 30.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 35.0
+            },
+            "actual": {
+              "average": 35.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 35.0
+            },
+            "actual": {
+              "average": 35.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 50.0
+            },
+            "actual": {
+              "average": 50.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s8",
+            "passed": false,
+            "mode": "sequence",
+            "message": "average 期望 57.5，实际 66.66666666666667",
+            "expected": {
+              "average": 57.5
+            },
+            "actual": {
+              "average": 66.66666666666667
+            },
+            "hint": "s8（窗口由 2 改为 4：取最近 4 个样本 30,40,60,100，平均=57.5；累计样本 7>=4 故 reached=TRUE）：average 期望 57.5，实际 66.66666666666667"
+          },
+          {
+            "tc_id": "s9",
+            "passed": false,
+            "mode": "sequence",
+            "message": "average 期望 57.5，实际 66.66666666666667",
+            "expected": {
+              "average": 57.5
+            },
+            "actual": {
+              "average": 66.66666666666667
+            },
+            "hint": "s9（窗口=101 越上界：error=TRUE、status=16#8200(33280)，不采样、统计值保持上一次 57.5）：average 期望 57.5，实际 66.66666666666667"
+          },
+          {
+            "tc_id": "s10",
+            "passed": false,
+            "mode": "sequence",
+            "message": "average 期望 57.5，实际 66.66666666666667",
+            "expected": {
+              "average": 57.5
+            },
+            "actual": {
+              "average": 66.66666666666667
+            },
+            "hint": "s10（窗口=0 越下界：同样报 error=TRUE、status=33280，统计值保持 57.5）：average 期望 57.5，实际 66.66666666666667"
+          },
+          {
+            "tc_id": "s11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 0.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 0.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 8.0,
+              "windowSizeReached": true,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 8.0,
+              "windowSizeReached": true,
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ring-end-1",
+            "passed": true,
+            "mode": "sequence:peer:ring-end",
+            "message": "",
+            "expected": {
+              "average": 10,
+              "windowSizeReached": false,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 10.0,
+              "windowSizeReached": false,
+              "status": 0,
+              "error": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ring-end-2",
+            "passed": true,
+            "mode": "sequence:peer:ring-end",
+            "message": "",
+            "expected": {
+              "average": 10.1,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 10.1,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ring-end-3",
+            "passed": true,
+            "mode": "sequence:peer:ring-end",
+            "message": "",
+            "expected": {
+              "average": 10.3,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 10.3,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-ring-end-4",
+            "passed": true,
+            "mode": "sequence:peer:ring-end",
+            "message": "",
+            "expected": {
+              "average": 50,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 50.0,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-idle-window-1",
+            "passed": true,
+            "mode": "sequence:peer:idle-window",
+            "message": "",
+            "expected": {
+              "average": 0.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 0.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.764999999955762,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-03_89b8d1cfc2",
+            "source_sha256": "e1e1500bf287c1ca61e560953eb8bf19949d09d025c307a1a0775d508c385a1b",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "classification": "evaluated",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "group_counts": {
+            "sequence": 12,
+            "sequence:peer:ring-end": 4,
+            "sequence:peer:idle-window": 1
+          },
+          "group_policy": "fresh instance per sequence group; each single case fresh",
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "e1e1500bf287c1ca61e560953eb8bf19949d09d025c307a1a0775d508c385a1b",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.22522347,
+      "actual_model": "deepseek-v4-pro-0813",
+      "solved": false,
+      "fully_verified": false
+    },
+    {
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger : BOOL;\n    value : LREAL;\n    windowSize : INT;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    average : LREAL;\n    windowSizeReached : BOOL;\n    error : BOOL;\n    status : WORD;\nEND_VAR\nVAR\n    buffer : ARRAY [0..99] OF LREAL;\n    count : INT := 0;\n    writeIndex : INT := 0;\n    lastTrigger : BOOL := FALSE;\n    rising : BOOL;\n    sum : LREAL;\n    i : INT;\n    startIndex : INT;\n    validRead : BOOL;\n    firstScan : BOOL := TRUE;\n    oldCount : INT;\nEND_VAR\n\n// 首次扫描初始化\nIF firstScan THEN\n    count := 0;\n    writeIndex := 0;\n    average := 0.0;\n    windowSizeReached := FALSE;\n    firstScan := FALSE;\nEND_IF\n\n// 计算 trigger 上升沿\nrising := trigger AND NOT lastTrigger;\n\n// 设置错误状态与状态码\nIF (windowSize < 1) OR (windowSize > 100) THEN\n    error := TRUE;\n    status := 16#8200;\nELSE\n    error := FALSE;\n    status := 16#0000;\nEND_IF\n\n// 复位处理（优先级最高）\nIF reset THEN\n    count := 0;\n    writeIndex := 0;\n    average := 0.0;\n    windowSizeReached := FALSE;\n    lastTrigger := trigger;  // 防止复位解除后误触发\nELSE\n    // 只有在窗口合法时才进行数据处理\n    IF NOT error THEN\n        // 处理窗口尺寸变化（截断到新窗口大小并立即更新平均）\n        IF count > windowSize THEN\n            count := windowSize;\n            -- 重新计算平均和窗口满标志\n            IF count > 0 THEN\n                sum := 0.0;\n                startIndex := (writeIndex - count + 100) MOD 100;\n                FOR i := 0 TO count - 1 DO\n                    sum := sum + buffer[(startIndex + i) MOD 100];\n                END_FOR;\n                average := sum / INT_TO_LREAL(count);\n                windowSizeReached := (count >= windowSize);\n            ELSE\n                average := 0.0;\n                windowSizeReached := FALSE;\n            END_IF;\n        END_IF;\n\n        -- 判断是否有读取请求\n        IF cyclicExecution THEN\n            validRead := TRUE;\n        ELSE\n            validRead := rising;\n        END_IF;\n\n        IF validRead THEN\n            -- 写入新样本\n            buffer[writeIndex] := value;\n            writeIndex := (writeIndex + 1) MOD 100;\n            IF count < windowSize THEN\n                count := count + 1;\n            END_IF;\n\n            -- 重新计算平均\n            IF count > 0 THEN\n                sum := 0.0;\n                startIndex := (writeIndex - count + 100) MOD 100;\n                FOR i := 0 TO count - 1 DO\n                    sum := sum + buffer[(startIndex + i) MOD 100];\n                END_FOR;\n                average := sum / INT_TO_LREAL(count);\n            ELSE\n                average := 0.0;\n            END_IF;\n\n            -- 更新窗口满标志\n            IF count >= windowSize THEN\n                windowSizeReached := TRUE;\n            ELSE\n                windowSizeReached := FALSE;\n            END_IF;\n        END_IF;\n    END_IF;\nEND_IF;\n\n// 更新 lastTrigger\nlastTrigger := trigger;\n\nEND_FUNCTION_BLOCK",
+      "compiles": false,
+      "tests_passed": 0,
+      "tests_total": 17,
+      "feedback": "静态检查或接口契约失败：\n第 63 行 [E_BAD_CHAR] 无法识别的字符 '重'\n第 63 行 [E_BAD_CHAR] 无法识别的字符 '新'\n第 63 行 [E_BAD_CHAR] 无法识别的字符 '计'\n第 63 行 [E_BAD_CHAR] 无法识别的字符 '算'\n第 63 行 [E_BAD_CHAR] 无法识别的字符 '平'\nLTL 检查：not_run。",
+      "prompt_tokens": 2046,
+      "completion_tokens": 5873,
+      "latency_s": 95.89100000000326,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "1a8408920e15e661a02cd4099ebc9bbf8084df8f57cb0ee7e183ccaaf8fd3f18",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '重'"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '新'"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '计'"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '算'"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '平'"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '均'"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '和'"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '窗'"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '口'"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '满'"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '标'"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '志'"
+          },
+          {
+            "level": "error",
+            "line": 78,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '判'"
+          },
+          {
+            "level": "error",
+            "line": 78,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '断'"
+          },
+          {
+            "level": "error",
+            "line": 78,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '是'"
+          },
+          {
+            "level": "error",
+            "line": 78,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '否'"
+          },
+          {
+            "level": "error",
+            "line": 78,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '有'"
+          },
+          {
+            "level": "error",
+            "line": 78,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '读'"
+          },
+          {
+            "level": "error",
+            "line": 78,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '取'"
+          },
+          {
+            "level": "error",
+            "line": 78,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '请'"
+          },
+          {
+            "level": "error",
+            "line": 78,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '求'"
+          },
+          {
+            "level": "error",
+            "line": 86,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '写'"
+          },
+          {
+            "level": "error",
+            "line": 86,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '入'"
+          },
+          {
+            "level": "error",
+            "line": 86,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '新'"
+          },
+          {
+            "level": "error",
+            "line": 86,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '样'"
+          },
+          {
+            "level": "error",
+            "line": 86,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '本'"
+          },
+          {
+            "level": "error",
+            "line": 93,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '重'"
+          },
+          {
+            "level": "error",
+            "line": 93,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '新'"
+          },
+          {
+            "level": "error",
+            "line": 93,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '计'"
+          },
+          {
+            "level": "error",
+            "line": 93,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '算'"
+          },
+          {
+            "level": "error",
+            "line": 93,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '平'"
+          },
+          {
+            "level": "error",
+            "line": 93,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '均'"
+          },
+          {
+            "level": "error",
+            "line": 105,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '更'"
+          },
+          {
+            "level": "error",
+            "line": 105,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '新'"
+          },
+          {
+            "level": "error",
+            "line": 105,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '窗'"
+          },
+          {
+            "level": "error",
+            "line": 105,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '口'"
+          },
+          {
+            "level": "error",
+            "line": 105,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '满'"
+          },
+          {
+            "level": "error",
+            "line": 105,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '标'"
+          },
+          {
+            "level": "error",
+            "line": 105,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '志'"
+          },
+          {
+            "level": "error",
+            "line": 63,
+            "code": "E_BAD_EXPR",
+            "message": "表达式中意外的 '-'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_NO_POU",
+            "message": "没有找到 FUNCTION_BLOCK / FUNCTION / PROGRAM 定义"
+          }
+        ],
+        "tests_total": 17,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态类型检查失败",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "classification": "candidate_static_error",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "1a8408920e15e661a02cd4099ebc9bbf8084df8f57cb0ee7e183ccaaf8fd3f18",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.13981815,
+      "actual_model": "deepseek-v4-pro-0813",
+      "solved": false,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1794325648.1919239,
+  "finished_at": 1794325914.363991,
+  "error": "",
+  "stop_reason": "max_candidates",
+  "run_signature": "",
+  "experiment_kind": "live",
+  "tests_total": 17,
+  "request_window_seconds": 451,
+  "prompt_version": "v2.5-task-specific-reset",
+  "solved": false,
+  "first_try": false,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 0.5,
+  "total_tokens": 19326,
+  "total_latency_s": 266.1719999999623,
+  "n_attempts": 2,
+  "job_done": true,
+  "study_plan_sha256": "5d34beeeeacd5265559418bf339d6cefa78c9bc504793ddbd387265486810ba8",
+  "complete_code": true
+}
