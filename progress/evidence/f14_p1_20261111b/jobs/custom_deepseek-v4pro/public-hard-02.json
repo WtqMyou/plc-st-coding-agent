@@ -1,0 +1,200 @@
+{
+  "job_id": "custom_deepseek-v4pro/public-hard-02",
+  "pid": "public-hard-02",
+  "condition": "custom_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '`'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '`'"
+          },
+          {
+            "level": "error",
+            "line": 1,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '`'"
+          },
+          {
+            "level": "error",
+            "line": 116,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '`'"
+          },
+          {
+            "level": "error",
+            "line": 116,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '`'"
+          },
+          {
+            "level": "error",
+            "line": 116,
+            "code": "E_BAD_CHAR",
+            "message": "无法识别的字符 '`'"
+          },
+          {
+            "level": "error",
+            "line": 116,
+            "code": "E_MISSING_END_POU",
+            "message": "FUNCTION_BLOCK FlexibleProcessingControl 缺少结束关键字"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "711a67a00dfb05f303ffbc03a2d7e312e7d5533e527747d9bc2953ea3dffaa5e",
+          "task_json_sha256": "47f1f7f15b5a7b65c1a8755bbc127ad732785956ffffde888cf40e1ef5877196",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 1 行 [E_BAD_CHAR] 无法识别的字符 '`'\n第 1 行 [E_BAD_CHAR] 无法识别的字符 '`'\n第 1 行 [E_BAD_CHAR] 无法识别的字符 '`'\n第 116 行 [E_BAD_CHAR] 无法识别的字符 '`'\n第 116 行 [E_BAD_CHAR] 无法识别的字符 '`'\nLTL 检查：not_run。",
+      "idx": 0,
+      "code": "```structured text\nFUNCTION_BLOCK FlexibleProcessingControl\nVAR_INPUT\n    processLength : USINT;\n    sensor1 : BOOL;\n    sensor2 : BOOL;\n    sensor3 : BOOL;\n    sensor4 : BOOL;\n    sensor5 : BOOL;\n    station1Start : BOOL;\n    station2Complete : BOOL;\n    station3Complete : BOOL;\n    station4Complete : BOOL;\n    processSequence : ARRAY[1..8] OF USINT;\nEND_VAR\nVAR_OUTPUT\n    conveyorLeft : BOOL;\n    conveyorRight : BOOL;\nEND_VAR\nVAR\n    state : INT := 0;                    (* 0=idle, 1=moving, 2=wait_complete, 3=done *)\n    stepIndex : USINT := 1;              (* current position in processSequence *)\n    currentStation : USINT := 1;         (* station where product is currently located *)\n    targetStation : USINT := 5;          (* destination station for current movement *)\n\n    lastStation2Complete : BOOL := FALSE;\n    lastStation3Complete : BOOL := FALSE;\n    lastStation4Complete : BOOL := FALSE;\n\n    start2 : BOOL := FALSE;              (* rising edge of station2Complete *)\n    start3 : BOOL := FALSE;              (* rising edge of station3Complete *)\n    start4 : BOOL := FALSE;              (* rising edge of station4Complete *)\nEND_VAR\n\n(* ----- Edge detection for completion signals ----- *)\nstart2 := station2Complete AND NOT lastStation2Complete;\nstart3 := station3Complete AND NOT lastStation3Complete;\nstart4 := station4Complete AND NOT lastStation4Complete;\n\nlastStation2Complete := station2Complete;\nlastStation3Complete := station3Complete;\nlastStation4Complete := station4Complete;\n\n(* ----- Main control state machine ----- *)\nCASE state OF\n  0: (* IDLE: wait for start at station 1 *)\n    conveyorLeft := FALSE;\n    conveyorRight := FALSE;\n    IF sensor1 AND station1Start AND processLength >= 1 THEN\n        stepIndex := 1;\n        currentStation := 1;\n        state := 1;  (* start moving *)\n    END_IF;\n\n  1: (* MOVING: move product from current station to target station *)\n    IF stepIndex <= processLength THEN\n        targetStation := processSequence[stepIndex];\n\n        (* Set conveyor direction *)\n        IF targetStation > currentStation THEN\n            conveyorRight := TRUE;\n            conveyorLeft := FALSE;\n        ELSIF targetStation < currentStation THEN\n            conveyorLeft := TRUE;\n            conveyorRight := FALSE;\n        ELSE\n            conveyorLeft := FALSE;\n            conveyorRight := FALSE;\n        END_IF;\n\n        (* Check arrival at target station *)\n        IF (targetStation = 2 AND sensor2) OR\n           (targetStation = 3 AND sensor3) OR\n           (targetStation = 4 AND sensor4) OR\n           (targetStation = 5 AND sensor5) THEN\n            conveyorLeft := FALSE;\n            conveyorRight := FALSE;\n            currentStation := targetStation;\n\n            IF targetStation = 5 THEN\n                state := 3;  (* product delivered to output station 5 *)\n            ELSE\n                state := 2;  (* wait for processing completion *)\n            END_IF;\n        END_IF;\n    ELSE\n        conveyorLeft := FALSE;\n        conveyorRight := FALSE;\n        state := 3;  (* invalid sequence length, stop *)\n    END_IF;\n\n  2: (* WAIT_COMPLETION: wait for processing completion signal at current station *)\n    conveyorLeft := FALSE;\n    conveyorRight := FALSE;\n\n    IF currentStation = 2 AND start2 THEN\n        stepIndex := stepIndex + 1;\n        state := 1;\n    ELSIF currentStation = 3 AND start3 THEN\n        stepIndex := stepIndex + 1;\n        state := 1;\n    ELSIF currentStation = 4 AND start4 THEN\n        stepIndex := stepIndex + 1;\n        state := 1;\n    END_IF;\n\n  3: (* DONE: product delivered to station 5, waiting for next cycle *)\n    conveyorLeft := FALSE;\n    conveyorRight := FALSE;\n\n    (* Reset for next product when start button is released and sensor1 is clear *)\n    IF NOT sensor1 AND NOT station1Start THEN\n        state := 0;\n    END_IF;\nEND_CASE;\n```",
+      "code_hash": "711a67a00dfb05f303ffbc03a2d7e312e7d5533e527747d9bc2953ea3dffaa5e",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 709,
+      "completion_tokens": 8412,
+      "cost_cny": 0.18446895,
+      "latency_s": 118.0,
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 114,
+            "code": "E_MISSING_END_POU",
+            "message": "FUNCTION_BLOCK FlexibleProcessingControl 缺少结束关键字"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "dc0d7781f5a0a58976dab4cafb6bee600857f28b7dc7a980e647d722a97df77b",
+          "task_json_sha256": "47f1f7f15b5a7b65c1a8755bbc127ad732785956ffffde888cf40e1ef5877196",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 114 行 [E_MISSING_END_POU] FUNCTION_BLOCK FlexibleProcessingControl 缺少结束关键字\n第 0 行 [E_NO_POU] 未找到可执行 POU\nLTL 检查：not_run。",
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FlexibleProcessingControl\nVAR_INPUT\n    processLength : USINT;\n    sensor1 : BOOL;\n    sensor2 : BOOL;\n    sensor3 : BOOL;\n    sensor4 : BOOL;\n    sensor5 : BOOL;\n    station1Start : BOOL;\n    station2Complete : BOOL;\n    station3Complete : BOOL;\n    station4Complete : BOOL;\n    processSequence : ARRAY[1..8] OF USINT;\nEND_VAR\nVAR_OUTPUT\n    conveyorLeft : BOOL;\n    conveyorRight : BOOL;\nEND_VAR\nVAR\n    state : INT := 0;                    (* 0=idle, 1=moving, 2=wait_complete, 3=done *)\n    stepIndex : USINT := 1;              (* current position in processSequence *)\n    currentStation : USINT := 1;         (* station where product is currently located *)\n    targetStation : USINT := 5;          (* destination station for current movement *)\n\n    lastStation2Complete : BOOL := FALSE;\n    lastStation3Complete : BOOL := FALSE;\n    lastStation4Complete : BOOL := FALSE;\n\n    start2 : BOOL := FALSE;              (* rising edge of station2Complete *)\n    start3 : BOOL := FALSE;              (* rising edge of station3Complete *)\n    start4 : BOOL := FALSE;              (* rising edge of station4Complete *)\nEND_VAR\n\n(* ----- Edge detection for completion signals ----- *)\nstart2 := station2Complete AND NOT lastStation2Complete;\nstart3 := station3Complete AND NOT lastStation3Complete;\nstart4 := station4Complete AND NOT lastStation4Complete;\n\nlastStation2Complete := station2Complete;\nlastStation3Complete := station3Complete;\nlastStation4Complete := station4Complete;\n\n(* ----- Main control state machine ----- *)\nCASE state OF\n  0: (* IDLE: wait for start at station 1 *)\n    conveyorLeft := FALSE;\n    conveyorRight := FALSE;\n    IF sensor1 AND station1Start AND processLength >= 1 THEN\n        stepIndex := 1;\n        currentStation := 1;\n        state := 1;  (* start moving *)\n    END_IF;\n\n  1: (* MOVING: move product from current station to target station *)\n    IF stepIndex <= processLength THEN\n        targetStation := processSequence[stepIndex];\n\n        (* Set conveyor direction *)\n        IF targetStation > currentStation THEN\n            conveyorRight := TRUE;\n            conveyorLeft := FALSE;\n        ELSIF targetStation < currentStation THEN\n            conveyorLeft := TRUE;\n            conveyorRight := FALSE;\n        ELSE\n            conveyorLeft := FALSE;\n            conveyorRight := FALSE;\n        END_IF;\n\n        (* Check arrival at target station *)\n        IF (targetStation = 2 AND sensor2) OR\n           (targetStation = 3 AND sensor3) OR\n           (targetStation = 4 AND sensor4) OR\n           (targetStation = 5 AND sensor5) THEN\n            conveyorLeft := FALSE;\n            conveyorRight := FALSE;\n            currentStation := targetStation;\n\n            IF targetStation = 5 THEN\n                state := 3;  (* product delivered to output station 5 *)\n            ELSE\n                state := 2;  (* wait for processing completion *)\n            END_IF;\n        END_IF;\n    ELSE\n        conveyorLeft := FALSE;\n        conveyorRight := FALSE;\n        state := 3;  (* invalid sequence length, stop *)\n    END_IF;\n\n  2: (* WAIT_COMPLETION: wait for processing completion signal at current station *)\n    conveyorLeft := FALSE;\n    conveyorRight := FALSE;\n\n    IF currentStation = 2 AND start2 THEN\n        stepIndex := stepIndex + 1;\n        state := 1;\n    ELSIF currentStation = 3 AND start3 THEN\n        stepIndex := stepIndex + 1;\n        state := 1;\n    ELSIF currentStation = 4 AND start4 THEN\n        stepIndex := stepIndex + 1;\n        state := 1;\n    END_IF;\n\n  3: (* DONE: product delivered to station 5, waiting for next cycle *)\n    conveyorLeft := FALSE;\n    conveyorRight := FALSE;\n\n    (* Reset for next product when start button is released and sensor1 is clear *)\n    IF NOT sensor1 AND NOT station1Start THEN\n        state := 0;\n    END_IF;\nEND_CASE;",
+      "code_hash": "dc0d7781f5a0a58976dab4cafb6bee600857f28b7dc7a980e647d722a97df77b",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 1783,
+      "completion_tokens": 2386,
+      "cost_cny": 0.06357051,
+      "latency_s": 32.188,
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 31,
+  "study_plan_sha256": "37d0bbf483d634f65b4ebb0012a1fd7ae9032462fbc920a1dd5300ca31d0a7e2",
+  "started_at": "2026-11-12T00:59:22.275423+08:00",
+  "wall_seconds": 150.219,
+  "finished_at": "2026-11-12T01:01:52.471297+08:00",
+  "credential_batch": "primary"
+}
