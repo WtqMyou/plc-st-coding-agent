@@ -1,0 +1,1 @@
+I'll inspect the workspace to see the expected file layout and any harness conventions.
