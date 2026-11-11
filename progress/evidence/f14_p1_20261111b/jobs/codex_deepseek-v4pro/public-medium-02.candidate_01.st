@@ -1,0 +1,1 @@
+I’ll check the workspace for any existing project context or expected naming before providing the ST.

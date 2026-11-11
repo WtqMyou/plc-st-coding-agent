@@ -1,0 +1,1 @@
+Let me inspect the workspace for any project files or expected implementation conventions before fixing the syntax.
