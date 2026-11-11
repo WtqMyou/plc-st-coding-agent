@@ -1,0 +1,1 @@
+Let me inspect the workspace to understand the exact checker/tooling constraints before rewriting the block.
