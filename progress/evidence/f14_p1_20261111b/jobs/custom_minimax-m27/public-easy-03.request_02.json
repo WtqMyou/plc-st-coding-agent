@@ -1,0 +1,25 @@
+{
+  "model": "MiniMax-M2.7",
+  "protocol": "chat",
+  "max_output_tokens": 16384,
+  "timeout_seconds": 420,
+  "parameters": {},
+  "messages": [
+    {
+      "role": "system",
+      "content": "Return one complete ST implementation. Follow the user requirements and interface exactly. Do not change task inputs or outputs."
+    },
+    {
+      "role": "user",
+      "content": "# Alarm Handling\n\n- **Difficulty:** Easy (easy)\n\n## Requirements\n\nIn industrial automation systems, monitoring the status of equipment is crucial. When equipment parameters exceed the normal range, the system needs to issue an alarm. To avoid frequent triggering of alarms due to minor fluctuations in parameters, an alarm management system with hysteresis function needs to be implemented.\nWhen Value is greater than hiLevel, trigger high alarm hiAlarm.\nWhen Value is less than hiLevel-hystWindow, exit high alarm hiAlarm.\nWhen Value is less than loLevel, trigger low alarm loAlarm.\nWhen Value is greater than loLevel+hystWindow, exit low alarm loAlarm.\nIf loLevel is greater than or equal to hiLevel, output error error=true, status=16#8001, and exit the program\nIf the hysteresis window value hystWindow is greater than or equal to the deviation range between hiLevel and loLevel, output error error=true, status=16#8002\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `Value` | `REAL` | Input value |\n| Input | `hiLevel` | `REAL` | High limit alarm value |\n| Input | `loLevel` | `REAL` | Low limit alarm value |\n| Input | `hystWindow` | `REAL` | Hysteresis window |\n| Output | `hiAlarm` | `BOOL` | High limit alarm |\n| Output | `loAlarm` | `BOOL` | Low limit alarm |\n| Output | `error` | `BOOL` | FALSE: No error occurred;<br>TRUE: Error occurred during execution of FB |\n| Output | `status` | `WORD` | Status code |"
+    },
+    {
+      "role": "assistant",
+      "content": "FUNCTION_BLOCK AlarmHyst\nVAR_INPUT\n    Value      : REAL;   (* Current measured value *)\n    hiLevel    : REAL;   (* High‑limit alarm threshold *)\n    loLevel    : REAL;   (* Low‑limit alarm threshold  *)\n    hystWindow : REAL;   (* Hysteresis window width    *)\nEND_VAR\n\nVAR_OUTPUT\n    hiAlarm : BOOL;   (* High‑limit alarm status *)\n    loAlarm : BOOL;   (* Low‑limit alarm status  *)\n    error   : BOOL;   (* FALSE = normal operation, TRUE = error detected *)\n    status  : WORD;   (* Status / error code (0 = OK) *)\nEND_VAR\n\n(* ---------------------------------------------------------------- *)\n(*  Error detection (must be performed before any alarm logic)      *)\n(* ---------------------------------------------------------------- *)\nIF loLevel >= hiLevel THEN\n    error   := TRUE;\n    status  := WORD#16#8001;           (* 16#8001 : loLevel not lower than hiLevel *)\n    hiAlarm := FALSE;\n    loAlarm := FALSE;\n    RETURN;                            (* leave the function block *)\nEND_IF\n\nIF hystWindow >= (hiLevel - loLevel) THEN\n    error   := TRUE;\n    status  := WORD#16#8002;           (* 16#8002 : hystWindow too large *)\n    hiAlarm := FALSE;\n    loAlarm := FALSE;\n    RETURN;\nEND_IF\n\n(* ---------------------------------------------------------------- *)\n(*  Normal operation – clear error flag and execute alarm logic     *)\n(* ---------------------------------------------------------------- *)\nerror  := FALSE;\nstatus := WORD#0;\n\n(* ----- High‑limit alarm with hysteresis ------------------------- *)\n(* Trigger:   Value > hiLevel                                       *)\n(* Clear:     Value < hiLevel - hystWindow                          *)\nIF Value > hiLevel THEN\n    hiAlarm := TRUE;\nELSIF Value < (hiLevel - hystWindow) THEN\n    hiAlarm := FALSE;\nEND_IF\n\n(* ----- Low‑limit alarm with hysteresis -------------------------- *)\n(* Trigger:   Value < loLevel                                       *)\n(* Clear:     Value > loLevel + hystWindow                          *)\nIF Value < loLevel THEN\n    loAlarm := TRUE;\nELSIF Value > (loLevel + hystWindow) THEN\n    loAlarm := FALSE;\nEND_IF\n\nEND_FUNCTION_BLOCK"
+    },
+    {
+      "role": "user",
+      "content": "自动测试：6/8。\n用例 tc-07，模式 sequence，行为不匹配，请检查 error, status。\n用例 tc-08，模式 sequence，行为不匹配，请检查 error, status。\nLTL 检查：not_run。\n修复并返回完整代码，保持题面接口。"
+    }
+  ]
+}
