@@ -1,0 +1,158 @@
+{
+  "job_id": "custom_minimax-m27/public-hard-01",
+  "pid": "public-hard-01",
+  "condition": "custom_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 29,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 29,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "945f85e90090860375700af8315df76436bda0107e1c25623c913be65c377637",
+          "task_json_sha256": "ddd5d9e65991f009c963bb0984d7ca10e3c847015e4e33b61e8a650585700027",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 0 行 [E_NO_POU] 未找到可执行 POU\nLTL 检查：not_run。",
+      "idx": 0,
+      "code": "(* Material Proportioning Process Control *)\n(* PLC Program in Structured Text (ST) *)\n\nTYPE ProcessState :\n    (\n        IDLE        := 0,\n        FILL_A      := 1,\n        FILL_B      := 2,\n        FILL_C      := 3,\n        MIXING      := 4,\n        DISCHARGE   := 5\n    );\nEND_TYPE\n\nVAR\n    (* Internal state variables *)\n    autoState         : ProcessState := IDLE;\n    prevAutoStart     : BOOL := FALSE;\n    prevValveAStart   : BOOL := FALSE;\n    prevValveBStart   : BOOL := FALSE;\n    prevValveCStart   : BOOL := FALSE;\n    prevValveDStart   : BOOL := FALSE;\n    prevMixMotorStart : BOOL := FALSE;\nEND_VAR\n\n(* Emergency Stop - Highest Priority *)\nIF NOT estop THEN\n    valveARun    := FALSE;\n    valveBRun    := FALSE;\n    valveCRun    := FALSE;\n    valveDRun    := FALSE;\n    mixMotorRun  := FALSE;\n    autoState    := IDLE;\n    RETURN;\nEND_IF\n\n(* Rising edge detection for buttons *)\nIF autoStart AND NOT prevAutoStart THEN\n    (* Rising edge detected for autoStart *)\nEND_IF\n\nIF valveAStart AND NOT prevValveAStart THEN\n    valveARun := NOT valveARun;\nEND_IF;\n\nIF valveBStart AND NOT prevValveBStart THEN\n    valveBRun := NOT valveBRun;\nEND_IF;\n\nIF valveCStart AND NOT prevValveCStart THEN\n    valveCRun := NOT valveCRun;\nEND_IF;\n\nIF valveDStart AND NOT prevValveDStart THEN\n    valveDRun := NOT valveDRun;\nEND_IF;\n\nIF mixMotorStart AND NOT prevMixMotorStart THEN\n    mixMotorRun := NOT mixMotorRun;\nEND_IF;\n\n(* Update previous button states *)\nprevAutoStart     := autoStart;\nprevValveAStart   := valveAStart;\nprevValveBStart   := valveBStart;\nprevValveCStart   := valveCStart;\nprevValveDStart   := valveDStart;\nprevMixMotorStart := mixMotorStart;\n\n(* Mode Selection *)\nIF opeMode THEN\n    (* ========== AUTOMATIC MODE ========== *)\n    \n    (* Initialize outputs to FALSE *)\n    valveARun   := FALSE;\n    valveBRun   := FALSE;\n    valveCRun   := FALSE;\n    valveDRun   := FALSE;\n    mixMotorRun := FALSE;\n    \n    (* Start automatic process on rising edge of autoStart *)\n    IF autoStart AND NOT prevAutoStart THEN\n        IF autoState = IDLE THEN\n            autoState := FILL_A;\n            valveARun := TRUE;\n        END_IF\n    END_IF\n    \n    (* State Machine - Sequential Control *)\n    IF autoState = FILL_A THEN\n        valveARun := TRUE;\n        (* When level reaches 50cm, close valve A and open valve B *)\n        IF levelSensor >= 50 THEN\n            autoState  := FILL_B;\n            valveARun  := FALSE;\n            valveBRun  := TRUE;\n        END_IF\n        \n    ELSIF autoState = FILL_B THEN\n        valveBRun := TRUE;\n        (* When level reaches 80cm, close valve B *)\n        IF levelSensor >= 80 THEN\n            valveBRun := FALSE;\n            \n            (* Check processMode for next step *)\n            IF NOT processMode THEN\n                (* processMode=false: Direct to mixing *)\n                autoState  := MIXING;\n                mixMotorRun := TRUE;\n            ELSE\n                (* processMode=true: Fill material C first *)\n                autoState := FILL_C;\n            END_IF\n        END_IF\n        \n    ELSIF autoState = FILL_C THEN\n        valveCRun := TRUE;\n        (* When level reaches 100cm, close valve C and start mixing *)\n        IF levelSensor >= 100 THEN\n            autoState  := MIXING;\n            valveCRun  := FALSE;\n            mixMotorRun := TRUE;\n        END_IF\n        \n    ELSIF autoState = MIXING THEN\n        mixMotorRun := TRUE;\n        (* When mixing complete signal received, stop motor *)\n        IF mixMotorComplete THEN\n            autoState  := DISCHARGE;\n            mixMotorRun := FALSE;\n        END_IF\n        \n    ELSIF autoState = DISCHARGE THEN\n        valveDRun := TRUE;\n        (* After discharge, return to idle - process complete *)\n        autoState := IDLE;\n        \n    END_IF\n    \nELSE\n    (* ========== MANUAL MODE ========== *)\n    (* In manual mode, automatic state machine is reset *)\n    autoState := IDLE;\n    \nEND_IF",
+      "code_hash": "945f85e90090860375700af8315df76436bda0107e1c25623c913be65c377637",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 775,
+      "completion_tokens": 3658,
+      "cost_cny": 0.025560213,
+      "latency_s": 62.796,
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 29,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 38,
+            "code": "E_BAD_STMT",
+            "message": "无法解析的语句，遇到 'IDLE'"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 29,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "ea5d03775d0974bb822c19fccc6e7d9dfbb257ce98f6c03d83fef00b06f75b0f",
+          "task_json_sha256": "ddd5d9e65991f009c963bb0984d7ca10e3c847015e4e33b61e8a650585700027",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 38 行 [E_BAD_STMT] 无法解析的语句，遇到 'IDLE'\n第 0 行 [E_NO_POU] 未找到可执行 POU\nLTL 检查：not_run。",
+      "idx": 1,
+      "code": "(* Material Proportioning Process Control *)\n(* PLC Program in Structured Text (ST) *)\n\nPROGRAM MaterialProportioning\nVAR_INPUT\n    estop           : BOOL;  (* Emergency Stop Signal: FALSE=Emergency stop triggered, TRUE=No emergency stop *)\n    opeMode         : BOOL;  (* Operation Mode: FALSE=Manual, TRUE=Automatic *)\n    valveAStart     : BOOL;  (* Valve A Start Button *)\n    valveBStart     : BOOL;  (* Valve B Start Button *)\n    valveCStart     : BOOL;  (* Valve C Start Button *)\n    valveDStart     : BOOL;  (* Valve D Start Button *)\n    mixMotorStart   : BOOL;  (* Mixing Motor Start Button *)\n    autoStart       : BOOL;  (* Automatic Start Button *)\n    processMode     : BOOL;  (* Process Mode *)\n    levelSensor     : INT;   (* Liquid Level Sensor (unit cm) *)\n    mixMotorComplete: BOOL;  (* Mixing Complete Signal *)\nEND_VAR\n\nVAR_OUTPUT\n    valveARun   : BOOL;  (* Valve A Run Command *)\n    valveBRun   : BOOL;  (* Valve B Run Command *)\n    valveCRun   : BOOL;  (* Valve C Run Command *)\n    valveDRun   : BOOL;  (* Valve D Run Command *)\n    mixMotorRun : BOOL;  (* Mixing Motor Run Command *)\nEND_VAR\n\nVAR\n    autoState         : INT := 0;\n    prevAutoStart     : BOOL := FALSE;\n    prevValveAStart   : BOOL := FALSE;\n    prevValveBStart   : BOOL := FALSE;\n    prevValveCStart   : BOOL := FALSE;\n    prevValveDStart   : BOOL := FALSE;\n    prevMixMotorStart : BOOL := FALSE;\nEND_VAR\n\n(* Constants for state machine *)\nCONST\n    IDLE      := 0;\n    FILL_A    := 1;\n    FILL_B    := 2;\n    FILL_C    := 3;\n    MIXING    := 4;\n    DISCHARGE := 5;\nEND_CONST\n\n(* Emergency Stop - Highest Priority *)\nIF NOT estop THEN\n    valveARun    := FALSE;\n    valveBRun    := FALSE;\n    valveCRun    := FALSE;\n    valveDRun    := FALSE;\n    mixMotorRun  := FALSE;\n    autoState    := IDLE;\n    prevAutoStart := FALSE;\n    prevValveAStart := FALSE;\n    prevValveBStart := FALSE;\n    prevValveCStart := FALSE;\n    prevValveDStart := FALSE;\n    prevMixMotorStart := FALSE;\n    RETURN;\nEND_IF\n\n(* Rising edge detection for manual mode buttons *)\nIF valveAStart AND NOT prevValveAStart THEN\n    valveARun := NOT valveARun;\nEND_IF\n\nIF valveBStart AND NOT prevValveBStart THEN\n    valveBRun := NOT valveBRun;\nEND_IF\n\nIF valveCStart AND NOT prevValveCStart THEN\n    valveCRun := NOT valveCRun;\nEND_IF\n\nIF valveDStart AND NOT prevValveDStart THEN\n    valveDRun := NOT valveDRun;\nEND_IF\n\nIF mixMotorStart AND NOT prevMixMotorStart THEN\n    mixMotorRun := NOT mixMotorRun;\nEND_IF\n\n(* Update previous button states *)\nprevValveAStart   := valveAStart;\nprevValveBStart   := valveBStart;\nprevValveCStart   := valveCStart;\nprevValveDStart   := valveDStart;\nprevMixMotorStart := mixMotorStart;\n\n(* Mode Selection *)\nIF opeMode THEN\n    (* ========== AUTOMATIC MODE ========== *)\n    \n    (* Initialize manual control outputs to FALSE *)\n    IF NOT prevValveAStart THEN valveARun := FALSE; END_IF\n    IF NOT prevValveBStart THEN valveBRun := FALSE; END_IF\n    IF NOT prevValveCStart THEN valveCRun := FALSE; END_IF\n    IF NOT prevValveDStart THEN valveDRun := FALSE; END_IF\n    IF NOT prevMixMotorStart THEN mixMotorRun := FALSE; END_IF\n    \n    (* Start automatic process on rising edge of autoStart *)\n    IF autoStart AND NOT prevAutoStart THEN\n        IF autoState = IDLE THEN\n            autoState := FILL_A;\n        END_IF\n    END_IF\n    prevAutoStart := autoStart;\n    \n    (* State Machine - Sequential Control *)\n    IF autoState = FILL_A THEN\n        valveARun := TRUE;\n        (* When level reaches 50cm, close valve A and open valve B *)\n        IF levelSensor >= 50 THEN\n            autoState := FILL_B;\n            valveARun := FALSE;\n            valveBRun := TRUE;\n        END_IF\n        \n    ELSIF autoState = FILL_B THEN\n        valveBRun := TRUE;\n        (* When level reaches 80cm, close valve B *)\n        IF levelSensor >= 80 THEN\n            valveBRun := FALSE;\n            \n            (* Check processMode for next step *)\n            IF NOT processMode THEN\n                (* processMode=false: Direct to mixing *)\n                autoState   := MIXING;\n                mixMotorRun := TRUE;\n            ELSE\n                (* processMode=true: Fill material C first *)\n                autoState := FILL_C;\n            END_IF\n        END_IF\n        \n    ELSIF autoState = FILL_C THEN\n        valveCRun := TRUE;\n        (* When level reaches 100cm, close valve C and start mixing *)\n        IF levelSensor >= 100 THEN\n            autoState   := MIXING;\n            valveCRun   := FALSE;\n            mixMotorRun := TRUE;\n        END_IF\n        \n    ELSIF autoState = MIXING THEN\n        mixMotorRun := TRUE;\n        (* When mixing complete signal received, stop motor *)\n        IF mixMotorComplete THEN\n            autoState   := DISCHARGE;\n            mixMotorRun := FALSE;\n        END_IF\n        \n    ELSIF autoState = DISCHARGE THEN\n        valveDRun := TRUE;\n        (* After discharge, return to idle - process complete *)\n        autoState := IDLE;\n    END_IF\n    \nELSE\n    (* ========== MANUAL MODE ========== *)\n    (* Reset automatic state when switching to manual *)\n    prevAutoStart := FALSE;\n    autoState := IDLE;\nEND_IF\n\nEND_PROGRAM",
+      "code_hash": "ea5d03775d0974bb822c19fccc6e7d9dfbb257ce98f6c03d83fef00b06f75b0f",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 1816,
+      "completion_tokens": 1495,
+      "cost_cny": 0.012933564,
+      "latency_s": 21.625,
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 29,
+  "study_plan_sha256": "37d0bbf483d634f65b4ebb0012a1fd7ae9032462fbc920a1dd5300ca31d0a7e2",
+  "started_at": "2026-11-12T00:52:29.888952+08:00",
+  "wall_seconds": 84.437,
+  "finished_at": "2026-11-12T00:53:54.315033+08:00",
+  "credential_batch": "primary"
+}
