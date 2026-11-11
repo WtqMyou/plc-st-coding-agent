@@ -1,0 +1,225 @@
+{
+  "job_id": "codex_minimax-m27/public-hard-06",
+  "pid": "public-hard-06",
+  "condition": "codex_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 49,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 62,
+            "code": "E_BAD_STMT",
+            "message": "无法解析的语句，遇到 'STATE_IDLE'"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 49,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "cac62e6c3ef8ad618632f4605945627263f8b5e7116d7dd42384c8004ebd6ded",
+          "task_json_sha256": "e5b15099a5275ab77e66de32282f1323fed5aa5a9d169e5a0a6123b1840c29fe",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 62 行 [E_BAD_STMT] 无法解析的语句，遇到 'STATE_IDLE'\n第 0 行 [E_NO_POU] 未找到可执行 POU\nLTL 检查：not_run。",
+      "idx": 0,
+      "code": "(* Production Line Control System *)\n(* 5 Workstations: Loading → Cleaning → Weighing → Firing → Finished Product *)\n\nPROGRAM ProductionLineControl\nVAR\n    (* Mode Selection *)\n    Mode AT %IX0.0 : BOOL;              (* 0=Manual, 1=Automatic *)\n    \n    (* Manual Mode Inputs *)\n    ForwardButton AT %IX0.1 : BOOL;     (* Forward rotation button *)\n    ReverseButton AT %IX0.2 : BOOL;     (* Reverse rotation button *)\n    \n    (* Automatic Mode - Sensors *)\n    SensorFeed AT %IX0.3 : BOOL;        (* Material loading station sensor *)\n    SensorWash AT %IX0.4 : BOOL;        (* Cleaning station sensor *)\n    SensorWeight AT %IX0.5 : BOOL;      (* Weighing station sensor *)\n    SensorFiring AT %IX0.6 : BOOL;      (* Firing station sensor *)\n    SensorOutput AT %IX0.7 : BOOL;      (* Finished product station sensor *)\n    \n    (* Process Completion Signals *)\n    washComplete AT %IX1.0 : BOOL;      (* Cleaning complete signal *)\n    weightComplete AT %IX1.1 : BOOL;    (* Weighing complete signal *)\n    firingComplete AT %IX1.2 : BOOL;    (* Firing complete signal *)\n    \n    (* Process Values *)\n    weight AT %ID2 : REAL;              (* Weight value (REAL type) *)\n    \n    (* Outputs *)\n    MotorForward AT %QX0.0 : BOOL;      (* Motor forward rotation *)\n    MotorReverse AT %QX0.1 : BOOL;      (* Motor reverse rotation *)\n    kick AT %QX0.2 : BOOL;              (* Rejection output *)\n    CompletionLight AT %QX0.3 : BOOL;   (* Completion indicator light *)\n    firingTemp AT %QD2 : REAL;          (* Firing temperature (REAL type) *)\n    \n    (* State Machine Variables *)\n    CurrentState : INT;\n    PreviousSensorFeed : BOOL;\n    PreviousSensorWash : BOOL;\n    PreviousSensorWeight : BOOL;\n    PreviousSensorFiring : BOOL;\n    PreviousSensorOutput : BOOL;\n    PreviousWashComplete : BOOL;\n    PreviousWeightComplete : BOOL;\n    PreviousFiringComplete : BOOL;\n    \n    (* Edge Detection Flags *)\n    SensorFeedEdge : BOOL;\n    SensorWashEdge : BOOL;\n    SensorWeightEdge : BOOL;\n    SensorFiringEdge : BOOL;\n    SensorOutputEdge : BOOL;\n    WashCompleteEdge : BOOL;\n    WeightCompleteEdge : BOOL;\n    FiringCompleteEdge : BOOL;\n    \n    (* Temporary Variables *)\n    weightValue : REAL;\n    tempCalc : REAL;\nEND_VAR\n\n(* Constants for States *)\nCONST\n    STATE_IDLE : INT := 0;\n    STATE_FEED_DETECTED : INT := 1;\n    STATE_WASH_WAIT : INT := 2;\n    STATE_WEIGHING_WAIT : INT := 3;\n    STATE_WEIGHT_CHECK : INT := 4;\n    STATE_FIRING_WAIT : INT := 5;\n    STATE_OUTPUT_WAIT : INT := 6;\nEND_CONST\n\n(* Main Control Logic *)\n(* -------------------------------------------------------- *)\n(* EDGE DETECTION FOR ALL SENSORS AND SIGNALS *)\nSensorFeedEdge := SensorFeed AND NOT PreviousSensorFeed;\nSensorWashEdge := SensorWash AND NOT PreviousSensorWash;\nSensorWeightEdge := SensorWeight AND NOT PreviousSensorWeight;\nSensorFiringEdge := SensorFiring AND NOT PreviousSensorFiring;\nSensorOutputEdge := SensorOutput AND NOT PreviousSensorOutput;\nWashCompleteEdge := washComplete AND NOT PreviousWashComplete;\nWeightCompleteEdge := weightComplete AND NOT PreviousWeightComplete;\nFiringCompleteEdge := firingComplete AND NOT PreviousFiringComplete;\n\n(* Update Previous States *)\nPreviousSensorFeed := SensorFeed;\nPreviousSensorWash := SensorWash;\nPreviousSensorWeight := SensorWeight;\nPreviousSensorFiring := SensorFiring;\nPreviousSensorOutput := SensorOutput;\nPreviousWashComplete := washComplete;\nPreviousWeightComplete := weightComplete;\nPreviousFiringComplete := firingComplete;\n\n(* -------------------------------------------------------- *)\n(* MANUAL MODE CONTROL *)\nIF Mode = FALSE THEN\n    (* Interlock: Forward and Reverse cannot be active simultaneously *)\n    MotorForward := ForwardButton AND NOT ReverseButton;\n    MotorReverse := ReverseButton AND NOT ForwardButton;\n    \n    (* Reset automatic mode outputs *)\n    kick := FALSE;\n    CompletionLight := FALSE;\n    firingTemp := 0.0;\n    \n    (* Reset state machine *)\n    CurrentState := STATE_IDLE;\nEND_IF\n\n(* -------------------------------------------------------- *)\n(* AUTOMATIC MODE CONTROL *)\nIF Mode = TRUE THEN\n    CASE CurrentState OF\n        \n        (* STATE_IDLE: Wait for material at loading station *)\n        STATE_IDLE:\n            MotorForward := FALSE;\n            MotorReverse := FALSE;\n            kick := FALSE;\n            CompletionLight := FALSE;\n            firingTemp := 0.0;\n            \n            (* Material detected at loading station *)\n            IF SensorFeedEdge THEN\n                CurrentState := STATE_FEED_DETECTED;\n            END_IF\n        \n        (* STATE_FEED_DETECTED: Material detected, start motor to move to cleaning *)\n        STATE_FEED_DETECTED:\n            MotorForward := TRUE;\n            MotorReverse := FALSE;\n            kick := FALSE;\n            CompletionLight := FALSE;\n            \n            (* Material reached cleaning station *)\n            IF SensorWashEdge THEN\n                MotorForward := FALSE;\n                CurrentState := STATE_WASH_WAIT;\n            END_IF\n        \n        (* STATE_WASH_WAIT: Material at cleaning station, wait for washComplete *)\n        STATE_WASH_WAIT:\n            MotorForward := FALSE;\n            MotorReverse := FALSE;\n            kick := FALSE;\n            CompletionLight := FALSE;\n            \n            (* Cleaning complete, move to weighing *)\n            IF WashCompleteEdge THEN\n                MotorForward := TRUE;\n                CurrentState := STATE_WEIGHING_WAIT;\n            END_IF\n        \n        (* STATE_WEIGHING_WAIT: Material at weighing station, wait for weightComplete *)\n        STATE_WEIGHING_WAIT:\n            MotorForward := FALSE;\n            MotorReverse := FALSE;\n            kick := FALSE;\n            CompletionLight := FALSE;\n            \n            (* Weighing complete, check weight *)\n            IF WeightCompleteEdge THEN\n                CurrentState := STATE_WEIGHT_CHECK;\n            END_IF\n        \n        (* STATE_WEIGHT_CHECK: Evaluate weight and determine qualification *)\n        STATE_WEIGHT_CHECK:\n            weightValue := weight;\n            \n            (* Check if weight is within qualified range [100, 200] *)\n            IF (weightValue >= 100.0) AND (weightValue <= 200.0) THEN\n                (* Qualified product - Calculate firing temperature *)\n                (* Linear mapping: weight 100→200 maps to temperature 500→550 *)\n                tempCalc := 500.0 + ((weightValue - 100.0) / 100.0) * 50.0;\n                firingTemp := tempCalc;\n                kick := FALSE;\n                \n                (* Move to firing station *)\n                MotorForward := TRUE;\n                MotorReverse := FALSE;\n                CurrentState := STATE_FIRING_WAIT;\n            ELSE\n                (* Unqualified product - Reject *)\n                kick := TRUE;\n                firingTemp := 0.0;\n                MotorForward := FALSE;\n                MotorReverse := FALSE;\n                \n                (* Return to idle after rejection *)\n                CurrentState := STATE_IDLE;\n            END_IF\n        \n        (* STATE_FIRING_WAIT: Product at firing station, wait for firingComplete *)\n        STATE_FIRING_WAIT:\n            kick := FALSE;\n            CompletionLight := FALSE;\n            \n            (* Keep firing temperature active during firing *)\n            IF firingTemp > 0.0 THEN\n                (* Firing in progress, maintain temperature output *)\n            END_IF;\n            \n            (* Firing complete, move to finished product station *)\n            IF FiringCompleteEdge THEN\n                MotorForward := TRUE;\n                MotorReverse := FALSE;\n                CurrentState := STATE_OUTPUT_WAIT;\n            END_IF\n        \n        (* STATE_OUTPUT_WAIT: Product at finished product station *)\n        STATE_OUTPUT_WAIT:\n            MotorForward := FALSE;\n            MotorReverse := FALSE;\n            kick := FALSE;\n            \n            (* Product detected at output - Turn on completion light *)\n            IF SensorOutput THEN\n                CompletionLight := TRUE;\n            ELSE\n                (* Product taken away - Turn off completion light *)\n                CompletionLight := FALSE;\n                CurrentState := STATE_IDLE;\n            END_IF\n        \n    END_CASE\nEND_IF\n\n(* -------------------------------------------------------- *)\n(* SAFETY: Emergency Stop Logic - Disable outputs if in error state *)\n(* (This can be extended based on additional safety requirements) *)\n\nEND_PROGRAM",
+      "code_hash": "cac62e6c3ef8ad618632f4605945627263f8b5e7116d7dd42384c8004ebd6ded",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 7366,
+      "completion_tokens": 2525,
+      "cost_cny": 0.028976094,
+      "latency_s": 49.609,
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 49,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 10,
+            "code": "E_DUP_DECL",
+            "message": "变量 'IX0' 重复声明"
+          },
+          {
+            "level": "error",
+            "line": 11,
+            "code": "E_DUP_DECL",
+            "message": "变量 'IX0' 重复声明"
+          },
+          {
+            "level": "error",
+            "line": 14,
+            "code": "E_DUP_DECL",
+            "message": "变量 'IX0' 重复声明"
+          },
+          {
+            "level": "error",
+            "line": 15,
+            "code": "E_DUP_DECL",
+            "message": "变量 'IX0' 重复声明"
+          },
+          {
+            "level": "error",
+            "line": 16,
+            "code": "E_DUP_DECL",
+            "message": "变量 'IX0' 重复声明"
+          },
+          {
+            "level": "error",
+            "line": 17,
+            "code": "E_DUP_DECL",
+            "message": "变量 'IX0' 重复声明"
+          },
+          {
+            "level": "error",
+            "line": 18,
+            "code": "E_DUP_DECL",
+            "message": "变量 'IX0' 重复声明"
+          },
+          {
+            "level": "error",
+            "line": 22,
+            "code": "E_DUP_DECL",
+            "message": "变量 'IX1' 重复声明"
+          },
+          {
+            "level": "error",
+            "line": 23,
+            "code": "E_DUP_DECL",
+            "message": "变量 'IX1' 重复声明"
+          },
+          {
+            "level": "error",
+            "line": 30,
+            "code": "E_DUP_DECL",
+            "message": "变量 'QX0' 重复声明"
+          },
+          {
+            "level": "error",
+            "line": 31,
+            "code": "E_DUP_DECL",
+            "message": "变量 'QX0' 重复声明"
+          },
+          {
+            "level": "error",
+            "line": 32,
+            "code": "E_DUP_DECL",
+            "message": "变量 'QX0' 重复声明"
+          }
+        ],
+        "tests_total": 49,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_DUP_DECL] 第10行 变量 'IX0' 重复声明; [E_DUP_DECL] 第11行 变量 'IX0' 重复声明; [E_DUP_DECL] 第14行 变量 'IX0' 重复声明",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "ee9686fd5541b0ef9f76b5f7c376291910840fadc22ac1a1dfdc6f35bf3b77cb",
+          "task_json_sha256": "e5b15099a5275ab77e66de32282f1323fed5aa5a9d169e5a0a6123b1840c29fe",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 10 行 [E_DUP_DECL] 变量 'IX0' 重复声明\n第 11 行 [E_DUP_DECL] 变量 'IX0' 重复声明\n第 14 行 [E_DUP_DECL] 变量 'IX0' 重复声明\n第 15 行 [E_DUP_DECL] 变量 'IX0' 重复声明\n第 16 行 [E_DUP_DECL] 变量 'IX0' 重复声明\nLTL 检查：not_run。",
+      "idx": 1,
+      "code": "(* Production Line Control System *)\n(* 5 Workstations: Loading → Cleaning → Weighing → Firing → Finished Product *)\n\nPROGRAM ProductionLineControl\nVAR\n    (* Mode Selection *)\n    Mode AT %IX0.0 : BOOL;              (* 0=Manual, 1=Automatic *)\n    \n    (* Manual Mode Inputs *)\n    ForwardButton AT %IX0.1 : BOOL;     (* Forward rotation button *)\n    ReverseButton AT %IX0.2 : BOOL;     (* Reverse rotation button *)\n    \n    (* Automatic Mode - Sensors *)\n    SensorFeed AT %IX0.3 : BOOL;        (* Material loading station sensor *)\n    SensorWash AT %IX0.4 : BOOL;        (* Cleaning station sensor *)\n    SensorWeight AT %IX0.5 : BOOL;      (* Weighing station sensor *)\n    SensorFiring AT %IX0.6 : BOOL;      (* Firing station sensor *)\n    SensorOutput AT %IX0.7 : BOOL;      (* Finished product station sensor *)\n    \n    (* Process Completion Signals *)\n    washComplete AT %IX1.0 : BOOL;      (* Cleaning complete signal *)\n    weightComplete AT %IX1.1 : BOOL;    (* Weighing complete signal *)\n    firingComplete AT %IX1.2 : BOOL;    (* Firing complete signal *)\n    \n    (* Process Values *)\n    weight AT %ID2 : REAL;              (* Weight value *)\n    \n    (* Outputs *)\n    MotorForward AT %QX0.0 : BOOL;      (* Motor forward rotation *)\n    MotorReverse AT %QX0.1 : BOOL;      (* Motor reverse rotation *)\n    kick AT %QX0.2 : BOOL;              (* Rejection output *)\n    CompletionLight AT %QX0.3 : BOOL;   (* Completion indicator light *)\n    firingTemp AT %QD2 : REAL;          (* Firing temperature *)\n    \n    (* State Machine Variables *)\n    CurrentState : INT;\n    PreviousSensorFeed : BOOL;\n    PreviousSensorWash : BOOL;\n    PreviousSensorWeight : BOOL;\n    PreviousSensorFiring : BOOL;\n    PreviousSensorOutput : BOOL;\n    PreviousWashComplete : BOOL;\n    PreviousWeightComplete : BOOL;\n    PreviousFiringComplete : BOOL;\n    \n    (* Edge Detection Flags *)\n    SensorFeedEdge : BOOL;\n    SensorWashEdge : BOOL;\n    SensorWeightEdge : BOOL;\n    SensorFiringEdge : BOOL;\n    SensorOutputEdge : BOOL;\n    WashCompleteEdge : BOOL;\n    WeightCompleteEdge : BOOL;\n    FiringCompleteEdge : BOOL;\n    \n    (* Temporary Variables *)\n    weightValue : REAL;\n    tempCalc : REAL;\nEND_VAR\n\n(* Constants for States *)\nVAR CONSTANT\n    STATE_IDLE : INT := 0;\n    STATE_FEED_DETECTED : INT := 1;\n    STATE_WASH_WAIT : INT := 2;\n    STATE_WEIGHING_WAIT : INT := 3;\n    STATE_WEIGHT_CHECK : INT := 4;\n    STATE_FIRING_WAIT : INT := 5;\n    STATE_OUTPUT_WAIT : INT := 6;\nEND_VAR\n\n(* EDGE DETECTION FOR ALL SENSORS AND SIGNALS *)\nSensorFeedEdge := SensorFeed AND NOT PreviousSensorFeed;\nSensorWashEdge := SensorWash AND NOT PreviousSensorWash;\nSensorWeightEdge := SensorWeight AND NOT PreviousSensorWeight;\nSensorFiringEdge := SensorFiring AND NOT PreviousSensorFiring;\nSensorOutputEdge := SensorOutput AND NOT PreviousSensorOutput;\nWashCompleteEdge := washComplete AND NOT PreviousWashComplete;\nWeightCompleteEdge := weightComplete AND NOT PreviousWeightComplete;\nFiringCompleteEdge := firingComplete AND NOT PreviousFiringComplete;\n\n(* Update Previous States *)\nPreviousSensorFeed := SensorFeed;\nPreviousSensorWash := SensorWash;\nPreviousSensorWeight := SensorWeight;\nPreviousSensorFiring := SensorFiring;\nPreviousSensorOutput := SensorOutput;\nPreviousWashComplete := washComplete;\nPreviousWeightComplete := weightComplete;\nPreviousFiringComplete := firingComplete;\n\n(* MANUAL MODE CONTROL *)\nIF Mode = FALSE THEN\n    (* Interlock: Forward and Reverse cannot be active simultaneously *)\n    MotorForward := ForwardButton AND NOT ReverseButton;\n    MotorReverse := ReverseButton AND NOT ForwardButton;\n    \n    (* Reset automatic mode outputs *)\n    kick := FALSE;\n    CompletionLight := FALSE;\n    firingTemp := 0.0;\n    \n    (* Reset state machine *)\n    CurrentState := STATE_IDLE;\nEND_IF\n\n(* AUTOMATIC MODE CONTROL *)\nIF Mode = TRUE THEN\n    CASE CurrentState OF\n        \n        (* STATE_IDLE: Wait for material at loading station *)\n        STATE_IDLE:\n            MotorForward := FALSE;\n            MotorReverse := FALSE;\n            kick := FALSE;\n            CompletionLight := FALSE;\n            firingTemp := 0.0;\n            \n            (* Material detected at loading station *)\n            IF SensorFeedEdge THEN\n                CurrentState := STATE_FEED_DETECTED;\n            END_IF\n        \n        (* STATE_FEED_DETECTED: Material detected, start motor to move to cleaning *)\n        STATE_FEED_DETECTED:\n            MotorForward := TRUE;\n            MotorReverse := FALSE;\n            kick := FALSE;\n            CompletionLight := FALSE;\n            \n            (* Material reached cleaning station *)\n            IF SensorWashEdge THEN\n                MotorForward := FALSE;\n                CurrentState := STATE_WASH_WAIT;\n            END_IF\n        \n        (* STATE_WASH_WAIT: Material at cleaning station, wait for washComplete *)\n        STATE_WASH_WAIT:\n            MotorForward := FALSE;\n            MotorReverse := FALSE;\n            kick := FALSE;\n            CompletionLight := FALSE;\n            \n            (* Cleaning complete, move to weighing *)\n            IF WashCompleteEdge THEN\n                MotorForward := TRUE;\n                CurrentState := STATE_WEIGHING_WAIT;\n            END_IF\n        \n        (* STATE_WEIGHING_WAIT: Material at weighing station, wait for weightComplete *)\n        STATE_WEIGHING_WAIT:\n            MotorForward := FALSE;\n            MotorReverse := FALSE;\n            kick := FALSE;\n            CompletionLight := FALSE;\n            \n            (* Weighing complete, check weight *)\n            IF WeightCompleteEdge THEN\n                CurrentState := STATE_WEIGHT_CHECK;\n            END_IF\n        \n        (* STATE_WEIGHT_CHECK: Evaluate weight and determine qualification *)\n        STATE_WEIGHT_CHECK:\n            weightValue := weight;\n            \n            (* Check if weight is within qualified range [100, 200] *)\n            IF (weightValue >= 100.0) AND (weightValue <= 200.0) THEN\n                (* Qualified product - Calculate firing temperature *)\n                (* Linear mapping: weight 100→200 maps to temperature 500→550 *)\n                tempCalc := 500.0 + ((weightValue - 100.0) / 100.0) * 50.0;\n                firingTemp := tempCalc;\n                kick := FALSE;\n                \n                (* Move to firing station *)\n                MotorForward := TRUE;\n                MotorReverse := FALSE;\n                CurrentState := STATE_FIRING_WAIT;\n            ELSE\n                (* Unqualified product - Reject *)\n                kick := TRUE;\n                firingTemp := 0.0;\n                MotorForward := FALSE;\n                MotorReverse := FALSE;\n                \n                (* Return to idle after rejection *)\n                CurrentState := STATE_IDLE;\n            END_IF\n        \n        (* STATE_FIRING_WAIT: Product at firing station, wait for firingComplete *)\n        STATE_FIRING_WAIT:\n            kick := FALSE;\n            CompletionLight := FALSE;\n            \n            (* Firing complete, move to finished product station *)\n            IF FiringCompleteEdge THEN\n                MotorForward := TRUE;\n                MotorReverse := FALSE;\n                CurrentState := STATE_OUTPUT_WAIT;\n            END_IF\n        \n        (* STATE_OUTPUT_WAIT: Product at finished product station *)\n        STATE_OUTPUT_WAIT:\n            MotorForward := FALSE;\n            MotorReverse := FALSE;\n            kick := FALSE;\n            \n            (* Product detected at output - Turn on completion light *)\n            IF SensorOutput THEN\n                CompletionLight := TRUE;\n            ELSE\n                (* Product taken away - Turn off completion light *)\n                CompletionLight := FALSE;\n                CurrentState := STATE_IDLE;\n            END_IF\n        \n    END_CASE\nEND_IF\n\nEND_PROGRAM",
+      "code_hash": "ee9686fd5541b0ef9f76b5f7c376291910840fadc22ac1a1dfdc6f35bf3b77cb",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 9166,
+      "completion_tokens": 1850,
+      "cost_cny": 0.027482994,
+      "latency_s": 37.782,
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 49,
+  "study_plan_sha256": "37d0bbf483d634f65b4ebb0012a1fd7ae9032462fbc920a1dd5300ca31d0a7e2",
+  "started_at": "2026-11-12T01:37:26.656818+08:00",
+  "wall_seconds": 87.937,
+  "finished_at": "2026-11-12T01:38:54.580535+08:00",
+  "credential_batch": "primary"
+}
