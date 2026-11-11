@@ -1,0 +1,25 @@
+{
+  "model": "MiniMax-M2.7",
+  "protocol": "chat",
+  "max_output_tokens": 16384,
+  "timeout_seconds": 420,
+  "parameters": {},
+  "messages": [
+    {
+      "role": "system",
+      "content": "Return one complete ST implementation. Follow the user requirements and interface exactly. Do not change task inputs or outputs."
+    },
+    {
+      "role": "user",
+      "content": "# Aeration Blower Delayed Start\n\n- **Difficulty:** Easy (easy)\n\n## Requirements\n\nControl a wastewater-treatment aeration blower with a low-dissolved-oxygen demand, a 5-second start delay, emergency-stop priority and start-cycle counting.\n\n1. Start delay timing when both DO_LOW and AERATION_E_STOP_NC are TRUE. Allow BLOWER_RUN to become TRUE only after these conditions have remained satisfied for 5 seconds.\n2. If DO_LOW becomes FALSE or an emergency stop occurs, immediately disable BLOWER_RUN and reset the start timer, whether timing is incomplete or complete. A new demand must wait the full 5 seconds again.\n3. Increment AERATION_BLOWER_CYCLE_COUNT once on each FALSE-to-TRUE transition of BLOWER_RUN. Do not count repeatedly during continuous operation.\n4. At power-up, initialize the blower to OFF and the start count to zero. The start delay gates a BOOL enable; no continuous speed ramp is required.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `DO_LOW` | `BOOL` | Dissolved oxygen is below its threshold and aeration is needed. |\n| Input | `AERATION_E_STOP_NC` | `BOOL` | TRUE means the emergency stop is inactive; FALSE means it is active. |\n| Output | `BLOWER_RUN` | `BOOL` | Blower motor-contactor run command. |\n| Output | `AERATION_BLOWER_CYCLE_COUNT` | `UINT` | Count of actual blower starts. |"
+    },
+    {
+      "role": "assistant",
+      "content": "PROGRAM AerationBlowerControl\nVAR\n    // Inputs\n    DO_LOW                : BOOL;\n    AERATION_E_STOP_NC    : BOOL;\n    \n    // Outputs\n    BLOWER_RUN                    : BOOL;\n    AERATION_BLOWER_CYCLE_COUNT   : UINT := 0;\n    \n    // Internal variables\n    StartTimer        : TON;\n    BlowerRunPrev     : BOOL := FALSE;\nEND_VAR\n\n// ---------------------------------------------------------------------------\n// Start Delay Logic\n// ---------------------------------------------------------------------------\n// Conditions for starting: DO is low AND emergency stop is inactive\nIF DO_LOW AND AERATION_E_STOP_NC THEN\n    // Start the 5-second delay timer\n    StartTimer(IN := TRUE, PT := T#5S);\n    \n    // Enable blower only after timer completes\n    IF StartTimer.Q THEN\n        BLOWER_RUN := TRUE;\n    ELSE\n        BLOWER_RUN := FALSE;\n    END_IF;\nELSE\n    // Conditions not met - immediately disable blower\n    BLOWER_RUN := FALSE;\n    \n    // Reset the start timer (timer IN = FALSE)\n    StartTimer(IN := FALSE);\nEND_IF;\n\n// ---------------------------------------------------------------------------\n// Start Cycle Counting\n// Detect FALSE-to-TRUE transition of BLOWER_RUN\n// ---------------------------------------------------------------------------\nIF BLOWER_RUN AND NOT BlowerRunPrev THEN\n    AERATION_BLOWER_CYCLE_COUNT := AERATION_BLOWER_CYCLE_COUNT + 1;\nEND_IF;\n\n// Store previous state for edge detection\nBlowerRunPrev := BLOWER_RUN;\n\nEND_PROGRAM"
+    },
+    {
+      "role": "user",
+      "content": "静态检查或接口契约失败：\n第 1 行 [E_POU_KIND] POU 类型与题面不一致\n第 0 行 [E_INTERFACE] 缺少接口变量 aeration_blower_cycle_count\n第 0 行 [E_INTERFACE] 缺少接口变量 aeration_e_stop_nc\n第 0 行 [E_INTERFACE] 缺少接口变量 blower_run\n第 0 行 [E_INTERFACE] 缺少接口变量 do_low\nLTL 检查：not_run。\n修复并返回完整代码，保持题面接口。"
+    }
+  ]
+}
