@@ -1,0 +1,29 @@
+{
+  "model": "deepseek-v4-pro-0813",
+  "protocol": "responses",
+  "max_output_tokens": 16384,
+  "timeout_seconds": 420,
+  "parameters": {
+    "reasoning": {
+      "effort": "low"
+    }
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "Return one complete ST implementation. Follow the user requirements and interface exactly. Do not change task inputs or outputs."
+    },
+    {
+      "role": "user",
+      "content": "# Jam Pump Debouncing and Runtime Maintenance\n\n- **Difficulty:** Easy (easy)\n\n## Requirements\n\nControl a jam transfer pump on a food production line, including viscosity-signal debouncing, emergency-stop priority, runtime accumulation and a maintenance-due indication.\n\n1. Accept the viscosity condition only after VISCOSITY_OK has remained TRUE for DebounceTime. Invalidate the condition immediately when the input becomes FALSE.\n2. Allow VFD_RUN to be TRUE only when PASTE_E_STOP_NC is TRUE and the viscosity condition is valid. An emergency stop immediately disables the run output and clears any incomplete debounce timing.\n3. Accumulate PUMP_RUNTIME_ACC using the actual invocation interval CycleTime only while VFD_RUN is TRUE. Preserve the accumulated time while the pump is stopped.\n4. Set PUMP_MAINT_DUE when accumulated runtime reaches 500 hours. This indication is informational and must not affect pump operation or the safety permissive.\n5. At power-up, initialize the run output to OFF, accumulated runtime to zero and the maintenance indication to FALSE.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `VISCOSITY_OK` | `BOOL` | Raw signal indicating that viscosity is within the permitted range. |\n| Input | `PASTE_E_STOP_NC` | `BOOL` | Normally closed emergency-stop circuit; TRUE permits operation and FALSE means emergency stop. |\n| Input | `DebounceTime` | `TIME` | Required continuous valid duration for the viscosity signal; must be positive. |\n| Input | `CycleTime` | `TIME` | Actual elapsed interval represented by this invocation; must be positive. |\n| Output | `VFD_RUN` | `BOOL` | Pump variable-frequency-drive run command. |\n| Output | `PUMP_MAINT_DUE` | `BOOL` | Maintenance indication when accumulated runtime reaches 500 hours. |\n| Output | `PUMP_RUNTIME_ACC` | `LTIME` | Accumulated enabled runtime, using a long-duration time type. |"
+    },
+    {
+      "role": "assistant",
+      "content": "// Convert TIME inputs to LTIME for accumulation and comparison\nCycleTime_LTIME := TIME_TO_LTIME(CycleTime);\nDebounceTime_LTIME := TIME_TO_LTIME(DebounceTime);\n\n// Viscosity debouncing\nIF NOT VISCOSITY_OK THEN\n    // Invalidate immediately on false\n    ViscosityValid := FALSE;\n    DebounceTimer := LTIME#0s;\nELSIF NOT ViscosityValid THEN\n    // Only accumulate debounce time when emergency stop is not active\n    IF PASTE_E_STOP_NC THEN\n        DebounceTimer := DebounceTimer + CycleTime_LTIME;\n    ELSE\n        // Emergency stop clears any incomplete debounce timing\n        DebounceTimer := LTIME#0s;\n    END_IF;\n\n    // Check if debounce time has been reached\n    IF DebounceTimer >= DebounceTime_LTIME THEN\n        ViscosityValid := TRUE;\n        DebounceTimer := DebounceTime_LTIME; // Clamp to avoid overflow\n    END_IF;\nEND_IF;\n\n// Emergency stop priority: run output only when e-stop closed and viscosity valid\nIF PASTE_E_STOP_NC AND ViscosityValid THEN\n    VFD_RUN := TRUE;\nELSE\n    VFD_RUN := FALSE;\nEND_IF;\n\n// Accumulate runtime only while pump is running\nIF VFD_RUN THEN\n    PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + CycleTime_LTIME;\nEND_IF;\n\n// Maintenance due latching at 500 hours\nIF NOT PUMP_MAINT_DUE AND (PUMP_RUNTIME_ACC >= LTIME#500h) THEN\n    PUMP_MAINT_DUE := TRUE;\nEND_IF;"
+    },
+    {
+      "role": "user",
+      "content": "静态检查或接口契约失败：\n第 0 行 [E_NO_POU] 未找到可执行 POU\nLTL 检查：not_run。\n修复并返回完整代码，保持题面接口。"
+    }
+  ]
+}
