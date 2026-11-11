@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794415801,
+    "id": "resp_021794415800430b861f1fcfc882386aa10fd65118951b561fc0d",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179441580129100000000000000000000ffffac15e50efe0484",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need to respond with a complete ST implementation. The error says missing END_PROGRAM and no POU found. Our previous code had PROGRAM ... but no END_PROGRAM at the end. We need to add END_PROGRAM. Also ensure that all variables are declared properly. In our code we used VAR_INPUT, VAR_OUTPUT, VAR, but didn't end with END_VAR? We used \"END_VAR\" for inputs, outputs, and internal variables? Actually checking: we started with VAR_INPUT ... END_VAR, then VAR_OUTPUT ... END_VAR, then VAR ... END_VAR. That is fine. Then we have the logic, but we need to close the program with END_PROGRAM. So we'll add that at the end. Also ensure that we don't have any syntax errors like missing semicolons or wrong variable names. The code seems fine except missing END_PROGRAM. So we will output the complete code with END_PROGRAM.\n\nWe also need to make sure we include everything exactly as before, with the addition of END_PROGRAM at the end.\n\nLet's rewrite the code with proper formatting and include END_PROGRAM. Also note that in ST, comments can be (* ... *). We'll keep them.\n\nWe should also consider that the user expects the code to pass static checks, so we need to ensure that the code is syntactically valid. The issue was missing END_PROGRAM. So fix that."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nPROGRAM MaterialProportioningControl\nVAR_INPUT\n    estop : BOOL;\n    opeMode : BOOL;\n    valveAStart : BOOL;\n    valveBStart : BOOL;\n    valveCStart : BOOL;\n    valveDStart : BOOL;\n    mixMotorStart : BOOL;\n    autoStart : BOOL;\n    processMode : BOOL;\n    levelSensor : INT;\n    mixMotorComplete : BOOL;\nEND_VAR\nVAR_OUTPUT\n    valveARun : BOOL;\n    valveBRun : BOOL;\n    valveCRun : BOOL;\n    valveDRun : BOOL;\n    mixMotorRun : BOOL;\nEND_VAR\nVAR\n    (* Previous states for edge detection *)\n    prevValveAStart : BOOL;\n    prevValveBStart : BOOL;\n    prevValveCStart : BOOL;\n    prevValveDStart : BOOL;\n    prevMixMotorStart : BOOL;\n    prevAutoStart : BOOL;\n    prevMixMotorComplete : BOOL;\n\n    (* Rising edge flags *)\n    valveAStartRise : BOOL;\n    valveBStartRise : BOOL;\n    valveCStartRise : BOOL;\n    valveDStartRise : BOOL;\n    mixMotorStartRise : BOOL;\n    autoStartRise : BOOL;\n    mixMotorCompleteRise : BOOL;\n\n    (* Automatic process state *)\n    autoState : INT := 0;\n    (* 0  - idle\n       10 - filling A\n       20 - filling B\n       30 - filling C (only when processMode = TRUE)\n       40 - mixing\n       50 - discharging / process complete *)\nEND_VAR\n\n(* --- Edge detection --- *)\nvalveAStartRise := valveAStart AND NOT prevValveAStart;\nvalveBStartRise := valveBStart AND NOT prevValveBStart;\nvalveCStartRise := valveCStart AND NOT prevValveCStart;\nvalveDStartRise := valveDStart AND NOT prevValveDStart;\nmixMotorStartRise := mixMotorStart AND NOT prevMixMotorStart;\nautoStartRise := autoStart AND NOT prevAutoStart;\nmixMotorCompleteRise := mixMotorComplete AND NOT prevMixMotorComplete;\n\n(* --- Emergency stop: stop everything immediately --- *)\nIF NOT estop THEN\n    valveARun := FALSE;\n    valveBRun := FALSE;\n    valveCRun := FALSE;\n    valveDRun := FALSE;\n    mixMotorRun := FALSE;\n    autoState := 0;\n\n(* --- Manual mode --- *)\nELSIF NOT opeMode THEN\n    autoState := 0;\n\n    IF valveAStartRise THEN\n        valveARun := NOT valveARun;\n    END_IF;\n\n    IF valveBStartRise THEN\n        valveBRun := NOT valveBRun;\n    END_IF;\n\n    IF valveCStartRise THEN\n        valveCRun := NOT valveCRun;\n    END_IF;\n\n    IF valveDStartRise THEN\n        valveDRun := NOT valveDRun;\n    END_IF;\n\n    IF mixMotorStartRise THEN\n        mixMotorRun := NOT mixMotorRun;\n    END_IF;\n\n(* --- Automatic mode --- *)\nELSE\n    (* Default all outputs off; the active state will turn on what is needed *)\n    valveARun := FALSE;\n    valveBRun := FALSE;\n    valveCRun := FALSE;\n    valveDRun := FALSE;\n    mixMotorRun := FALSE;\n\n    (* Start a new automatic process from idle or done state *)\n    IF autoStartRise AND (autoState = 0 OR autoState = 50) THEN\n        autoState := 10;\n    END_IF;\n\n    CASE autoState OF\n        10: (* Filling with material A *)\n            valveARun := TRUE;\n            IF levelSensor >= 50 THEN\n                autoState := 20;\n            END_IF;\n\n        20: (* Filling with material B *)\n            valveBRun := TRUE;\n            IF levelSensor >= 80 THEN\n                IF processMode THEN\n                    autoState := 30;\n                ELSE\n                    autoState := 40;\n                END_IF;\n            END_IF;\n\n        30: (* Filling with material C, only processMode = TRUE *)\n            valveCRun := TRUE;\n            IF levelSensor >= 100 THEN\n                autoState := 40;\n            END_IF;\n\n        40: (* Mixing *)\n            mixMotorRun := TRUE;\n            IF mixMotorCompleteRise THEN\n                mixMotorRun := FALSE;\n                autoState := 50;\n            END_IF;\n\n        50: (* Discharge through valve D, process complete *)\n            valveDRun := TRUE;\n    END_CASE;\nEND_IF;\n\n(* --- Store current states for next scan --- *)\nprevValveAStart := valveAStart;\nprevValveBStart := valveBStart;\nprevValveCStart := valveCStart;\nprevValveDStart := valveDStart;\nprevMixMotorStart := mixMotorStart;\nprevAutoStart := autoStart;\nprevMixMotorComplete := mixMotorComplete;\n\nEND_PROGRAM\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179441580477400000000000000000000ffffac15e50e6c8bf8",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 1932,
+      "output_tokens": 1390,
+      "total_tokens": 3322,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 295
+      },
+      "cost": "¥0.021692"
+    }
+  }
+}

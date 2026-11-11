@@ -1,0 +1,158 @@
+{
+  "job_id": "custom_deepseek-v4pro/public-hard-01",
+  "pid": "public-hard-01",
+  "condition": "custom_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 29,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 149,
+            "code": "E_MISSING_END_POU",
+            "message": "PROGRAM MaterialProportioningControl 缺少结束关键字"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 29,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "9620dc7f0985ec495724851554d5c671c61424110380c0854fd7b288704748cc",
+          "task_json_sha256": "ddd5d9e65991f009c963bb0984d7ca10e3c847015e4e33b61e8a650585700027",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 149 行 [E_MISSING_END_POU] PROGRAM MaterialProportioningControl 缺少结束关键字\n第 0 行 [E_NO_POU] 未找到可执行 POU\nLTL 检查：not_run。",
+      "idx": 0,
+      "code": "PROGRAM MaterialProportioningControl\nVAR_INPUT\n    estop : BOOL;\n    opeMode : BOOL;\n    valveAStart : BOOL;\n    valveBStart : BOOL;\n    valveCStart : BOOL;\n    valveDStart : BOOL;\n    mixMotorStart : BOOL;\n    autoStart : BOOL;\n    processMode : BOOL;\n    levelSensor : INT;\n    mixMotorComplete : BOOL;\nEND_VAR\nVAR_OUTPUT\n    valveARun : BOOL;\n    valveBRun : BOOL;\n    valveCRun : BOOL;\n    valveDRun : BOOL;\n    mixMotorRun : BOOL;\nEND_VAR\nVAR\n    (* Previous states for edge detection *)\n    prevValveAStart : BOOL;\n    prevValveBStart : BOOL;\n    prevValveCStart : BOOL;\n    prevValveDStart : BOOL;\n    prevMixMotorStart : BOOL;\n    prevAutoStart : BOOL;\n    prevMixMotorComplete : BOOL;\n\n    (* Rising edge flags *)\n    valveAStartRise : BOOL;\n    valveBStartRise : BOOL;\n    valveCStartRise : BOOL;\n    valveDStartRise : BOOL;\n    mixMotorStartRise : BOOL;\n    autoStartRise : BOOL;\n    mixMotorCompleteRise : BOOL;\n\n    (* Automatic process state *)\n    autoState : INT := 0;\n    (* 0  - idle\n       10 - filling A\n       20 - filling B\n       30 - filling C (only when processMode = TRUE)\n       40 - mixing\n       50 - discharging / process complete *)\nEND_VAR\n\n(* --- Edge detection --- *)\nvalveAStartRise := valveAStart AND NOT prevValveAStart;\nvalveBStartRise := valveBStart AND NOT prevValveBStart;\nvalveCStartRise := valveCStart AND NOT prevValveCStart;\nvalveDStartRise := valveDStart AND NOT prevValveDStart;\nmixMotorStartRise := mixMotorStart AND NOT prevMixMotorStart;\nautoStartRise := autoStart AND NOT prevAutoStart;\nmixMotorCompleteRise := mixMotorComplete AND NOT prevMixMotorComplete;\n\n(* --- Emergency stop: stop everything immediately --- *)\nIF NOT estop THEN\n    valveARun := FALSE;\n    valveBRun := FALSE;\n    valveCRun := FALSE;\n    valveDRun := FALSE;\n    mixMotorRun := FALSE;\n    autoState := 0;\n\n(* --- Manual mode --- *)\nELSIF NOT opeMode THEN\n    autoState := 0;\n\n    IF valveAStartRise THEN\n        valveARun := NOT valveARun;\n    END_IF;\n\n    IF valveBStartRise THEN\n        valveBRun := NOT valveBRun;\n    END_IF;\n\n    IF valveCStartRise THEN\n        valveCRun := NOT valveCRun;\n    END_IF;\n\n    IF valveDStartRise THEN\n        valveDRun := NOT valveDRun;\n    END_IF;\n\n    IF mixMotorStartRise THEN\n        mixMotorRun := NOT mixMotorRun;\n    END_IF;\n\n(* --- Automatic mode --- *)\nELSE\n    (* Default all outputs off; the active state will turn on what is needed *)\n    valveARun := FALSE;\n    valveBRun := FALSE;\n    valveCRun := FALSE;\n    valveDRun := FALSE;\n    mixMotorRun := FALSE;\n\n    (* Start a new automatic process from idle or done state *)\n    IF autoStartRise AND (autoState = 0 OR autoState = 50) THEN\n        autoState := 10;\n    END_IF;\n\n    CASE autoState OF\n        10: (* Filling with material A *)\n            valveARun := TRUE;\n            IF levelSensor >= 50 THEN\n                autoState := 20;\n            END_IF;\n\n        20: (* Filling with material B *)\n            valveBRun := TRUE;\n            IF levelSensor >= 80 THEN\n                IF processMode THEN\n                    autoState := 30;\n                ELSE\n                    autoState := 40;\n                END_IF;\n            END_IF;\n\n        30: (* Filling with material C, only processMode = TRUE *)\n            valveCRun := TRUE;\n            IF levelSensor >= 100 THEN\n                autoState := 40;\n            END_IF;\n\n        40: (* Mixing *)\n            mixMotorRun := TRUE;\n            IF mixMotorCompleteRise THEN\n                mixMotorRun := FALSE;\n                autoState := 50;\n            END_IF;\n\n        50: (* Discharge through valve D, process complete *)\n            valveDRun := TRUE;\n    END_CASE;\nEND_IF;\n\n(* --- Store current states for next scan --- *)\nprevValveAStart := valveAStart;\nprevValveBStart := valveBStart;\nprevValveCStart := valveCStart;\nprevValveDStart := valveDStart;\nprevMixMotorStart := mixMotorStart;\nprevAutoStart := autoStart;\nprevMixMotorComplete := mixMotorComplete;",
+      "code_hash": "9620dc7f0985ec495724851554d5c671c61424110380c0854fd7b288704748cc",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 771,
+      "completion_tokens": 16120,
+      "cost_cny": 0.34932141,
+      "latency_s": 200.875,
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 29,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_POU_KIND",
+            "line": 1,
+            "message": "POU 类型与题面不一致"
+          }
+        ],
+        "tests_total": 29,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "411d101d6dec8f9ff001505f6c5088aebccb24050906ca6d63ab44e8986a1fc5",
+          "task_json_sha256": "ddd5d9e65991f009c963bb0984d7ca10e3c847015e4e33b61e8a650585700027",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 1 行 [E_POU_KIND] POU 类型与题面不一致\nLTL 检查：not_run。",
+      "idx": 1,
+      "code": "PROGRAM MaterialProportioningControl\nVAR_INPUT\n    estop : BOOL;\n    opeMode : BOOL;\n    valveAStart : BOOL;\n    valveBStart : BOOL;\n    valveCStart : BOOL;\n    valveDStart : BOOL;\n    mixMotorStart : BOOL;\n    autoStart : BOOL;\n    processMode : BOOL;\n    levelSensor : INT;\n    mixMotorComplete : BOOL;\nEND_VAR\nVAR_OUTPUT\n    valveARun : BOOL;\n    valveBRun : BOOL;\n    valveCRun : BOOL;\n    valveDRun : BOOL;\n    mixMotorRun : BOOL;\nEND_VAR\nVAR\n    (* Previous states for edge detection *)\n    prevValveAStart : BOOL;\n    prevValveBStart : BOOL;\n    prevValveCStart : BOOL;\n    prevValveDStart : BOOL;\n    prevMixMotorStart : BOOL;\n    prevAutoStart : BOOL;\n    prevMixMotorComplete : BOOL;\n\n    (* Rising edge flags *)\n    valveAStartRise : BOOL;\n    valveBStartRise : BOOL;\n    valveCStartRise : BOOL;\n    valveDStartRise : BOOL;\n    mixMotorStartRise : BOOL;\n    autoStartRise : BOOL;\n    mixMotorCompleteRise : BOOL;\n\n    (* Automatic process state *)\n    autoState : INT := 0;\n    (* 0  - idle\n       10 - filling A\n       20 - filling B\n       30 - filling C (only when processMode = TRUE)\n       40 - mixing\n       50 - discharging / process complete *)\nEND_VAR\n\n(* --- Edge detection --- *)\nvalveAStartRise := valveAStart AND NOT prevValveAStart;\nvalveBStartRise := valveBStart AND NOT prevValveBStart;\nvalveCStartRise := valveCStart AND NOT prevValveCStart;\nvalveDStartRise := valveDStart AND NOT prevValveDStart;\nmixMotorStartRise := mixMotorStart AND NOT prevMixMotorStart;\nautoStartRise := autoStart AND NOT prevAutoStart;\nmixMotorCompleteRise := mixMotorComplete AND NOT prevMixMotorComplete;\n\n(* --- Emergency stop: stop everything immediately --- *)\nIF NOT estop THEN\n    valveARun := FALSE;\n    valveBRun := FALSE;\n    valveCRun := FALSE;\n    valveDRun := FALSE;\n    mixMotorRun := FALSE;\n    autoState := 0;\n\n(* --- Manual mode --- *)\nELSIF NOT opeMode THEN\n    autoState := 0;\n\n    IF valveAStartRise THEN\n        valveARun := NOT valveARun;\n    END_IF;\n\n    IF valveBStartRise THEN\n        valveBRun := NOT valveBRun;\n    END_IF;\n\n    IF valveCStartRise THEN\n        valveCRun := NOT valveCRun;\n    END_IF;\n\n    IF valveDStartRise THEN\n        valveDRun := NOT valveDRun;\n    END_IF;\n\n    IF mixMotorStartRise THEN\n        mixMotorRun := NOT mixMotorRun;\n    END_IF;\n\n(* --- Automatic mode --- *)\nELSE\n    (* Default all outputs off; the active state will turn on what is needed *)\n    valveARun := FALSE;\n    valveBRun := FALSE;\n    valveCRun := FALSE;\n    valveDRun := FALSE;\n    mixMotorRun := FALSE;\n\n    (* Start a new automatic process from idle or done state *)\n    IF autoStartRise AND (autoState = 0 OR autoState = 50) THEN\n        autoState := 10;\n    END_IF;\n\n    CASE autoState OF\n        10: (* Filling with material A *)\n            valveARun := TRUE;\n            IF levelSensor >= 50 THEN\n                autoState := 20;\n            END_IF;\n\n        20: (* Filling with material B *)\n            valveBRun := TRUE;\n            IF levelSensor >= 80 THEN\n                IF processMode THEN\n                    autoState := 30;\n                ELSE\n                    autoState := 40;\n                END_IF;\n            END_IF;\n\n        30: (* Filling with material C, only processMode = TRUE *)\n            valveCRun := TRUE;\n            IF levelSensor >= 100 THEN\n                autoState := 40;\n            END_IF;\n\n        40: (* Mixing *)\n            mixMotorRun := TRUE;\n            IF mixMotorCompleteRise THEN\n                mixMotorRun := FALSE;\n                autoState := 50;\n            END_IF;\n\n        50: (* Discharge through valve D, process complete *)\n            valveDRun := TRUE;\n    END_CASE;\nEND_IF;\n\n(* --- Store current states for next scan --- *)\nprevValveAStart := valveAStart;\nprevValveBStart := valveBStart;\nprevValveCStart := valveCStart;\nprevValveDStart := valveDStart;\nprevMixMotorStart := mixMotorStart;\nprevAutoStart := autoStart;\nprevMixMotorComplete := mixMotorComplete;\n\nEND_PROGRAM",
+      "code_hash": "411d101d6dec8f9ff001505f6c5088aebccb24050906ca6d63ab44e8986a1fc5",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 1932,
+      "completion_tokens": 1390,
+      "cost_cny": 0.04338522,
+      "latency_s": 13.641,
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 29,
+  "study_plan_sha256": "37d0bbf483d634f65b4ebb0012a1fd7ae9032462fbc920a1dd5300ca31d0a7e2",
+  "started_at": "2026-11-12T00:46:38.604829+08:00",
+  "wall_seconds": 214.531,
+  "finished_at": "2026-11-12T00:50:13.125330+08:00",
+  "credential_batch": "primary"
+}
