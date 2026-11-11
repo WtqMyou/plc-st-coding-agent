@@ -1,0 +1,1 @@
+I’ll inspect the workspace for any existing templates or conventions before writing the ST block.
