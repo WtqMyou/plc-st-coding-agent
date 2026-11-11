@@ -1,0 +1,171 @@
+{
+  "job_id": "custom_deepseek-v4pro/public-hard-04",
+  "pid": "public-hard-04",
+  "condition": "custom_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 47,
+            "code": "E_BAD_EXPR",
+            "message": "表达式中意外的 '-'"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "aeba8d3d682645bbaaa0fa3e5b1865b3ca2779f8e5461beff310a508bac06714",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 47 行 [E_BAD_EXPR] 表达式中意外的 '-'\n第 0 行 [E_NO_POU] 未找到可执行 POU\nLTL 检查：not_run。",
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB_FIFO_Queue\nVAR_INPUT\n    enqueue   : BOOL;  (* Rising edge requests one enqueue *)\n    dequeue   : BOOL;  (* Rising edge requests one dequeue *)\n    reset     : BOOL;  (* TRUE resets queue to empty *)\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;  (* Current number of valid elements *)\n    status       : WORD;  (* Invocation status *)\nEND_VAR\nVAR_IN_OUT\n    item   : VARIANT;  (* Mutable scalar reference *)\n    buffer : VARIANT;  (* Reference to non-empty 1-D array *)\nEND_VAR\nVAR\n    initialized : BOOL := FALSE;\n\n    lastEnqueue : BOOL := FALSE;\n    lastDequeue : BOOL := FALSE;\n\n    enqueueRise : BOOL;\n    dequeueRise : BOOL;\n\n    head     : DINT := 0;\n    tail     : DINT := 0;\n    count    : DINT := 0;\n    capacity : DINT := 0;\n    \n    elementSize : DINT := 0;\n    pBuffer     : POINTER TO BYTE;\n    pItem       : POINTER TO BYTE;\n    infoValid   : BOOL;\nEND_VAR\n\n(*\n    This implementation assumes the availability of the following\n    runtime-library functions for VARIANT handling:\n\n      VariantGetInfo(variant, pValue, elementSize, arrayLength)\n      VariantSetElement(variant, index, value)\n      VariantGetElement(variant, index, value)\n\n    These functions are typically provided by the CODESYS/TwinCAT\n    VariantAccess or IecVarAccess library.\n*)\n\n-----------------------------------------------------------\n-- Initialisation: derive capacity and element type once\n-----------------------------------------------------------\nIF NOT initialized THEN\n    infoValid := VariantGetInfo(variant := buffer,\n                                pValue => pBuffer,\n                                elementSize => elementSize,\n                                arrayLength => capacity);\n\n    IF NOT infoValid THEN\n        capacity := 0;\n        elementSize := 0;\n    END_IF\n\n    head := 0;\n    tail := 0;\n    count := 0;\n\n    initialized := TRUE;\nEND_IF\n\n-----------------------------------------------------------\n-- Edge detection\n-----------------------------------------------------------\nenqueueRise := enqueue AND NOT lastEnqueue;\ndequeueRise := dequeue AND NOT lastDequeue;\n\nlastEnqueue := enqueue;\nlastDequeue := dequeue;\n\n-----------------------------------------------------------\n-- Main operation\n-----------------------------------------------------------\nIF reset THEN\n    (* Reset takes priority over enqueue and dequeue *)\n    head := 0;\n    tail := 0;\n    count := 0;\n    status := 16#0000;\n\nELSIF enqueueRise AND dequeueRise THEN\n    (* Caller must not request both at the same time. *)\n    (* Treat as no operation. *)\n    status := 16#0000;\n\nELSIF enqueueRise THEN\n    IF count < capacity THEN\n        (* Append item to tail *)\n        VariantSetElement(variant := buffer,\n                          index := tail,\n                          value := item);\n\n        tail := (tail + 1) MOD capacity;\n        count := count + 1;\n        status := 16#0000;\n    ELSE\n        (* Queue full: reject enqueue, leave queue unchanged *)\n        status := 16#8002;\n    END_IF\n\nELSIF dequeueRise THEN\n    IF count > 0 THEN\n        (* Remove front element and write it to item *)\n        VariantGetElement(variant := buffer,\n                          index := head,\n                          value := item);\n\n        head := (head + 1) MOD capacity;\n        count := count - 1;\n        status := 16#0000;\n    ELSE\n        (* Queue empty: reject dequeue, leave item unchanged *)\n        status := 16#8001;\n    END_IF\n\nELSE\n    (* Idle invocation – no error *)\n    status := 16#0000;\nEND_IF\n\n-----------------------------------------------------------\n-- Update output\n-----------------------------------------------------------\nelementCount := count;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "aeba8d3d682645bbaaa0fa3e5b1865b3ca2779f8e5461beff310a508bac06714",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 682,
+      "completion_tokens": 8270,
+      "cost_cny": 0.18124811999999996,
+      "latency_s": 115.14,
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 37,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'VariantGetInfo'"
+          },
+          {
+            "level": "error",
+            "line": 76,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'VariantSetElement'"
+          },
+          {
+            "level": "error",
+            "line": 91,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'VariantGetElement'"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_UNKNOWN_FUNC] 第37行 调用了未知函数/功能块 'VariantGetInfo'; [E_UNKNOWN_FUNC] 第76行 调用了未知函数/功能块 'VariantSetElement'; [E_UNKNOWN_FUNC] 第91行 调用了未知函数/功能块 'VariantGetElement'",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "14486ee0693cb5b841b024c55d5eb6ba8f6931aa2baff55e953e4a757f3f3903",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 37 行 [E_UNKNOWN_FUNC] 调用了未知函数/功能块 'VariantGetInfo'\n第 76 行 [E_UNKNOWN_FUNC] 调用了未知函数/功能块 'VariantSetElement'\n第 91 行 [E_UNKNOWN_FUNC] 调用了未知函数/功能块 'VariantGetElement'\nLTL 检查：not_run。",
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB_FIFO_Queue\nVAR_INPUT\n    enqueue   : BOOL;  (* Rising edge requests one enqueue *)\n    dequeue   : BOOL;  (* Rising edge requests one dequeue *)\n    reset     : BOOL;  (* TRUE resets queue to empty *)\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;  (* Current number of valid elements *)\n    status       : WORD;  (* Invocation status *)\nEND_VAR\nVAR_IN_OUT\n    item   : VARIANT;  (* Mutable scalar reference *)\n    buffer : VARIANT;  (* Reference to non-empty 1-D array *)\nEND_VAR\nVAR\n    initialized : BOOL := FALSE;\n\n    lastEnqueue : BOOL := FALSE;\n    lastDequeue : BOOL := FALSE;\n\n    enqueueRise : BOOL;\n    dequeueRise : BOOL;\n\n    head     : DINT := 0;\n    tail     : DINT := 0;\n    count    : DINT := 0;\n    capacity : DINT := 0;\n\n    elementSize : DINT := 0;\n    pBuffer     : POINTER TO BYTE;\n    pItem       : POINTER TO BYTE;\n    infoValid   : BOOL;\nEND_VAR\n\n(* Initialisation: derive capacity and element type once *)\nIF NOT initialized THEN\n    infoValid := VariantGetInfo(variant := buffer,\n                                pValue => pBuffer,\n                                elementSize => elementSize,\n                                arrayLength => capacity);\n\n    IF NOT infoValid THEN\n        capacity := 0;\n        elementSize := 0;\n    END_IF\n\n    head := 0;\n    tail := 0;\n    count := 0;\n\n    initialized := TRUE;\nEND_IF\n\n(* Edge detection *)\nenqueueRise := enqueue AND NOT lastEnqueue;\ndequeueRise := dequeue AND NOT lastDequeue;\n\nlastEnqueue := enqueue;\nlastDequeue := dequeue;\n\n(* Main operation *)\nIF reset THEN\n    (* Reset takes priority over enqueue and dequeue *)\n    head := 0;\n    tail := 0;\n    count := 0;\n    status := 16#0000;\n\nELSIF enqueueRise AND dequeueRise THEN\n    (* Caller must not request both at the same time - ignore both *)\n    status := 16#0000;\n\nELSIF enqueueRise THEN\n    IF count < capacity THEN\n        (* Append item to tail *)\n        VariantSetElement(variant := buffer,\n                          index := tail,\n                          value := item);\n\n        tail := (tail + 1) MOD capacity;\n        count := count + 1;\n        status := 16#0000;\n    ELSE\n        (* Queue full: reject enqueue, leave queue unchanged *)\n        status := 16#8002;\n    END_IF\n\nELSIF dequeueRise THEN\n    IF count > 0 THEN\n        (* Remove front element and write it to item *)\n        VariantGetElement(variant := buffer,\n                          index := head,\n                          value := item);\n\n        head := (head + 1) MOD capacity;\n        count := count - 1;\n        status := 16#0000;\n    ELSE\n        (* Queue empty: reject dequeue, leave item unchanged *)\n        status := 16#8001;\n    END_IF\n\nELSE\n    (* Idle invocation - no error *)\n    status := 16#0000;\nEND_IF\n\n(* Update output *)\nelementCount := count;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "14486ee0693cb5b841b024c55d5eb6ba8f6931aa2baff55e953e4a757f3f3903",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 1620,
+      "completion_tokens": 1706,
+      "cost_cny": 0.047907179999999994,
+      "latency_s": 22.297,
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 31,
+  "study_plan_sha256": "37d0bbf483d634f65b4ebb0012a1fd7ae9032462fbc920a1dd5300ca31d0a7e2",
+  "started_at": "2026-11-12T01:16:32.803807+08:00",
+  "wall_seconds": 137.453,
+  "finished_at": "2026-11-12T01:18:50.240003+08:00",
+  "credential_batch": "primary"
+}

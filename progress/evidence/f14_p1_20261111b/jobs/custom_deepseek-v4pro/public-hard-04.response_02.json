@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794417509,
+    "id": "resp_02179441750829193e048b1e87f4ca8485d3a0240faade739a98e",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179441750977900000000000000000000ffffac154b7a91faca",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need to fix the syntax error. The user reported \"第 47 行 [E_BAD_EXPR] 表达式中意外的 '-'\". The code has a line with a hyphen? Maybe there is a stray '-' from the comment dashes? Actually, the code uses dashes for comment spans, but that's not an error in ST? In Structured Text, comments are (* ... *), not dashes. So all those dashes forming \"----------\" are invalid syntax. The user likely copied from a format that used dashes as separators, and those dashes cause the error. The error at line 47 could be near the \"----\" or \"----\" section before \"Initialisation\". We need to remove all those dashes and use proper ST comments or nothing.\n\nAdditionally, we must ensure the code is valid ST and includes the necessary header. The user said \"修复并返回完整代码，保持题面接口。\" So we need to return complete code for the function block with the interface exactly as defined, with no syntax errors.\n\nWe should also consider the VARIANT access functions. In typical ST (CODESYS), VARIANT is handled with functions like `VariantGetInfo`, `VariantGetElement`, `VariantSetElement` from libraries. But we cannot assume library availability; however, the problem statement asks we implement it; we can use pseudo-functions but must be careful with syntax. To be safe, we'll define those as external functions, or we can use a more generic approach? We can just declare them as external functions if needed. But the problem didn't specify library. Usually in these coding problems, they expect the logic, and the platform provides those functions. We can keep calls as they are.\n\nBut we must remove the invalid dashes. Also, make sure the comment syntax is correct. Additionally, we need to check the code for other possible errors: DID we use `VariantGetInfo` with named arguments correctly? In CODESYS, function calls can use named parameters: `VariantGetInfo( variant := buffer, pValue => pBuffer, elementSize => elementSize, arrayLength => capacity );`. That seems acceptable. But need to ensure the function returns BOOL. Fine.\n\nAlso, the variable `infoValid` is BOOL, but we didn't declare it? Yes, declared BOOL.\n\nWe need to ensure that `capacity` is positive; if capacity=0, the modulo by capacity would cause division by zero. The problem states buffer is nonempty, so capacity > 0. We'll assume that.\n\nEdge detection: we set `enqueueRise` and `dequeueRise` using last values. That works.\n\nWe also need to consider that `head`, `tail`, `count` are DINT. When capacity is 0, modulo by 0 would error, but we guard by capacity>0. But in the conditional for enqueue, `IF count < capacity THEN` works. If capacity=0, count<0 false, goes to else, status full. That is okay because buffer is nonempty so capacity>0.\n\nNow, let's rewrite the code cleanly.\n\nWe'll remove all the dashes, correct any stray characters, and ensure proper ST syntax. Also, note that the function block name should be `FB_FIFO_Queue` as given. The interface definition matches exactly.\n\nAlso, the header comment: no problem. We'll return the complete code with proper ST comments.\n\nWe also need to define the VARIANT access functions? In many exam environments, they are predeclared; but if not, we could declare them as external functions with `{attribute 'extern'}` or similar, but that might be beyond scope. Since problem statement says \"Associate buffer with ...\" and uses VARIANT, it implies the runtime supports VARIANT operations. So we can just use the built-in functions like `VariantGetInfo`, etc. In CODESYS, they are part of `IecVarAccess` library. We can assume they exist.\n\nAlternatively, we could implement using POINTER and manual copy, but that would be more complex. We'll keep as is.\n\nThus, final answer is the code with no dashes. We'll also ensure indentations and logical structure.\n\nAdditionally, the line \"第 0 行 [E_NO_POU] 未找到可执行 POU\" indicates maybe they compiled in a context that needs a program, but our function block is not executable alone; but that's not our problem. The user asks for the function block code.\n\nWe'll output only the ST code."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```structuredtext\nFUNCTION_BLOCK FB_FIFO_Queue\nVAR_INPUT\n    enqueue   : BOOL;  (* Rising edge requests one enqueue *)\n    dequeue   : BOOL;  (* Rising edge requests one dequeue *)\n    reset     : BOOL;  (* TRUE resets queue to empty *)\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;  (* Current number of valid elements *)\n    status       : WORD;  (* Invocation status *)\nEND_VAR\nVAR_IN_OUT\n    item   : VARIANT;  (* Mutable scalar reference *)\n    buffer : VARIANT;  (* Reference to non-empty 1-D array *)\nEND_VAR\nVAR\n    initialized : BOOL := FALSE;\n\n    lastEnqueue : BOOL := FALSE;\n    lastDequeue : BOOL := FALSE;\n\n    enqueueRise : BOOL;\n    dequeueRise : BOOL;\n\n    head     : DINT := 0;\n    tail     : DINT := 0;\n    count    : DINT := 0;\n    capacity : DINT := 0;\n\n    elementSize : DINT := 0;\n    pBuffer     : POINTER TO BYTE;\n    pItem       : POINTER TO BYTE;\n    infoValid   : BOOL;\nEND_VAR\n\n(* Initialisation: derive capacity and element type once *)\nIF NOT initialized THEN\n    infoValid := VariantGetInfo(variant := buffer,\n                                pValue => pBuffer,\n                                elementSize => elementSize,\n                                arrayLength => capacity);\n\n    IF NOT infoValid THEN\n        capacity := 0;\n        elementSize := 0;\n    END_IF\n\n    head := 0;\n    tail := 0;\n    count := 0;\n\n    initialized := TRUE;\nEND_IF\n\n(* Edge detection *)\nenqueueRise := enqueue AND NOT lastEnqueue;\ndequeueRise := dequeue AND NOT lastDequeue;\n\nlastEnqueue := enqueue;\nlastDequeue := dequeue;\n\n(* Main operation *)\nIF reset THEN\n    (* Reset takes priority over enqueue and dequeue *)\n    head := 0;\n    tail := 0;\n    count := 0;\n    status := 16#0000;\n\nELSIF enqueueRise AND dequeueRise THEN\n    (* Caller must not request both at the same time - ignore both *)\n    status := 16#0000;\n\nELSIF enqueueRise THEN\n    IF count < capacity THEN\n        (* Append item to tail *)\n        VariantSetElement(variant := buffer,\n                          index := tail,\n                          value := item);\n\n        tail := (tail + 1) MOD capacity;\n        count := count + 1;\n        status := 16#0000;\n    ELSE\n        (* Queue full: reject enqueue, leave queue unchanged *)\n        status := 16#8002;\n    END_IF\n\nELSIF dequeueRise THEN\n    IF count > 0 THEN\n        (* Remove front element and write it to item *)\n        VariantGetElement(variant := buffer,\n                          index := head,\n                          value := item);\n\n        head := (head + 1) MOD capacity;\n        count := count - 1;\n        status := 16#0000;\n    ELSE\n        (* Queue empty: reject dequeue, leave item unchanged *)\n        status := 16#8001;\n    END_IF\n\nELSE\n    (* Idle invocation - no error *)\n    status := 16#0000;\nEND_IF\n\n(* Update output *)\nelementCount := count;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179441752326700000000000000000000ffffac154b7aab5766",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 1620,
+      "output_tokens": 1706,
+      "total_tokens": 3326,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 949
+      },
+      "cost": "¥0.023954"
+    }
+  }
+}
