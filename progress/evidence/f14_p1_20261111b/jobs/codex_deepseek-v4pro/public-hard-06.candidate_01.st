@@ -1,0 +1,1 @@
+Let me inspect the workspace to see the expected file structure and any existing project files.

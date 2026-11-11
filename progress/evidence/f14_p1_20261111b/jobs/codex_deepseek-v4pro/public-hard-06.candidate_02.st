@@ -1,0 +1,1 @@
+Let me inspect the workspace to understand the expected program format and existing files.
