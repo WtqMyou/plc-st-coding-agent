@@ -1,0 +1,29 @@
+{
+  "model": "deepseek-v4-pro-0813",
+  "protocol": "responses",
+  "max_output_tokens": 16384,
+  "timeout_seconds": 420,
+  "parameters": {
+    "reasoning": {
+      "effort": "low"
+    }
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "Return one complete ST implementation. Follow the user requirements and interface exactly. Do not change task inputs or outputs."
+    },
+    {
+      "role": "user",
+      "content": "# IPv4 Parsing with Format and Range Checks\n\n- **Difficulty:** Medium (medium)\n\n## Requirements\n\nDesign a PLC function block in Structured Text (ST) that parses a dotted-decimal IPv4 string into a 32-bit unsigned integer.\n\n1. ipText must contain four nonempty decimal-digit segments separated by periods. Each segment must have a value from 0 through 255.\n2. Assemble the address in network byte order: the first segment occupies the most significant 8 bits and the fourth occupies the least significant 8 bits. Write the result to ipValue.\n3. Set ipValue to 0 for malformed input, a nondigit segment, an incorrect segment count or any out-of-range segment. The valid address 0.0.0.0 also produces 0.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `ipText` | `STRING(254)` | IPv4 text to parse, with a capacity of 254 characters. A valid dotted-decimal address requires at most 15 characters. |\n| Output | `ipValue` | `UDINT` | 32-bit address in network byte order; zero for invalid input. |"
+    },
+    {
+      "role": "assistant",
+      "content": "FUNCTION_BLOCK IPv4_Parser\nVAR_INPUT\n    ipText : STRING(254);\nEND_VAR\nVAR_OUTPUT\n    ipValue : UDINT;\nEND_VAR\nVAR\n    len          : INT;\n    i            : INT;\n    ch           : INT;\n    dotCount     : INT;\n    segmentDigits: INT;\n    octet        : UDINT;\n    assembled    : UDINT;\n    valid        : BOOL;\nEND_VAR\n\nipValue := 0;\nvalid := TRUE;\nlen := LEN(ipText);\n\n// A valid IPv4 text has at least 7 characters (\"0.0.0.0\")\n// and at most 15 characters (\"255.255.255.255\").\nIF (len < 7) OR (len > 15) THEN\n    valid := FALSE;\nEND_IF;\n\nassembled := 0;\noctet := 0;\ndotCount := 0;\nsegmentDigits := 0;\ni := 1;\n\nWHILE (i <= len) AND valid DO\n    ch := ipText[i];\n\n    IF (ch >= 48) AND (ch <= 57) THEN\n        // Decimal digit\n        segmentDigits := segmentDigits + 1;\n        octet := (octet * 10) + (ch - 48);\n\n        IF octet > 255 THEN\n            valid := FALSE;\n        END_IF;\n\n    ELSIF ch = 46 THEN\n        // Period separator\n        IF segmentDigits = 0 THEN\n            valid := FALSE; // Empty segment\n        ELSE\n            assembled := (assembled * 256) + octet;\n            octet := 0;\n            segmentDigits := 0;\n            dotCount := dotCount + 1;\n\n            IF dotCount > 3 THEN\n                valid := FALSE; // Too many segments\n            END_IF;\n        END_IF;\n\n    ELSE\n        // Any other character is invalid\n        valid := FALSE;\n    END_IF;\n\n    i := i + 1;\nEND_WHILE;\n\nIF valid THEN\n    IF segmentDigits = 0 THEN\n        valid := FALSE; // Trailing dot or missing final segment\n    ELSIF octet > 255 THEN\n        valid := FALSE;\n    ELSIF dotCount <> 3 THEN\n        valid := FALSE; // Incorrect segment count\n    ELSE\n        assembled := (assembled * 256) + octet;\n        ipValue := assembled;\n    END_IF;\nEND_IF;\n\nEND_FUNCTION_BLOCK"
+    },
+    {
+      "role": "user",
+      "content": "静态检查或接口契约失败：\n第 36 行 [E_TYPE_MISMATCH] 类型不匹配：STRING 不能赋给 INT\nLTL 检查：not_run。\n修复并返回完整代码，保持题面接口。"
+    }
+  ]
+}
