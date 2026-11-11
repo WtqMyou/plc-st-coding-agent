@@ -1,0 +1,14 @@
+{
+  "model": "MiniMax-M2.7",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Return one complete ST implementation. Follow the user requirements and interface exactly. Do not change task inputs or outputs."
+    },
+    {
+      "role": "user",
+      "content": "# 任务：分段采样平均值计算中的除零与边界保护\n\n## 需求\n写一个功能块 FB，在每个扫描周期计算一组采样值的平均值。\n控制要求：\n1. enable 为 TRUE 时更新平均值，为 FALSE 时 avgOut 保持上一周期的值不变；\n2. count 为本周期有效样本个数，合法范围 0..8；count 为 0 时**不得发生除零**，此时 avgOut 保持不变；\n3. count 大于数组长度 8 时，只按前 8 个样本计算，不得越界访问；\n4. avgEnable 为 FALSE 时视为未投入自动，同样保持 avgOut 不变；\n5. 整数相加可能超过 INT 范围，求和过程中应使用更宽的类型（DINT/LINT）避免溢出；\n6. 结果以 REAL 输出，保留原始精度，不做四舍五入到整数。\n\n## 接口定义（必须逐字实现，不得改动）\n\n功能块名：`FB`（FUNCTION_BLOCK FB）\n\n| 变量名 | 类型 | 方向 | 说明 |\n| --- | --- | --- | --- |\n| enable | BOOL | INPUT | TRUE 时更新平均值，FALSE 时保持 |\n| values | ARRAY[1..8] OF INT | INPUT | 本周期采集到的原始样本（1..8 号站） |\n| count | INT | INPUT | 本周期有效的样本个数，合法范围 0..8 |\n| avgEnable | BOOL | INPUT | 计算使能，通常接在物位低联锁之后 |\n| avgOut | REAL | OUTPUT | 平均输出 |\n\n## 必须满足的形式化性质\n- [S1] count 为 0 或为负时，不得发生除零，avgOut 应在**当周期**保持不变。\n  LTL: `G((count <= 0) -> avgOut = prev(avgOut))`\n- [S2] enable 为 FALSE 时，avgOut 应在当周期保持不变，不得被改写。\n  LTL: `G(!enable -> avgOut = prev(avgOut))`\n- [S3] avgOut 在任何输入下都不是 NaN（数值健全性）。越界访问本身由解释器直接判运行期错误，不在 LTL 层表达。\n  LTL: `G(avgOut = avgOut)`\n- [S4] 在 enable 且 count 合法时，avgOut 等于所选样本的算术平均。\n- [S5] 自动平均未投入时保留上拍输出。\n  LTL: `G(!avgEnable -> avgOut = prev(avgOut))`\n- [S6] 投入且样本数为正，按实际有效前缀的宽类型和除以裁剪后的长度。\n  LTL: `G((enable AND avgEnable) -> (((count = 1) -> avgOut = (INT_TO_REAL(values[1])) / 1.0) AND ((count = 2) -> avgOut = (INT_TO_REAL(values[1]) + INT_TO_REAL(values[2])) / 2.0) AND ((count = 3) -> avgOut = (INT_TO_REAL(values[1]) + INT_TO_REAL(values[2]) + INT_TO_REAL(values[3])) / 3.0) AND ((count = 4) -> avgOut = (INT_TO_REAL(values[1]) + INT_TO_REAL(values[2]) + INT_TO_REAL(values[3]) + INT_TO_REAL(values[4])) / 4.0) AND ((count = 5) -> avgOut = (INT_TO_REAL(values[1]) + INT_TO_REAL(values[2]) + INT_TO_REAL(values[3]) + INT_TO_REAL(values[4]) + INT_TO_REAL(values[5])) / 5.0) AND ((count = 6) -> avgOut = (INT_TO_REAL(values[1]) + INT_TO_REAL(values[2]) + INT_TO_REAL(values[3]) + INT_TO_REAL(values[4]) + INT_TO_REAL(values[5]) + INT_TO_REAL(values[6])) / 6.0) AND ((count = 7) -> avgOut = (INT_TO_REAL(values[1]) + INT_TO_REAL(values[2]) + INT_TO_REAL(values[3]) + INT_TO_REAL(values[4]) + INT_TO_REAL(values[5]) + INT_TO_REAL(values[6]) + INT_TO_REAL(values[7])) / 7.0) AND ((count >= 8) -> avgOut = (INT_TO_REAL(values[1]) + INT_TO_REAL(values[2]) + INT_TO_REAL(values[3]) + INT_TO_REAL(values[4]) + INT_TO_REAL(values[5]) + INT_TO_REAL(values[6]) + INT_TO_REAL(values[7]) + INT_TO_REAL(values[8])) / 8.0)))`\n\n## 补充说明\n- 功能块在**每个扫描周期**被调用一次，输出在周期结束时被采样。\n- 不要假设任何隐藏的定时器或全局变量；需要跨周期记住的状态请用 VAR 区静态变量。\n\n请直接给出完整的 ```st 代码块。"
+    }
+  ],
+  "external_requests": 0
+}
