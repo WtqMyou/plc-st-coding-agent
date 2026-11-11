@@ -1,0 +1,1180 @@
+{
+  "job_id": "custom_minimax-m27/public-hard-06",
+  "pid": "public-hard-06",
+  "condition": "custom_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 49,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_POU_KIND",
+            "line": 25,
+            "message": "POU 类型与题面不一致"
+          }
+        ],
+        "tests_total": 49,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "08bf099a3347883822f0d2f7dece51237968318c992f63d1c87b2d617e96d7ac",
+          "task_json_sha256": "e5b15099a5275ab77e66de32282f1323fed5aa5a9d169e5a0a6123b1840c29fe",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 25 行 [E_POU_KIND] POU 类型与题面不一致\nLTL 检查：not_run。",
+      "idx": 0,
+      "code": "(*----------------------------------------------------------------------------------\n  Production Line Controller – Hard Version\n  Mode 0 = Manual, Mode 1 = Automatic\n  Automatic sequence: Feed → Wash → Weigh → Fire → Output\n  Manual mode: forward / reverse with interlock\n----------------------------------------------------------------------------------*)\n\n(*----------- Type definitions ----------------------------------------------------*)\nTYPE E_State :\n(\n    IDLE             := 0,\n    MOVING_TO_WASH   := 1,\n    AT_WASH          := 2,\n    MOVING_TO_WEIGH  := 3,\n    AT_WEIGH         := 4,\n    MOVING_TO_FIRING := 5,\n    AT_FIRING        := 6,\n    MOVING_TO_OUTPUT := 7,\n    AT_OUTPUT        := 8,\n    REJECT           := 9\n);\nEND_TYPE\n\n(*----------- Program declaration -------------------------------------------------*)\nPROGRAM ProductionControl\nVAR_INPUT\n    Mode            : BOOL;          (* 0 = Manual, 1 = Automatic *)\n    ForwardButton   : BOOL;          (* Manual forward command *)\n    ReverseButton   : BOOL;          (* Manual reverse command *)\n    SensorFeed      : BOOL;          (* Material at loading station *)\n    SensorWash      : BOOL;          (* Material at cleaning station *)\n    SensorWeight    : BOOL;          (* Material at weighing station *)\n    SensorFiring    : BOOL;          (* Product at firing station *)\n    SensorOutput    : BOOL;          (* Product at finished‑product station *)\n    washComplete    : BOOL;          (* Cleaning finished *)\n    weightComplete  : BOOL;          (* Weighing finished *)\n    weight          : REAL;          (* Measured weight *)\n    firingComplete  : BOOL;          (* Firing finished *)\nEND_VAR\n\nVAR_OUTPUT\n    MotorForward    : BOOL;          (* Motor forward rotation *)\n    MotorReverse    : BOOL;          (* Motor reverse rotation *)\n    kick            : BOOL;          (* Rejection command *)\n    CompletionLight : BOOL;          (* Product ready light *)\n    firingTemp      : REAL;          (* Calculated firing temperature *)\nEND_VAR\n\n(*----------- Internal variables -------------------------------------------------*)\nVAR\n    curState        : E_State := IDLE;   (* Current automatic state *)\n\n    (* Edge detection memories *)\n    lastSensorFeed    : BOOL := FALSE;\n    lastSensorWash    : BOOL := FALSE;\n    lastSensorWeight  : BOOL := FALSE;\n    lastSensorFiring  : BOOL := FALSE;\n    lastSensorOutput  : BOOL := FALSE;\n    lastWashComplete  : BOOL := FALSE;\n    lastWeightComplete: BOOL := FALSE;\n    lastFiringComplete: BOOL := FALSE;\n\n    (* Edge flags *)\n    sensorFeedRising    : BOOL;\n    sensorWashRising    : BOOL;\n    sensorWeightRising  : BOOL;\n    sensorFiringRising  : BOOL;\n    sensorOutputRising  : BOOL;\n    sensorOutputFalling : BOOL;\n    washCompleteRising  : BOOL;\n    weightCompleteRising: BOOL;\n    firingCompleteRising: BOOL;\n\n    (* One‑shot flags for completion signals *)\n    washProcessed   : BOOL := FALSE;\n    weightProcessed : BOOL := FALSE;\n    firingProcessed : BOOL := FALSE;\nEND_VAR\n\n(*----------- Edge detection ----------------------------------------------------*)\nsensorFeedRising     := SensorFeed     AND NOT lastSensorFeed;\nsensorWashRising     := SensorWash     AND NOT lastSensorWash;\nsensorWeightRising   := SensorWeight   AND NOT lastSensorWeight;\nsensorFiringRising   := SensorFiring   AND NOT lastSensorFiring;\nsensorOutputRising   := SensorOutput   AND NOT lastSensorOutput;\nsensorOutputFalling  := NOT SensorOutput AND lastSensorOutput;\n\nwashCompleteRising   := washComplete   AND NOT lastWashComplete;\nweightCompleteRising := weightComplete AND NOT lastWeightComplete;\nfiringCompleteRising := firingComplete AND NOT lastFiringComplete;\n\n(* Update memories *)\nlastSensorFeed    := SensorFeed;\nlastSensorWash    := SensorWash;\nlastSensorWeight  := SensorWeight;\nlastSensorFiring  := SensorFiring;\nlastSensorOutput  := SensorOutput;\nlastWashComplete  := washComplete;\nlastWeightComplete:= weightComplete;\nlastFiringComplete:= firingComplete;\n\n(*----------- Mode handling ------------------------------------------------------*)\nIF Mode = FALSE THEN                (* Manual Mode *)\n    (* Reset automatic control outputs *)\n    MotorForward    := FALSE;\n    MotorReverse    := FALSE;\n    kick            := FALSE;\n    CompletionLight := FALSE;\n    firingTemp      := 0.0;\n    curState        := IDLE;\n    washProcessed   := FALSE;\n    weightProcessed := FALSE;\n    firingProcessed := FALSE;\n\n    (* Interlocked forward / reverse *)\n    IF ForwardButton AND NOT ReverseButton THEN\n        MotorForward := TRUE;\n    ELSE\n        MotorForward := FALSE;\n    END_IF\n\n    IF ReverseButton AND NOT ForwardButton THEN\n        MotorReverse := TRUE;\n    ELSE\n        MotorReverse := FALSE;\n    END_IF\n\nELSE                                 (* Automatic Mode *)\n    MotorReverse := FALSE;          (* Reverse never used in auto *)\n\n    CASE curState OF\n\n        (*--------------------------------------------------------------\n         IDLE – waiting for a new material at the loading station\n        --------------------------------------------------------------*)\n        IDLE:\n            IF sensorFeedRising THEN\n                curState     := MOVING_TO_WASH;\n                MotorForward := TRUE;\n            ELSE\n                MotorForward    := FALSE;\n                kick            := FALSE;\n                CompletionLight := FALSE;\n                firingTemp      := 0.0;\n            END_IF\n\n        (*--------------------------------------------------------------\n         MOVING_TO_WASH – motor conveys material to cleaning station\n        --------------------------------------------------------------*)\n        MOVING_TO_WASH:\n            IF sensorWashRising THEN\n                MotorForward := FALSE;\n                curState     := AT_WASH;\n                washProcessed := FALSE;\n            END_IF\n\n        (*--------------------------------------------------------------\n         AT_WASH – cleaning in progress, waiting for washComplete\n        --------------------------------------------------------------*)\n        AT_WASH:\n            IF washCompleteRising AND NOT washProcessed THEN\n                MotorForward := TRUE;\n                curState      := MOVING_TO_WEIGH;\n                washProcessed := TRUE;\n            END_IF\n\n        (*--------------------------------------------------------------\n         MOVING_TO_WEIGH – material moves to weighing station\n        --------------------------------------------------------------*)\n        MOVING_TO_WEIGH:\n            IF sensorWeightRising THEN\n                MotorForward   := FALSE;\n                curState       := AT_WEIGH;\n                weightProcessed := FALSE;\n            END_IF\n\n        (*--------------------------------------------------------------\n         AT_WEIGH – weight measurement, quality check and temperature calc.\n        --------------------------------------------------------------*)\n        AT_WEIGH:\n            IF weightCompleteRising AND NOT weightProcessed THEN\n                weightProcessed := TRUE;\n                IF weight >= 100.0 AND weight <= 200.0 THEN\n                    (* Qualified – compute firing temperature *)\n                    firingTemp  := 500.0 + ((weight - 100.0) / 100.0) * 50.0;\n                    MotorForward := TRUE;\n                    curState     := MOVING_TO_FIRING;\n                ELSE\n                    (* Unqualified – reject *)\n                    kick         := TRUE;\n                    MotorForward := FALSE;\n                    curState     := REJECT;\n                END_IF\n            END_IF\n\n        (*--------------------------------------------------------------\n         MOVING_TO_FIRING – material moves to firing station\n        --------------------------------------------------------------*)\n        MOVING_TO_FIRING:\n            IF sensorFiringRising THEN\n                MotorForward   := FALSE;\n                curState       := AT_FIRING;\n                firingProcessed := FALSE;\n            END_IF\n\n        (*--------------------------------------------------------------\n         AT_FIRING – firing in progress, waiting for firingComplete\n        --------------------------------------------------------------*)\n        AT_FIRING:\n            IF firingCompleteRising AND NOT firingProcessed THEN\n                MotorForward   := TRUE;\n                curState        := MOVING_TO_OUTPUT;\n                firingProcessed := TRUE;\n            END_IF\n\n        (*--------------------------------------------------------------\n         MOVING_TO_OUTPUT – product moves to finished‑product station\n        --------------------------------------------------------------*)\n        MOVING_TO_OUTPUT:\n            IF sensorOutputRising THEN\n                MotorForward    := FALSE;\n                CompletionLight := TRUE;\n                curState        := AT_OUTPUT;\n            END_IF\n\n        (*--------------------------------------------------------------\n         AT_OUTPUT – product waiting to be taken away\n        --------------------------------------------------------------*)\n        AT_OUTPUT:\n            CompletionLight := SensorOutput;   (* Light on while product present *)\n            IF sensorOutputFalling THEN\n                CompletionLight := FALSE;\n                curState        := IDLE;\n                firingTemp      := 0.0;\n                kick            := FALSE;\n            END_IF\n\n        (*--------------------------------------------------------------\n         REJECT – unqualified material at weighing station\n        --------------------------------------------------------------*)\n        REJECT:\n            kick         := TRUE;\n            MotorForward := FALSE;\n            (* Assume the material is removed manually; when weight sensor clears → reset *)\n            IF NOT SensorWeight THEN\n                kick     := FALSE;\n                curState := IDLE;\n            END_IF\n\n    END_CASE\nEND_IF\n\nEND_PROGRAM",
+      "code_hash": "08bf099a3347883822f0d2f7dece51237968318c992f63d1c87b2d617e96d7ac",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 971,
+      "completion_tokens": 12467,
+      "cost_cny": 0.084341901,
+      "latency_s": 216.094,
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 26,
+      "tests_total": 49,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 49,
+        "tests_passed": 26,
+        "pass_rate": 0.5306,
+        "failure_summary": "h06-14: firingTemp 期望 525.0，实际 0.0",
+        "cases": [
+          {
+            "tc_id": "h06-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 0.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": true,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": true,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 525.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 525.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 525.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": true,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": true,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 525.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-14",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 525.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-14（自动：产品被取走（SensorOutput=FALSE）→ 完成灯熄灭并回到等待上料（负例，灯灭恢复））：firingTemp 期望 525.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-15",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 525.0，实际 0.0",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-15（自动：上料站检测到料 → 电机正转，把料送往清洗站）：firingTemp 期望 525.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-16",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 525.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-16（自动：料到清洗站 → 电机停止）：firingTemp 期望 525.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-17",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 525.0，实际 0.0",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-17（自动：清洗完成 → 正转送往称重站）：firingTemp 期望 525.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-18",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 525.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-18（自动：料到称重站 → 电机停止）：firingTemp 期望 525.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-19",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 525.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": true,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": true
+            },
+            "hint": "h06-19（自动：weight=250 超上界不合格 → kick=1 剔除、电机不转、烧结温度不更新（保持 525.0，负例））：firingTemp 期望 525.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-20",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 525.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-20（自动：剔除脉冲只持续一拍，下一拍 kick 回到 0、产线回到等待上料（负例））：firingTemp 期望 525.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-21",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 525.0，实际 0.0",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-21（自动：上料站检测到料 → 电机正转，把料送往清洗站）：firingTemp 期望 525.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-22",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 525.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-22（自动：料到清洗站 → 电机停止）：firingTemp 期望 525.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-23",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 525.0，实际 0.0",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-23（自动：清洗完成 → 正转送往称重站）：firingTemp 期望 525.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-24",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 525.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 525.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-24（自动：料到称重站 → 电机停止）：firingTemp 期望 525.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-25",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 500.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-26",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 500.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-26（切到手动模式（Mode=FALSE）→ 自动流程复位，手动未按按钮不动作（模式切换，负例））：firingTemp 期望 500.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-27",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 500.0，实际 0.0",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-27（切回自动模式并检测到新料 → 从等待上料重新开始正转（R4 复位后重入））：firingTemp 期望 500.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-28",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 500.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-28（自动：料到清洗站 → 电机停止）：firingTemp 期望 500.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-29",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 500.0，实际 0.0",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-29（自动：清洗完成 → 正转送往称重站）：firingTemp 期望 500.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-30",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 500.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 500.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-30（自动：料到称重站 → 电机停止）：firingTemp 期望 500.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-31",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 550.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h06-32",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 550.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-32（切到手动模式复位自动流程（为下一件料做准备，负例））：firingTemp 期望 550.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-33",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 550.0，实际 0.0",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-33（切回自动并检测到新料 → 正转送往清洗站）：firingTemp 期望 550.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-34",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 550.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-34（自动：料到清洗站 → 电机停止）：firingTemp 期望 550.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-35",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 550.0，实际 0.0",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-35（自动：清洗完成 → 正转送往称重站）：firingTemp 期望 550.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-36",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 550.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-36（自动：料到称重站 → 电机停止）：firingTemp 期望 550.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-37",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 550.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": true,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": true
+            },
+            "hint": "h06-37（自动：weight=99 低于下界不合格 → kick=1 剔除、电机不转、温度保持 550.0（边界外，负例））：firingTemp 期望 550.0，实际 0.0"
+          },
+          {
+            "tc_id": "h06-38",
+            "passed": false,
+            "mode": "sequence",
+            "message": "firingTemp 期望 550.0，实际 0.0",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 550.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": "h06-38（自动：剔除后回到等待上料，kick 与灯都已熄灭（负例））：firingTemp 期望 550.0，实际 0.0"
+          },
+          {
+            "tc_id": "ha-line-fractional-qualified-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 0.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-line-fractional-qualified-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 0.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-line-fractional-qualified-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 0.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-line-fractional-qualified-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 0.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-line-fractional-qualified-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 512.75
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 512.75,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-line-above-upper-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 0.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-line-above-upper-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 0.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-line-above-upper-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 0.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-line-moving-to-scale",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": true,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 0.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": true,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-line-above-upper-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": false,
+              "CompletionLight": false,
+              "firingTemp": 0.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-line-above-upper-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "MotorForward": false,
+              "MotorReverse": false,
+              "kick": true,
+              "CompletionLight": false,
+              "firingTemp": 0.0
+            },
+            "actual": {
+              "CompletionLight": false,
+              "MotorForward": false,
+              "MotorReverse": false,
+              "firingTemp": 0.0,
+              "kick": true
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 16.26600000000326,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-06_f30f3e28b7",
+            "source_sha256": "0f603fa4c15ea139d394894ea95a0dc83e06913fdff2623bb8eebf74ea88b24e",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "0f603fa4c15ea139d394894ea95a0dc83e06913fdff2623bb8eebf74ea88b24e",
+          "task_json_sha256": "e5b15099a5275ab77e66de32282f1323fed5aa5a9d169e5a0a6123b1840c29fe",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "自动测试：26/49。\n用例 h06-14，模式 sequence，行为不匹配，请检查 CompletionLight, MotorForward, MotorReverse, firingTemp, kick。\n用例 h06-15，模式 sequence，行为不匹配，请检查 CompletionLight, MotorForward, MotorReverse, firingTemp, kick。\n用例 h06-16，模式 sequence，行为不匹配，请检查 CompletionLight, MotorForward, MotorReverse, firingTemp, kick。\n用例 h06-17，模式 sequence，行为不匹配，请检查 CompletionLight, MotorForward, MotorReverse, firingTemp, kick。\n用例 h06-18，模式 sequence，行为不匹配，请检查 CompletionLight, MotorForward, MotorReverse, firingTemp, kick。\n用例 h06-19，模式 sequence，行为不匹配，请检查 CompletionLight, MotorForward, MotorReverse, firingTemp, kick。\nLTL 检查：not_run。",
+      "idx": 1,
+      "code": "FUNCTION_BLOCK ProductionControl\nVAR_INPUT\n    Mode            : BOOL;          (* 0 = Manual, 1 = Automatic *)\n    ForwardButton   : BOOL;          (* Manual forward command *)\n    ReverseButton   : BOOL;          (* Manual reverse command *)\n    SensorFeed      : BOOL;          (* Material at loading station *)\n    SensorWash      : BOOL;          (* Material at cleaning station *)\n    SensorWeight    : BOOL;          (* Material at weighing station *)\n    SensorFiring    : BOOL;          (* Product at firing station *)\n    SensorOutput    : BOOL;          (* Product at finished-product station *)\n    washComplete    : BOOL;          (* Cleaning finished *)\n    weightComplete  : BOOL;          (* Weighing finished *)\n    weight          : REAL;          (* Measured weight *)\n    firingComplete  : BOOL;          (* Firing finished *)\nEND_VAR\n\nVAR_OUTPUT\n    MotorForward    : BOOL;          (* Motor forward rotation *)\n    MotorReverse    : BOOL;          (* Motor reverse rotation *)\n    kick            : BOOL;          (* Rejection command *)\n    CompletionLight : BOOL;          (* Product ready light *)\n    firingTemp      : REAL;          (* Calculated firing temperature *)\nEND_VAR\n\nVAR\n    curState        : INT := 0;      (* Current automatic state *)\n    lastSensorFeed    : BOOL := FALSE;\n    lastSensorWash    : BOOL := FALSE;\n    lastSensorWeight  : BOOL := FALSE;\n    lastSensorFiring  : BOOL := FALSE;\n    lastSensorOutput  : BOOL := FALSE;\n    lastWashComplete  : BOOL := FALSE;\n    lastWeightComplete: BOOL := FALSE;\n    lastFiringComplete: BOOL := FALSE;\n    sensorFeedRising    : BOOL;\n    sensorWashRising    : BOOL;\n    sensorWeightRising  : BOOL;\n    sensorFiringRising  : BOOL;\n    sensorOutputRising  : BOOL;\n    sensorOutputFalling : BOOL;\n    washCompleteRising  : BOOL;\n    weightCompleteRising: BOOL;\n    firingCompleteRising: BOOL;\n    washProcessed   : BOOL := FALSE;\n    weightProcessed : BOOL := FALSE;\n    firingProcessed : BOOL := FALSE;\nEND_VAR\n\n(* Edge detection *)\nsensorFeedRising     := SensorFeed     AND NOT lastSensorFeed;\nsensorWashRising     := SensorWash     AND NOT lastSensorWash;\nsensorWeightRising   := SensorWeight   AND NOT lastSensorWeight;\nsensorFiringRising   := SensorFiring   AND NOT lastSensorFiring;\nsensorOutputRising   := SensorOutput   AND NOT lastSensorOutput;\nsensorOutputFalling  := NOT SensorOutput AND lastSensorOutput;\nwashCompleteRising   := washComplete   AND NOT lastWashComplete;\nweightCompleteRising := weightComplete AND NOT lastWeightComplete;\nfiringCompleteRising := firingComplete AND NOT lastFiringComplete;\n\nlastSensorFeed     := SensorFeed;\nlastSensorWash     := SensorWash;\nlastSensorWeight   := SensorWeight;\nlastSensorFiring   := SensorFiring;\nlastSensorOutput   := SensorOutput;\nlastWashComplete   := washComplete;\nlastWeightComplete := weightComplete;\nlastFiringComplete := firingComplete;\n\n(* Mode handling *)\nIF Mode = FALSE THEN\n    MotorForward    := FALSE;\n    MotorReverse    := FALSE;\n    kick            := FALSE;\n    CompletionLight := FALSE;\n    firingTemp      := 0.0;\n    curState        := 0;\n    washProcessed   := FALSE;\n    weightProcessed := FALSE;\n    firingProcessed := FALSE;\n\n    IF ForwardButton AND NOT ReverseButton THEN\n        MotorForward := TRUE;\n    ELSE\n        MotorForward := FALSE;\n    END_IF\n\n    IF ReverseButton AND NOT ForwardButton THEN\n        MotorReverse := TRUE;\n    ELSE\n        MotorReverse := FALSE;\n    END_IF\nELSE\n    MotorReverse := FALSE;\n\n    CASE curState OF\n        0: (* IDLE *)\n            IF sensorFeedRising THEN\n                curState     := 1;\n                MotorForward := TRUE;\n            ELSE\n                MotorForward    := FALSE;\n                kick            := FALSE;\n                CompletionLight := FALSE;\n                firingTemp      := 0.0;\n            END_IF\n\n        1: (* MOVING_TO_WASH *)\n            IF sensorWashRising THEN\n                MotorForward := FALSE;\n                curState     := 2;\n                washProcessed := FALSE;\n            END_IF\n\n        2: (* AT_WASH *)\n            IF washCompleteRising AND NOT washProcessed THEN\n                MotorForward := TRUE;\n                curState      := 3;\n                washProcessed := TRUE;\n            END_IF\n\n        3: (* MOVING_TO_WEIGH *)\n            IF sensorWeightRising THEN\n                MotorForward    := FALSE;\n                curState        := 4;\n                weightProcessed := FALSE;\n            END_IF\n\n        4: (* AT_WEIGH *)\n            IF weightCompleteRising AND NOT weightProcessed THEN\n                weightProcessed := TRUE;\n                IF weight >= 100.0 AND weight <= 200.0 THEN\n                    firingTemp  := 500.0 + ((weight - 100.0) / 100.0) * 50.0;\n                    MotorForward := TRUE;\n                    curState     := 5;\n                ELSE\n                    kick         := TRUE;\n                    MotorForward := FALSE;\n                    curState     := 9;\n                END_IF\n            END_IF\n\n        5: (* MOVING_TO_FIRING *)\n            IF sensorFiringRising THEN\n                MotorForward    := FALSE;\n                curState        := 6;\n                firingProcessed := FALSE;\n            END_IF\n\n        6: (* AT_FIRING *)\n            IF firingCompleteRising AND NOT firingProcessed THEN\n                MotorForward    := TRUE;\n                curState         := 7;\n                firingProcessed  := TRUE;\n            END_IF\n\n        7: (* MOVING_TO_OUTPUT *)\n            IF sensorOutputRising THEN\n                MotorForward    := FALSE;\n                CompletionLight := TRUE;\n                curState        := 8;\n            END_IF\n\n        8: (* AT_OUTPUT *)\n            CompletionLight := SensorOutput;\n            IF sensorOutputFalling THEN\n                CompletionLight := FALSE;\n                curState        := 0;\n                firingTemp      := 0.0;\n                kick            := FALSE;\n            END_IF\n\n        9: (* REJECT *)\n            kick         := TRUE;\n            MotorForward := FALSE;\n            IF NOT SensorWeight THEN\n                kick     := FALSE;\n                curState := 0;\n            END_IF\n\n    END_CASE\nEND_IF\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "0f603fa4c15ea139d394894ea95a0dc83e06913fdff2623bb8eebf74ea88b24e",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 2836,
+      "completion_tokens": 1648,
+      "cost_cny": 0.015641052,
+      "latency_s": 42.75,
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 49,
+  "study_plan_sha256": "37d0bbf483d634f65b4ebb0012a1fd7ae9032462fbc920a1dd5300ca31d0a7e2",
+  "started_at": "2026-11-12T01:33:01.565792+08:00",
+  "wall_seconds": 258.859,
+  "finished_at": "2026-11-12T01:37:20.405149+08:00",
+  "credential_batch": "primary"
+}
