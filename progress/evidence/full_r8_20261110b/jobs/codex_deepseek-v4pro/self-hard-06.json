@@ -1,0 +1,2078 @@
+{
+  "pid": "self-hard-06",
+  "model": "deepseek-v4-pro-0813",
+  "provider": "codex-cli",
+  "setting": "codex_deepseek-v4pro",
+  "max_iters": 2,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    runRequest : BOOL;\n    pressure : REAL;\n    pressureValid : BOOL;\n    fuelFlow : REAL;\n    steamFlow : REAL;\n    outletCmd : INT;\n    outletFeedback : INT;\n    resetBtn : BOOL;\nEND_VAR\nVAR_OUTPUT\n    tripLatched : BOOL;\n    fuelPermit : BOOL;\n    currentCauseMask : WORD;\n    latchedCauseMask : WORD;\n    diagnosticActive : BOOL;\nEND_VAR\nVAR\n    resetBtnPrev : BOOL;\n    risingReset : BOOL;\n    legalReset : BOOL;\n    tripCondition : BOOL;\n    overpressureCondition : BOOL;\n    stuckQualified : BOOL;\n    excessCondition : BOOL;\n    stuckCount : INT := 0;\nEND_VAR\n\nrisingReset := resetBtn AND NOT resetBtnPrev;\nlegalReset := risingReset AND NOT runRequest AND pressureValid AND (pressure <= 4200.0);\n\ntripCondition := runRequest AND (NOT pressureValid OR (pressureValid AND pressure >= 4500.0));\noverpressureCondition := runRequest AND pressureValid AND (pressure >= 4500.0);\n\nstuckQualified := overpressureCondition AND (outletCmd >= 50) AND (outletFeedback <= 10);\nIF stuckQualified THEN\n    IF stuckCount < 3 THEN\n        stuckCount := stuckCount + 1;\n    END_IF;\nELSE\n    stuckCount := 0;\nEND_IF;\n\nIF NOT runRequest THEN\n    currentCauseMask := WORD#0;\nELSIF NOT pressureValid THEN\n    currentCauseMask := WORD#1;\nELSIF pressure >= 4500.0 THEN\n    currentCauseMask := WORD#0;\n    excessCondition := (fuelFlow >= 4.0) AND (steamFlow <= 10.0);\n\n    IF stuckCount >= 3 THEN\n        currentCauseMask := currentCauseMask OR WORD#2;\n    END_IF;\n\n    IF excessCondition THEN\n        currentCauseMask := currentCauseMask OR WORD#4;\n    END_IF;\n\n    IF currentCauseMask = WORD#0 THEN\n        currentCauseMask := WORD#8;\n    END_IF;\nELSE\n    currentCauseMask := WORD#0;\nEND_IF;\n\nIF legalReset THEN\n    tripLatched := FALSE;\nELSIF tripCondition THEN\n    tripLatched := TRUE;\nEND_IF;\n\nIF tripLatched THEN\n    latchedCauseMask := latchedCauseMask OR currentCauseMask;\nELSE\n    latchedCauseMask := WORD#0;\nEND_IF;\n\nfuelPermit := runRequest AND NOT tripLatched;\ndiagnosticActive := currentCauseMask <> WORD#0;\n\nresetBtnPrev := resetBtn;\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 96,
+      "tests_total": 96,
+      "feedback": "自动测试：96/96。\nLTL 检查：truncated。",
+      "prompt_tokens": 10869,
+      "completion_tokens": 5398,
+      "latency_s": 124.53099999995902,
+      "provider_error": "",
+      "verification_status": "truncated",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 16.06300000002375,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-06_9c14090bf3",
+          "source_sha256": "21ac25945a721f044e35d7a0cd8fcce0e637ecbaddf832a21a34d7f9bc690c57",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "21ac25945a721f044e35d7a0cd8fcce0e637ecbaddf832a21a34d7f9bc690c57",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 96,
+        "tests_passed": 96,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "q1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": true,
+              "currentCauseMask": 0
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": true,
+              "currentCauseMask": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 12
+            },
+            "actual": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 12
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 14
+            },
+            "actual": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 14
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 14,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 14,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0
+            },
+            "actual": {
+              "tripLatched": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 4,
+              "latchedCauseMask": 4
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 4,
+              "latchedCauseMask": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": true,
+              "currentCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": true,
+              "currentCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q20",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q21",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q22",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q23",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q24",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q25",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 10
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 10
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q26",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 10
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 10
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q27",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 10,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 10,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q28",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 10
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 10
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q29",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 10
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 10
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q30",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 11,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 11,
+              "diagnosticActive": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q31",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q32",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 11,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 11,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q33",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q34",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q35",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 11
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q36",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q37",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q38",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q39",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q40",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q41",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q42",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 1,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 1,
+              "diagnosticActive": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q43",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q44",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 1,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 1,
+              "diagnosticActive": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q45",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 1,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 1,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q1",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q2",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": true,
+              "currentCauseMask": 0
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": true,
+              "currentCauseMask": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q3",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q4",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q5",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 12
+            },
+            "actual": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 12
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q6",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 14
+            },
+            "actual": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 14
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q7",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 14,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 14,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q8",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0
+            },
+            "actual": {
+              "tripLatched": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q9",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 4,
+              "latchedCauseMask": 4
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 4,
+              "latchedCauseMask": 4
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q10",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q11",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q12",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q13",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q14",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q15",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q16",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q17",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q18",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": true,
+              "currentCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": true,
+              "currentCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q19",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q20",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q21",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q22",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q23",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q24",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q25",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 10
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 10
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q26",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 10
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 10
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q27",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 10,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 10,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q28",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 10
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 10
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q29",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 10
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 10
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q30",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 11,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 11,
+              "diagnosticActive": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q31",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q32",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 11,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 11,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q33",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q34",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q35",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 11
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q36",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q37",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q38",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q39",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q40",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q41",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q42",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 1,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 1,
+              "diagnosticActive": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q43",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q44",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 1,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 1,
+              "diagnosticActive": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q45",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 1,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 1,
+              "diagnosticActive": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q46",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "latchedCauseMask": 1
+            },
+            "actual": {
+              "tripLatched": true,
+              "latchedCauseMask": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q47",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0
+            },
+            "actual": {
+              "tripLatched": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q48",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true,
+              "fuelPermit": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true,
+              "fuelPermit": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q49",
+            "passed": true,
+            "mode": "sequence:peer:fractional-pressure",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": true
+            },
+            "actual": {
+              "tripLatched": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q50",
+            "passed": true,
+            "mode": "sequence:peer:fractional-pressure",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true,
+              "fuelPermit": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true,
+              "fuelPermit": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q51",
+            "passed": true,
+            "mode": "sequence:peer:fractional-pressure",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 8,
+              "diagnosticActive": false,
+              "fuelPermit": false
+            },
+            "actual": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 8,
+              "diagnosticActive": false,
+              "fuelPermit": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 15,
+          "traces": 60000,
+          "specs_total": 20,
+          "specs_hold": 20,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 16.06300000002375,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-06_9c14090bf3",
+            "source_sha256": "21ac25945a721f044e35d7a0cd8fcce0e637ecbaddf832a21a34d7f9bc690c57",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "classification": "evaluated",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "group_counts": {
+            "sequence": 45,
+            "sequence:peer:default": 48,
+            "sequence:peer:fractional-pressure": 3
+          },
+          "group_policy": "fresh instance per sequence group; each single case fresh",
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "21ac25945a721f044e35d7a0cd8fcce0e637ecbaddf832a21a34d7f9bc690c57",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "r7_model_check": {
+            "program": "self-hard-06",
+            "states_explored": 15,
+            "traces_explored": 60000,
+            "max_depth": 1,
+            "requested_depth": 8,
+            "complete_depth": 0,
+            "initial_inputs_attempted": 60000,
+            "input_space_size": 64000,
+            "all_hold": false,
+            "error": "",
+            "truncated": true,
+            "fixed_input_domains": {},
+            "specs": [
+              {
+                "id": "S1",
+                "formula": "G((runRequest & !pressureValid) -> (tripLatched & !fuelPermit))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S2",
+                "formula": "G((runRequest & pressureValid & pressure >= 4500.0) -> tripLatched)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S3",
+                "formula": "G(tripLatched -> !fuelPermit)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S4",
+                "formula": "G((prev(tripLatched) & !rising(resetBtn)) -> tripLatched)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S4b",
+                "formula": "G((prev(tripLatched) & rising(resetBtn) & (runRequest OR !pressureValid OR pressure > 4200.0)) -> tripLatched)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S5",
+                "formula": "G(!runRequest -> currentCauseMask = 0)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S6",
+                "formula": "G((runRequest & pressureValid & pressure < 4500.0) -> currentCauseMask = 0)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S7",
+                "formula": "G(diagnosticActive <-> currentCauseMask <> 0)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S8",
+                "formula": "G((rising(resetBtn) & !runRequest & pressureValid & pressure <= 4200.0) -> (!tripLatched & latchedCauseMask = 0))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S9",
+                "formula": "G(currentCauseMask = 8 -> (runRequest & pressureValid & pressure >= 4500.0))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S10",
+                "formula": "G((currentCauseMask = 4 OR currentCauseMask = 6 OR currentCauseMask = 12 OR currentCauseMask = 14) -> (fuelFlow >= 4.0 & steamFlow <= 10.0))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S11",
+                "formula": "G((currentCauseMask = 2 OR currentCauseMask = 6 OR currentCauseMask = 10 OR currentCauseMask = 14) -> (outletCmd >= 50 & outletFeedback <= 10))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S12",
+                "formula": "G((runRequest & !pressureValid) -> currentCauseMask = 1)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S13",
+                "formula": "G((latchedCauseMask >= 0 AND latchedCauseMask <= 15 AND currentCauseMask >= 0 AND currentCauseMask <= 15) AND (tripLatched -> (((latchedCauseMask = 1 OR latchedCauseMask = 3 OR latchedCauseMask = 5 OR latchedCauseMask = 7 OR latchedCauseMask = 9 OR latchedCauseMask = 11 OR latchedCauseMask = 13 OR latchedCauseMask = 15) <-> (prev((latchedCauseMask = 1 OR latchedCauseMask = 3 OR latchedCauseMask = 5 OR latchedCauseMask = 7 OR latchedCauseMask = 9 OR latchedCauseMask = 11 OR latchedCauseMask = 13 OR latchedCauseMask = 15)) OR (currentCauseMask = 1 OR currentCauseMask = 3 OR currentCauseMask = 5 OR currentCauseMask = 7 OR currentCauseMask = 9 OR currentCauseMask = 11 OR currentCauseMask = 13 OR currentCauseMask = 15))) AND ((latchedCauseMask = 2 OR latchedCauseMask = 3 OR latchedCauseMask = 6 OR latchedCauseMask = 7 OR latchedCauseMask = 10 OR latchedCauseMask = 11 OR latchedCauseMask = 14 OR latchedCauseMask = 15) <-> (prev((latchedCauseMask = 2 OR latchedCauseMask = 3 OR latchedCauseMask = 6 OR latchedCauseMask = 7 OR latchedCauseMask = 10 OR latchedCauseMask = 11 OR latchedCauseMask = 14 OR latchedCauseMask = 15)) OR (currentCauseMask = 2 OR currentCauseMask = 3 OR currentCauseMask = 6 OR currentCauseMask = 7 OR currentCauseMask = 10 OR currentCauseMask = 11 OR currentCauseMask = 14 OR currentCauseMask = 15))) AND ((latchedCauseMask = 4 OR latchedCauseMask = 5 OR latchedCauseMask = 6 OR latchedCauseMask = 7 OR latchedCauseMask = 12 OR latchedCauseMask = 13 OR latchedCauseMask = 14 OR latchedCauseMask = 15) <-> (prev((latchedCauseMask = 4 OR latchedCauseMask = 5 OR latchedCauseMask = 6 OR latchedCauseMask = 7 OR latchedCauseMask = 12 OR latchedCauseMask = 13 OR latchedCauseMask = 14 OR latchedCauseMask = 15)) OR (currentCauseMask = 4 OR currentCauseMask = 5 OR currentCauseMask = 6 OR currentCauseMask = 7 OR currentCauseMask = 12 OR currentCauseMask = 13 OR currentCauseMask = 14 OR currentCauseMask = 15))) AND ((latchedCauseMask = 8 OR latchedCauseMask = 9 OR latchedCauseMask = 10 OR latchedCauseMask = 11 OR latchedCauseMask = 12 OR latchedCauseMask = 13 OR latchedCauseMask = 14 OR latchedCauseMask = 15) <-> (prev((latchedCauseMask = 8 OR latchedCauseMask = 9 OR latchedCauseMask = 10 OR latchedCauseMask = 11 OR latchedCauseMask = 12 OR latchedCauseMask = 13 OR latchedCauseMask = 14 OR latchedCauseMask = 15)) OR (currentCauseMask = 8 OR currentCauseMask = 9 OR currentCauseMask = 10 OR currentCauseMask = 11 OR currentCauseMask = 12 OR currentCauseMask = 13 OR currentCauseMask = 14 OR currentCauseMask = 15))))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S10",
+                "formula": "G((currentCauseMask = 0 OR currentCauseMask = 1 OR currentCauseMask = 2 OR currentCauseMask = 4 OR currentCauseMask = 6 OR currentCauseMask = 8) AND ((currentCauseMask = 4 OR currentCauseMask = 6) <-> (runRequest AND pressureValid AND pressure >= 4500.0 AND fuelFlow >= 4.0 AND steamFlow <= 10.0)) AND ((runRequest AND pressureValid AND pressure >= 4500.0) -> (currentCauseMask = 2 OR currentCauseMask = 4 OR currentCauseMask = 6 OR currentCauseMask = 8)))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S11",
+                "formula": "G((currentCauseMask = 2 OR currentCauseMask = 6) <-> ((runRequest AND pressureValid AND pressure >= 4500.0 AND outletCmd >= 50 AND outletFeedback <= 10) AND prev((runRequest AND pressureValid AND pressure >= 4500.0 AND outletCmd >= 50 AND outletFeedback <= 10)) AND prev(prev((runRequest AND pressureValid AND pressure >= 4500.0 AND outletCmd >= 50 AND outletFeedback <= 10)))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S15",
+                "formula": "G(currentCauseMask = 0 OR currentCauseMask = 1 OR currentCauseMask = 2 OR currentCauseMask = 4 OR currentCauseMask = 6 OR currentCauseMask = 8)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S16",
+                "formula": "G(fuelPermit <-> (runRequest AND NOT tripLatched))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S18",
+                "formula": "G(!tripLatched -> latchedCauseMask = 0)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S17",
+                "formula": "G(tripLatched <-> ((runRequest AND (NOT pressureValid OR pressure >= 4500.0)) OR (prev(tripLatched) AND NOT (rising(resetBtn) AND NOT runRequest AND pressureValid AND pressure <= 4200.0))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              }
+            ]
+          },
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.19241793,
+      "actual_model": "deepseek-v4-pro-0813",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1794367936.0371728,
+  "finished_at": 1794368060.8173635,
+  "error": "",
+  "stop_reason": "functional_pass_formal_truncated",
+  "run_signature": "",
+  "experiment_kind": "live",
+  "tests_total": 96,
+  "request_window_seconds": 451,
+  "prompt_version": "v2.5-task-specific-reset",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 16267,
+  "total_latency_s": 124.53099999995902,
+  "n_attempts": 1,
+  "job_done": true,
+  "study_plan_sha256": "5d34beeeeacd5265559418bf339d6cefa78c9bc504793ddbd387265486810ba8",
+  "complete_code": true
+}
