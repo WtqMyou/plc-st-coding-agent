@@ -1,0 +1,178 @@
+{
+  "job_id": "custom_minimax-m27/public-easy-04",
+  "pid": "public-easy-04",
+  "condition": "custom_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 20,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 45,
+            "code": "E_DURATION_LITERAL",
+            "message": "Invalid duration literal: LTIME#0"
+          },
+          {
+            "level": "error",
+            "line": 97,
+            "code": "E_ARG_COUNT",
+            "message": "Invalid argument count for LTIME"
+          }
+        ],
+        "tests_total": 20,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_DURATION_LITERAL] 第45行 Invalid duration literal: LTIME#0; [E_ARG_COUNT] 第97行 Invalid argument count for LTIME",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "f1934ad3d54979ec2f88fea54f30e28b00eb0a8c192fa0731efd93b62191f965",
+          "task_json_sha256": "24aa4f211feb3d3fded91ef0dd3ef801fc76516db23ea8e698ddce68d048ba01",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 45 行 [E_DURATION_LITERAL] Invalid duration literal: LTIME#0\n第 97 行 [E_ARG_COUNT] Invalid argument count for LTIME\nLTL 检查：not_run。",
+      "idx": 0,
+      "code": "(* -------------------------------------------------------------\n   Jam Pump Debouncing and Runtime Maintenance\n   -------------------------------------------------------------\n   Inputs\n      VISCOSITY_OK    : Raw viscosity‑OK signal (TRUE = within range)\n      PASTE_E_STOP_NC : Emergency‑stop circuit, normally closed\n      DebounceTime    : Required ON‑time for the viscosity signal\n      CycleTime       : Actual invocation interval (must be >0)\n\n   Outputs\n      VFD_RUN         : VFD run command (TRUE = allowed)\n      PUMP_MAINT_DUE  : Maintenance‑due flag (TRUE after 500 h run)\n      PUMP_RUNTIME_ACC: Accumulated run time (LTIME)\n\n   Internal variables\n      viscosity_valid : Viscosity condition accepted after debounce\n      DebounceTimer   : TON used for debouncing\n      prevEStop       : Previous state of PASTE_E_STOP_NC (edge detection)\n      init            : Power‑up initialisation flag\n   ------------------------------------------------------------- *)\nFUNCTION_BLOCK JamPumpControl\nVAR_INPUT\n    VISCOSITY_OK    : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceTime    : TIME;\n    CycleTime       : TIME;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN         : BOOL;\n    PUMP_MAINT_DUE  : BOOL;\n    PUMP_RUNTIME_ACC: LTIME;\nEND_VAR\nVAR\n    viscosity_valid : BOOL := FALSE;\n    DebounceTimer   : TON;\n    prevEStop       : BOOL := TRUE;   // assume not in emergency stop at start‑up\n    init            : BOOL := TRUE;   // power‑up initialization flag\nEND_VAR\n\n// -------------------------------------------------------------------\n// Power‑up initialisation\n// -------------------------------------------------------------------\nIF init THEN\n    VFD_RUN          := FALSE;            // run output OFF\n    PUMP_RUNTIME_ACC := LTIME#0;         // accumulated time = 0\n    PUMP_MAINT_DUE   := FALSE;           // maintenance flag cleared\n    viscosity_valid  := FALSE;           // no valid viscosity yet\n    DebounceTimer(IN := FALSE, PT := DebounceTime); // timer reset\n    // Initialise previous E‑Stop state to current value so that a\n    // spurious falling‑edge is not generated on the first scan.\n    prevEStop := PASTE_E_STOP_NC;\n    init := FALSE;\n\n// -------------------------------------------------------------------\n// Normal (cyclic) processing\n// -------------------------------------------------------------------\nELSE\n\n    // ---- Emergency‑stop edge detection --------------------------------\n    // If the emergency‑stop circuit opens (falling edge) the viscosity\n    // permissive must be cleared and any in‑progress debounce aborted.\n    IF (NOT PASTE_E_STOP_NC) AND prevEStop THEN\n        viscosity_valid      := FALSE;\n        DebounceTimer(IN := FALSE);   // abort timer\n    END_IF\n    prevEStop := PASTE_E_STOP_NC;\n\n    // ---- Viscosity signal – immediate invalidation --------------------\n    IF NOT VISCOSITY_OK THEN\n        viscosity_valid := FALSE;   // loss of signal → invalid immediately\n    END_IF\n\n    // ---- Debounce timer ------------------------------------------------\n    // Start timing only when:\n    //   • raw signal is TRUE,\n    //   • we do not yet have a valid reading,\n    //   • emergency‑stop circuit is closed.\n    DebounceTimer(\n        IN := VISCOSITY_OK AND NOT viscosity_valid AND PASTE_E_STOP_NC,\n        PT := DebounceTime\n    );\n    DebounceTimer();   // execute the TON block\n\n    // When the timer finishes, the viscosity condition becomes valid.\n    IF DebounceTimer.Q THEN\n        viscosity_valid := TRUE;\n    END_IF\n\n    // ---- Run permissive ------------------------------------------------\n    // VFD may run only when the emergency‑stop is closed AND the\n    // viscosity condition has been accepted after debounce.\n    VFD_RUN := PASTE_E_STOP_NC AND viscosity_valid;\n\n    // ---- Runtime accumulation -----------------------------------------\n    // Accumulate time only while the pump is actually running.\n    IF VFD_RUN THEN\n        PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + LTIME(CycleTime);\n    END_IF\n\n    // ---- Maintenance‑due indication ------------------------------------\n    // Informational flag – does not affect safety or operation.\n    PUMP_MAINT_DUE := (PUMP_RUNTIME_ACC >= LTIME#500h);\n\nEND_IF\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "f1934ad3d54979ec2f88fea54f30e28b00eb0a8c192fa0731efd93b62191f965",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 468,
+      "completion_tokens": 8070,
+      "cost_cny": 0.054328932,
+      "latency_s": 139.031,
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 20,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 20,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "Generate code...",
+              "Cannot convert type 'ULINT' to type 'LTIME'",
+              "Cannot convert type 'LTIME' to type 'ULINT'",
+              "Cannot convert type 'TIME' to type 'ULINT'",
+              "Build complete -- 3 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 16.21799999999348,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-easy-04_c2a61a30d9",
+            "source_sha256": "93980a7b3b9eb5b0f2efaffd5e4afe31f9bf5a56279b1313c425609e698c48e2",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "93980a7b3b9eb5b0f2efaffd5e4afe31f9bf5a56279b1313c425609e698c48e2",
+          "task_json_sha256": "24aa4f211feb3d3fded91ef0dd3ef801fc76516db23ea8e698ddce68d048ba01",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\nGenerate code...\nCannot convert type 'ULINT' to type 'LTIME'\nCannot convert type 'LTIME' to type 'ULINT'\nCannot convert type 'TIME' to type 'ULINT'\nBuild complete -- 3 errors, 0 warnings : No download possible\nAdditional code checks ...\n自动测试：0/20。\nLTL 检查：not_run。",
+      "idx": 1,
+      "code": "(* -------------------------------------------------------------\n   Jam Pump Debouncing and Runtime Maintenance\n   -------------------------------------------------------------\n   Inputs\n      VISCOSITY_OK    : Raw viscosity‑OK signal (TRUE = within range)\n      PASTE_E_STOP_NC : Emergency‑stop circuit, normally closed\n      DebounceTime    : Required ON‑time for the viscosity signal\n      CycleTime       : Actual invocation interval (must be >0)\n\n   Outputs\n      VFD_RUN         : VFD run command (TRUE = allowed)\n      PUMP_MAINT_DUE  : Maintenance‑due flag (TRUE after 500 h run)\n      PUMP_RUNTIME_ACC: Accumulated run time (LTIME)\n\n   Internal variables\n      viscosity_valid : Viscosity condition accepted after debounce\n      DebounceTimer   : TON used for debouncing\n      prevEStop       : Previous state of PASTE_E_STOP_NC (edge detection)\n      init            : Power‑up initialisation flag\n   ------------------------------------------------------------- *)\nFUNCTION_BLOCK JamPumpControl\nVAR_INPUT\n    VISCOSITY_OK    : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceTime    : TIME;\n    CycleTime       : TIME;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN         : BOOL;\n    PUMP_MAINT_DUE  : BOOL;\n    PUMP_RUNTIME_ACC: LTIME;\nEND_VAR\nVAR\n    viscosity_valid : BOOL := FALSE;\n    DebounceTimer   : TON;\n    prevEStop       : BOOL := TRUE;   // assume not in emergency stop at start‑up\n    init            : BOOL := TRUE;   // power‑up initialization flag\nEND_VAR\n\n// -------------------------------------------------------------------\n// Power‑up initialisation\n// -------------------------------------------------------------------\nIF init THEN\n    VFD_RUN          := FALSE;            // run output OFF\n    PUMP_RUNTIME_ACC := LTIME#0h;        // accumulated time = 0\n    PUMP_MAINT_DUE   := FALSE;           // maintenance flag cleared\n    viscosity_valid  := FALSE;           // no valid viscosity yet\n    DebounceTimer(IN := FALSE, PT := DebounceTime); // timer reset\n    // Initialise previous E‑Stop state to current value so that a\n    // spurious falling‑edge is not generated on the first scan.\n    prevEStop := PASTE_E_STOP_NC;\n    init := FALSE;\n\n// -------------------------------------------------------------------\n// Normal (cyclic) processing\n// -------------------------------------------------------------------\nELSE\n\n    // ---- Emergency‑stop edge detection --------------------------------\n    // If the emergency‑stop circuit opens (falling edge) the viscosity\n    // permissive must be cleared and any in‑progress debounce aborted.\n    IF (NOT PASTE_E_STOP_NC) AND prevEStop THEN\n        viscosity_valid      := FALSE;\n        DebounceTimer(IN := FALSE);   // abort timer\n    END_IF\n    prevEStop := PASTE_E_STOP_NC;\n\n    // ---- Viscosity signal – immediate invalidation --------------------\n    IF NOT VISCOSITY_OK THEN\n        viscosity_valid := FALSE;   // loss of signal → invalid immediately\n    END_IF\n\n    // ---- Debounce timer ------------------------------------------------\n    // Start timing only when:\n    //   • raw signal is TRUE,\n    //   • we do not yet have a valid reading,\n    //   • emergency‑stop circuit is closed.\n    DebounceTimer(\n        IN := VISCOSITY_OK AND NOT viscosity_valid AND PASTE_E_STOP_NC,\n        PT := DebounceTime\n    );\n    DebounceTimer();   // execute the TON block\n\n    // When the timer finishes, the viscosity condition becomes valid.\n    IF DebounceTimer.Q THEN\n        viscosity_valid := TRUE;\n    END_IF\n\n    // ---- Run permissive ------------------------------------------------\n    // VFD may run only when the emergency‑stop is closed AND the\n    // viscosity condition has been accepted after debounce.\n    VFD_RUN := PASTE_E_STOP_NC AND viscosity_valid;\n\n    // ---- Runtime accumulation -----------------------------------------\n    // Accumulate time only while the pump is actually running.\n    // TIME values implicitly convert to LTIME in expressions.\n    IF VFD_RUN THEN\n        PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + CycleTime;\n    END_IF\n\n    // ---- Maintenance‑due indication ------------------------------------\n    // Informational flag – does not affect safety or operation.\n    PUMP_MAINT_DUE := (PUMP_RUNTIME_ACC >= LTIME#500h);\n\nEND_IF\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "93980a7b3b9eb5b0f2efaffd5e4afe31f9bf5a56279b1313c425609e698c48e2",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 1455,
+      "completion_tokens": 1570,
+      "cost_cny": 0.012832365000000002,
+      "latency_s": 46.687,
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 20,
+  "study_plan_sha256": "37d0bbf483d634f65b4ebb0012a1fd7ae9032462fbc920a1dd5300ca31d0a7e2",
+  "started_at": "2026-11-12T00:17:34.086453+08:00",
+  "wall_seconds": 185.75,
+  "finished_at": "2026-11-12T00:20:39.812447+08:00",
+  "credential_batch": "primary"
+}

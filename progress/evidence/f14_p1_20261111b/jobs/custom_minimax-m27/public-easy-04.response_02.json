@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-0z445d-1794413993598562367",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```iec\n(* -------------------------------------------------------------\n   Jam Pump Debouncing and Runtime Maintenance\n   -------------------------------------------------------------\n   Inputs\n      VISCOSITY_OK    : Raw viscosity‑OK signal (TRUE = within range)\n      PASTE_E_STOP_NC : Emergency‑stop circuit, normally closed\n      DebounceTime    : Required ON‑time for the viscosity signal\n      CycleTime       : Actual invocation interval (must be >0)\n\n   Outputs\n      VFD_RUN         : VFD run command (TRUE = allowed)\n      PUMP_MAINT_DUE  : Maintenance‑due flag (TRUE after 500 h run)\n      PUMP_RUNTIME_ACC: Accumulated run time (LTIME)\n\n   Internal variables\n      viscosity_valid : Viscosity condition accepted after debounce\n      DebounceTimer   : TON used for debouncing\n      prevEStop       : Previous state of PASTE_E_STOP_NC (edge detection)\n      init            : Power‑up initialisation flag\n   ------------------------------------------------------------- *)\nFUNCTION_BLOCK JamPumpControl\nVAR_INPUT\n    VISCOSITY_OK    : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceTime    : TIME;\n    CycleTime       : TIME;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN         : BOOL;\n    PUMP_MAINT_DUE  : BOOL;\n    PUMP_RUNTIME_ACC: LTIME;\nEND_VAR\nVAR\n    viscosity_valid : BOOL := FALSE;\n    DebounceTimer   : TON;\n    prevEStop       : BOOL := TRUE;   // assume not in emergency stop at start‑up\n    init            : BOOL := TRUE;   // power‑up initialization flag\nEND_VAR\n\n// -------------------------------------------------------------------\n// Power‑up initialisation\n// -------------------------------------------------------------------\nIF init THEN\n    VFD_RUN          := FALSE;            // run output OFF\n    PUMP_RUNTIME_ACC := LTIME#0h;        // accumulated time = 0\n    PUMP_MAINT_DUE   := FALSE;           // maintenance flag cleared\n    viscosity_valid  := FALSE;           // no valid viscosity yet\n    DebounceTimer(IN := FALSE, PT := DebounceTime); // timer reset\n    // Initialise previous E‑Stop state to current value so that a\n    // spurious falling‑edge is not generated on the first scan.\n    prevEStop := PASTE_E_STOP_NC;\n    init := FALSE;\n\n// -------------------------------------------------------------------\n// Normal (cyclic) processing\n// -------------------------------------------------------------------\nELSE\n\n    // ---- Emergency‑stop edge detection --------------------------------\n    // If the emergency‑stop circuit opens (falling edge) the viscosity\n    // permissive must be cleared and any in‑progress debounce aborted.\n    IF (NOT PASTE_E_STOP_NC) AND prevEStop THEN\n        viscosity_valid      := FALSE;\n        DebounceTimer(IN := FALSE);   // abort timer\n    END_IF\n    prevEStop := PASTE_E_STOP_NC;\n\n    // ---- Viscosity signal – immediate invalidation --------------------\n    IF NOT VISCOSITY_OK THEN\n        viscosity_valid := FALSE;   // loss of signal → invalid immediately\n    END_IF\n\n    // ---- Debounce timer ------------------------------------------------\n    // Start timing only when:\n    //   • raw signal is TRUE,\n    //   • we do not yet have a valid reading,\n    //   • emergency‑stop circuit is closed.\n    DebounceTimer(\n        IN := VISCOSITY_OK AND NOT viscosity_valid AND PASTE_E_STOP_NC,\n        PT := DebounceTime\n    );\n    DebounceTimer();   // execute the TON block\n\n    // When the timer finishes, the viscosity condition becomes valid.\n    IF DebounceTimer.Q THEN\n        viscosity_valid := TRUE;\n    END_IF\n\n    // ---- Run permissive ------------------------------------------------\n    // VFD may run only when the emergency‑stop is closed AND the\n    // viscosity condition has been accepted after debounce.\n    VFD_RUN := PASTE_E_STOP_NC AND viscosity_valid;\n\n    // ---- Runtime accumulation -----------------------------------------\n    // Accumulate time only while the pump is actually running.\n    // TIME values implicitly convert to LTIME in expressions.\n    IF VFD_RUN THEN\n        PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + CycleTime;\n    END_IF\n\n    // ---- Maintenance‑due indication ------------------------------------\n    // Informational flag – does not affect safety or operation.\n    PUMP_MAINT_DUE := (PUMP_RUNTIME_ACC >= LTIME#500h);\n\nEND_IF\n\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "The user is reporting static check failures:\n\n1. Line 45: `[E_DURATION_LITERAL] Invalid duration literal: LTIME#0` - The literal `LTIME#0` is not valid in this PLC language (probably structured text per IEC 61131-3). Duration literals for LTIME should use `LTIME#0h0m0s0ms` or similar format, not just `LTIME#0`.\n\n2. Line 97: `[E_ARG_COUNT] Invalid argument count for LTIME` - The cast `LTIME(CycleTime)` has wrong number of arguments. The LTIME type constructor expects a specific format, not a TIME value directly.\n\nLet me fix these issues:\n\nFor the initialization:\n- `LTIME#0` should be `LTIME#0h` or `LTIME#0s` or `T#0s` (but for LTIME type, it should be a valid LTIME literal)\n\nFor the runtime accumulation:\n- `LTIME(CycleTime)` - this is incorrect. We need to convert a TIME to LTIME. The proper way depends on the PLC framework, but typically we can use:\n  - `LONG_TO_LTIME(TIME_TO_LONG(CycleTime))` - convert TIME to long, then to LTIME\n  - Or simply add the TIME value directly and let implicit conversion handle it\n  - Or use `LTIME(CycleTime)` if the framework supports it (but apparently it doesn't)\n\nLet me check what the correct approaches might be:\n1. For the duration literal: `LTIME#0h` or `LTIME#0s` or `LTIME#0ms`\n2. For the conversion: Need to convert TIME to LTIME. One common way is:\n   - `LTIME#0h + CycleTime` - adding a zero LTIME to a TIME might work\n   - Or using type conversion functions\n\nLooking at typical IEC 61131-3 implementations:\n- `LTIME#0h` is a valid LTIME literal (zero hours)\n- To convert TIME to LTIME, we might need explicit conversion functions like `TIME_TO_LTIME(CycleTime)` or `LONG_TO_LTIME(TIME_TO_LONG(CycleTime))`\n\nThe most portable approach would be using explicit conversion functions if available, or arithmetic operations that leverage implicit conversion rules in the target platform.\n\nI need to replace the zero literal with `LTIME#0h` and handle the TIME-to-LTIME conversion using `TIME_TO_LTIME()` if available, otherwise falling back to arithmetic or conversion functions like `LONG_TO_LTIME()` combined with `TIME_TO_LONG()`. The variable declaration for PUMP_RUNTIME_ACC is declared as LTIME. For initialization, I'll use `LTIME#0h` as the zero literal. For the runtime accumulation, since both PUMP_RUNTIME_ACC and CycleTime are time types, the expression `PUMP_RUNTIME_ACC + CycleTime` should work through implicit conversion in IEC 61131-3. I'll make these adjustments and return the corrected code.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The user is reporting static check failures:\n\n1. Line 45: `[E_DURATION_LITERAL] Invalid duration literal: LTIME#0` - The literal `LTIME#0` is not valid in this PLC language (probably structured text per IEC 61131-3). Duration literals for LTIME should use `LTIME#0h0m0s0ms` or similar format, not just `LTIME#0`.\n\n2. Line 97: `[E_ARG_COUNT] Invalid argument count for LTIME` - The cast `LTIME(CycleTime)` has wrong number of arguments. The LTIME type constructor expects a specific format, not a TIME value directly.\n\nLet me fix these issues:\n\nFor the initialization:\n- `LTIME#0` should be `LTIME#0h` or `LTIME#0s` or `T#0s` (but for LTIME type, it should be a valid LTIME literal)\n\nFor the runtime accumulation:\n- `LTIME(CycleTime)` - this is incorrect. We need to convert a TIME to LTIME. The proper way depends on the PLC framework, but typically we can use:\n  - `LONG_TO_LTIME(TIME_TO_LONG(CycleTime))` - convert TIME to long, then to LTIME\n  - Or simply add the TIME value directly and let implicit conversion handle it\n  - Or use `LTIME(CycleTime)` if the framework supports it (but apparently it doesn't)\n\nLet me check what the correct approaches might be:\n1. For the duration literal: `LTIME#0h` or `LTIME#0s` or `LTIME#0ms`\n2. For the conversion: Need to convert TIME to LTIME. One common way is:\n   - `LTIME#0h + CycleTime` - adding a zero LTIME to a TIME might work\n   - Or using type conversion functions\n\nLooking at typical IEC 61131-3 implementations:\n- `LTIME#0h` is a valid LTIME literal (zero hours)\n- To convert TIME to LTIME, we might need explicit conversion functions like `TIME_TO_LTIME(CycleTime)` or `LONG_TO_LTIME(TIME_TO_LONG(CycleTime))`\n\nThe most portable approach would be using explicit conversion functions if available, or arithmetic operations that leverage implicit conversion rules in the target platform.\n\nI need to replace the zero literal with `LTIME#0h` and handle the TIME-to-LTIME conversion using `TIME_TO_LTIME()` if available, otherwise falling back to arithmetic or conversion functions like `LONG_TO_LTIME()` combined with `TIME_TO_LONG()`. The variable declaration for PUMP_RUNTIME_ACC is declared as LTIME. For initialization, I'll use `LTIME#0h` as the zero literal. For the runtime accumulation, since both PUMP_RUNTIME_ACC and CycleTime are time types, the expression `PUMP_RUNTIME_ACC + CycleTime` should work through implicit conversion in IEC 61131-3. I'll make these adjustments and return the corrected code.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794413994,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 1455,
+      "completion_tokens": 1570,
+      "total_tokens": 3025,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.012832"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
