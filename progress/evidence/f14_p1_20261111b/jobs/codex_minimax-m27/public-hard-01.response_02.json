@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-3s1j4z-1794415894966103588",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n// Material Proportioning Process Control - ST Implementation\nFUNCTION_BLOCK MaterialProportioning\nVAR_INPUT\n    estop            : BOOL;   // Emergency Stop Signal (FALSE = triggered)\n    opeMode          : BOOL;   // Operation Mode (FALSE = Manual, TRUE = Auto)\n    valveAStart      : BOOL;   // Valve A Start Button\n    valveBStart      : BOOL;   // Valve B Start Button\n    valveCStart      : BOOL;   // Valve C Start Button\n    valveDStart      : BOOL;   // Valve D Start Button\n    mixMotorStart    : BOOL;   // Mixing Motor Start Button\n    autoStart        : BOOL;   // Automatic Start Button\n    processMode      : BOOL;   // Process Mode (FALSE = Basic, TRUE = Extended)\n    levelSensor      : INT;    // Liquid Level Sensor (unit: cm)\n    mixMotorComplete : BOOL;   // Mixing Complete Signal\nEND_VAR\n\nVAR_OUTPUT\n    valveARun  : BOOL;   // Valve A Run Command\n    valveBRun  : BOOL;   // Valve B Run Command\n    valveCRun  : BOOL;   // Valve C Run Command\n    valveDRun  : BOOL;   // Valve D Run Command\n    mixMotorRun: BOOL;   // Mixing Motor Run Command\nEND_VAR\n\nVAR\n    prevValveAStart   : BOOL;   // Previous state for edge detection\n    prevValveBStart   : BOOL;\n    prevValveCStart   : BOOL;\n    prevValveDStart   : BOOL;\n    prevMixMotorStart : BOOL;\n    prevAutoStart     : BOOL;\n    autoState : INT;     // 0=IDLE, 1=FILL_A, 2=FILL_B, 3=MIX_BASIC, \n                         // 4=FILL_C, 5=MIX_EXT, 6=DRAIN\nEND_VAR\n\nVAR CONSTANT\n    STATE_IDLE      : INT := 0;\n    STATE_FILL_A    : INT := 1;\n    STATE_FILL_B    : INT := 2;\n    STATE_MIX_BASIC : INT := 3;\n    STATE_FILL_C    : INT := 4;\n    STATE_MIX_EXT   : INT := 5;\n    STATE_DRAIN     : INT := 6;\nEND_VAR\n\n// ============================================================================\n// Main Control Logic\n// ============================================================================\n\n// ---------------------------------------------------------------------------\n// Emergency Stop Logic\n// When estop=FALSE, all equipment stops immediately\n// ---------------------------------------------------------------------------\nIF NOT estop THEN\n    valveARun  := FALSE;\n    valveBRun  := FALSE;\n    valveCRun  := FALSE;\n    valveDRun  := FALSE;\n    mixMotorRun:= FALSE;\n    autoState  := STATE_IDLE;\n    \n    prevValveAStart   := FALSE;\n    prevValveBStart   := FALSE;\n    prevValveCStart   := FALSE;\n    prevValveDStart   := FALSE;\n    prevMixMotorStart := FALSE;\n    prevAutoStart     := FALSE;\n    RETURN;\nEND_IF\n\n// ---------------------------------------------------------------------------\n// Mode Selection: Manual vs Automatic\n// ---------------------------------------------------------------------------\nIF NOT opeMode THEN\n    // MANUAL OPERATION MODE\n    // Toggle each device on rising edge of corresponding button\n    \n    IF valveAStart AND NOT prevValveAStart THEN\n        valveARun := NOT valveARun;\n    END_IF;\n    prevValveAStart := valveAStart;\n    \n    IF valveBStart AND NOT prevValveBStart THEN\n        valveBRun := NOT valveBRun;\n    END_IF;\n    prevValveBStart := valveBStart;\n    \n    IF valveCStart AND NOT prevValveCStart THEN\n        valveCRun := NOT valveCRun;\n    END_IF;\n    prevValveCStart := valveCStart;\n    \n    IF valveDStart AND NOT prevValveDStart THEN\n        valveDRun := NOT valveDRun;\n    END_IF;\n    prevValveDStart := valveDStart;\n    \n    IF mixMotorStart AND NOT prevMixMotorStart THEN\n        mixMotorRun := NOT mixMotorRun;\n    END_IF;\n    prevMixMotorStart := mixMotorStart;\n\nELSE\n    // AUTOMATIC OPERATION MODE\n    \n    valveARun  := FALSE;\n    valveBRun  := FALSE;\n    valveCRun  := FALSE;\n    valveDRun  := FALSE;\n    mixMotorRun:= FALSE;\n    \n    IF autoStart AND NOT prevAutoStart THEN\n        IF autoState = STATE_IDLE THEN\n            autoState := STATE_FILL_A;\n        END_IF;\n    END_IF;\n    prevAutoStart := autoStart;\n    \n    CASE autoState OF\n        \n        STATE_IDLE:\n            valveARun  := FALSE;\n            valveBRun  := FALSE;\n            valveCRun  := FALSE;\n            valveDRun  := FALSE;\n            mixMotorRun:= FALSE;\n        \n        STATE_FILL_A:\n            valveARun := TRUE;\n            IF levelSensor >= 50 THEN\n                valveARun := FALSE;\n                autoState := STATE_FILL_B;\n            END_IF;\n        \n        STATE_FILL_B:\n            valveBRun := TRUE;\n            IF levelSensor >= 80 THEN\n                valveBRun := FALSE;\n                IF NOT processMode THEN\n                    autoState := STATE_MIX_BASIC;\n                ELSE\n                    autoState := STATE_FILL_C;\n                END_IF;\n            END_IF;\n        \n        STATE_MIX_BASIC:\n            mixMotorRun := TRUE;\n            IF mixMotorComplete THEN\n                mixMotorRun := FALSE;\n                autoState := STATE_DRAIN;\n            END_IF;\n        \n        STATE_FILL_C:\n            valveCRun := TRUE;\n            IF levelSensor >= 100 THEN\n                valveCRun := FALSE;\n                autoState := STATE_MIX_EXT;\n            END_IF;\n        \n        STATE_MIX_EXT:\n            mixMotorRun := TRUE;\n            IF mixMotorComplete THEN\n                mixMotorRun := FALSE;\n                autoState := STATE_DRAIN;\n            END_IF;\n        \n        STATE_DRAIN:\n            valveDRun := TRUE;\n            IF levelSensor < 10 THEN\n                valveDRun := FALSE;\n                autoState := STATE_IDLE;\n            END_IF;\n    \n    END_CASE;\n\nEND_IF;\n\nEND_FUNCTION_BLOCK\n\nPROGRAM PLC_PRG\nVAR\n    inst : MaterialProportioning;\nEND_VAR\n\ninst(\n    estop            := estop,\n    opeMode          := opeMode,\n    valveAStart      := valveAStart,\n    valveBStart      := valveBStart,\n    valveCStart      := valveCStart,\n    valveDStart      := valveDStart,\n    mixMotorStart    := mixMotorStart,\n    autoStart        := autoStart,\n    processMode      := processMode,\n    levelSensor      := levelSensor,\n    mixMotorComplete := mixMotorComplete,\n    valveARun        => valveARun,\n    valveBRun        => valveBRun,\n    valveCRun        => valveCRun,\n    valveDRun        => valveDRun,\n    mixMotorRun      => mixMotorRun\n);\nEND_PROGRAM",
+          "role": "assistant",
+          "reasoning_content": "The user is asking me to create a PLC program in Structured Text (ST) for a material proportioning process control system. The error message indicates that there's no executable POU (Program Organization Unit) found - this means I need to wrap the code in a proper function block or program structure.\n\nLet me create a proper ST implementation with a Function Block that can be instantiated.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The user is asking me to create a PLC program in Structured Text (ST) for a material proportioning process control system. The error message indicates that there's no executable POU (Program Organization Unit) found - this means I need to wrap the code in a proper function block or program structure.\n\nLet me create a proper ST implementation with a Function Block that can be instantiated.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794415898,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 9104,
+      "completion_tokens": 1566,
+      "total_tokens": 10670,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.025496"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}

@@ -1,0 +1,776 @@
+{
+  "job_id": "codex_minimax-m27/public-hard-01",
+  "pid": "public-hard-01",
+  "condition": "codex_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 29,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 29,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "15c8b37e9c91ddc07d8f2c5e1df9c600ef586463f41f322aeb84e94129342bf6",
+          "task_json_sha256": "ddd5d9e65991f009c963bb0984d7ca10e3c847015e4e33b61e8a650585700027",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 0 行 [E_NO_POU] 未找到可执行 POU\nLTL 检查：not_run。",
+      "idx": 0,
+      "code": "// Material Proportioning Process Control - ST Implementation\n// Supports Manual and Automatic modes with Emergency Stop\n\n// ============================================================================\n// Variable Declarations\n// ============================================================================\nVAR\n    // System Inputs\n    estop            : BOOL;   // Emergency Stop Signal (FALSE = triggered)\n    opeMode          : BOOL;   // Operation Mode (FALSE = Manual, TRUE = Auto)\n    valveAStart      : BOOL;   // Valve A Start Button\n    valveBStart      : BOOL;   // Valve B Start Button\n    valveCStart      : BOOL;   // Valve C Start Button\n    valveDStart      : BOOL;   // Valve D Start Button\n    mixMotorStart    : BOOL;   // Mixing Motor Start Button\n    autoStart        : BOOL;   // Automatic Start Button\n    processMode      : BOOL;   // Process Mode (FALSE = Basic, TRUE = Extended)\n    levelSensor      : INT;    // Liquid Level Sensor (unit: cm)\n    mixMotorComplete : BOOL;   // Mixing Complete Signal\n    \n    // System Outputs\n    valveARun  : BOOL;   // Valve A Run Command\n    valveBRun  : BOOL;   // Valve B Run Command\n    valveCRun  : BOOL;   // Valve C Run Command\n    valveDRun  : BOOL;   // Valve D Run Command\n    mixMotorRun: BOOL;   // Mixing Motor Run Command\n    \n    // Internal Variables\n    prevValveAStart   : BOOL;   // Previous state for edge detection\n    prevValveBStart   : BOOL;\n    prevValveCStart   : BOOL;\n    prevValveDStart   : BOOL;\n    prevMixMotorStart : BOOL;\n    prevAutoStart     : BOOL;\n    \n    // Automatic Mode State Machine\n    autoState : INT;     // 0=IDLE, 1=FILL_A, 2=FILL_B, 3=MIX_BASIC, \n                         // 4=FILL_C, 5=MIX_EXT, 6=DRAIN\nEND_VAR\n\n// ============================================================================\n// Constants for State Machine\n// ============================================================================\nVAR CONSTANT\n    STATE_IDLE      : INT := 0;\n    STATE_FILL_A    : INT := 1;\n    STATE_FILL_B    : INT := 2;\n    STATE_MIX_BASIC : INT := 3;\n    STATE_FILL_C    : INT := 4;\n    STATE_MIX_EXT   : INT := 5;\n    STATE_DRAIN     : INT := 6;\nEND_VAR\n\n// ============================================================================\n// Main Control Logic\n// ============================================================================\n\n// ---------------------------------------------------------------------------\n// Emergency Stop Logic\n// When estop=FALSE, all equipment stops immediately\n// ---------------------------------------------------------------------------\nIF NOT estop THEN\n    // Emergency stop: immediate shutdown of all outputs\n    valveARun  := FALSE;\n    valveBRun  := FALSE;\n    valveCRun  := FALSE;\n    valveDRun  := FALSE;\n    mixMotorRun:= FALSE;\n    autoState  := STATE_IDLE;\n    \n    // Reset edge detection flags to prevent spurious triggers after estop release\n    prevValveAStart   := FALSE;\n    prevValveBStart   := FALSE;\n    prevValveCStart   := FALSE;\n    prevValveDStart   := FALSE;\n    prevMixMotorStart := FALSE;\n    prevAutoStart     := FALSE;\n    RETURN;  // Skip remaining logic when emergency stop is active\nEND_IF\n\n// ---------------------------------------------------------------------------\n// Mode Selection: Manual vs Automatic\n// ---------------------------------------------------------------------------\nIF NOT opeMode THEN\n    // ============================\n    // MANUAL OPERATION MODE\n    // Toggle each device on rising edge of corresponding button\n    // ============================\n    \n    // Valve A Toggle Control\n    IF valveAStart AND NOT prevValveAStart THEN\n        valveARun := NOT valveARun;\n    END_IF\n    prevValveAStart := valveAStart;\n    \n    // Valve B Toggle Control\n    IF valveBStart AND NOT prevValveBStart THEN\n        valveBRun := NOT valveBRun;\n    END_IF\n    prevValveBStart := valveBStart;\n    \n    // Valve C Toggle Control\n    IF valveCStart AND NOT prevValveCStart THEN\n        valveCRun := NOT valveCRun;\n    END_IF\n    prevValveCStart := valveCStart;\n    \n    // Valve D Toggle Control\n    IF valveDStart AND NOT prevValveDStart THEN\n        valveDRun := NOT valveDRun;\n    END_IF\n    prevValveDStart := valveDStart;\n    \n    // Mixing Motor Toggle Control\n    IF mixMotorStart AND NOT prevMixMotorStart THEN\n        mixMotorRun := NOT mixMotorRun;\n    END_IF\n    prevMixMotorStart := mixMotorStart;\n\nELSE\n    // ============================\n    // AUTOMATIC OPERATION MODE\n    // Sequential process control based on state machine\n    // ============================\n    \n    // Reset manual control outputs when switching to auto mode\n    valveARun  := FALSE;\n    valveBRun  := FALSE;\n    valveCRun  := FALSE;\n    valveDRun  := FALSE;\n    mixMotorRun:= FALSE;\n    \n    // Start automatic process on rising edge of autoStart button\n    IF autoStart AND NOT prevAutoStart THEN\n        IF autoState = STATE_IDLE THEN\n            autoState := STATE_FILL_A;  // Begin the automatic sequence\n        END_IF\n    END_IF\n    prevAutoStart := autoStart;\n    \n    // ---------------------------------------------------------------------------\n    // Automatic Mode State Machine\n    // ---------------------------------------------------------------------------\n    CASE autoState OF\n        \n        STATE_IDLE:\n            // Wait for autoStart button press\n            valveARun  := FALSE;\n            valveBRun  := FALSE;\n            valveCRun  := FALSE;\n            valveDRun  := FALSE;\n            mixMotorRun:= FALSE;\n        \n        STATE_FILL_A:\n            // Open Valve A to fill tank\n            valveARun := TRUE;\n            valveBRun := FALSE;\n            valveCRun := FALSE;\n            valveDRun := FALSE;\n            mixMotorRun := FALSE;\n            \n            // When level reaches 50cm, close Valve A and proceed to Valve B\n            IF levelSensor >= 50 THEN\n                valveARun := FALSE;\n                autoState := STATE_FILL_B;\n            END_IF\n        \n        STATE_FILL_B:\n            // Open Valve B to continue filling\n            valveARun := FALSE;\n            valveBRun := TRUE;\n            valveCRun := FALSE;\n            valveDRun := FALSE;\n            mixMotorRun := FALSE;\n            \n            // When level reaches 80cm, close Valve B\n            IF levelSensor >= 80 THEN\n                valveBRun := FALSE;\n                \n                // Branch based on processMode\n                IF NOT processMode THEN\n                    // Basic Mode: Start mixing directly\n                    autoState := STATE_MIX_BASIC;\n                ELSE\n                    // Extended Mode: Open Valve C for additional fill\n                    autoState := STATE_FILL_C;\n                END_IF\n            END_IF\n        \n        STATE_MIX_BASIC:\n            // Basic Mode: Start mixing motor\n            valveARun  := FALSE;\n            valveBRun  := FALSE;\n            valveCRun  := FALSE;\n            valveDRun  := FALSE;\n            mixMotorRun := TRUE;\n            \n            // When mixing complete, stop motor and open drain valve\n            IF mixMotorComplete THEN\n                mixMotorRun := FALSE;\n                autoState := STATE_DRAIN;\n            END_IF\n        \n        STATE_FILL_C:\n            // Extended Mode: Open Valve C for additional material\n            valveARun  := FALSE;\n            valveBRun  := FALSE;\n            valveCRun  := TRUE;\n            valveDRun  := FALSE;\n            mixMotorRun := FALSE;\n            \n            // When level reaches 100cm, close Valve C and start mixing\n            IF levelSensor >= 100 THEN\n                valveCRun := FALSE;\n                autoState := STATE_MIX_EXT;\n            END_IF\n        \n        STATE_MIX_EXT:\n            // Extended Mode: Start mixing motor\n            valveARun  := FALSE;\n            valveBRun  := FALSE;\n            valveCRun  := FALSE;\n            valveDRun  := FALSE;\n            mixMotorRun := TRUE;\n            \n            // When mixing complete, stop motor and open drain valve\n            IF mixMotorComplete THEN\n                mixMotorRun := FALSE;\n                autoState := STATE_DRAIN;\n            END_IF\n        \n        STATE_DRAIN:\n            // Open Valve D to drain tank (deliver to next process)\n            valveARun  := FALSE;\n            valveBRun  := FALSE;\n            valveCRun  := FALSE;\n            valveDRun  := TRUE;\n            mixMotorRun := FALSE;\n            \n            // Return to idle when tank is empty (level < 10cm)\n            IF levelSensor < 10 THEN\n                valveDRun := FALSE;\n                autoState := STATE_IDLE;  // Process complete, ready for next cycle\n            END_IF\n    \n    END_CASE\n\nEND_IF",
+      "code_hash": "15c8b37e9c91ddc07d8f2c5e1df9c600ef586463f41f322aeb84e94129342bf6",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 7172,
+      "completion_tokens": 3716,
+      "cost_cny": 0.036557724,
+      "latency_s": 73.297,
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 18,
+      "tests_total": 29,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 29,
+        "tests_passed": 18,
+        "pass_rate": 0.6207,
+        "failure_summary": "H08: valveBRun 期望 True，实际 False",
+        "cases": [
+          {
+            "tc_id": "H01",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H02",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H03",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H04",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H05",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": true,
+              "valveDRun": true,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "mixMotorRun": true,
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": true,
+              "valveDRun": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H06",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H07",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H08",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveBRun 期望 True，实际 False",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": "H08（承接上一条：液位到 60cm（>=50）→ 关 A 开 B）：valveBRun 期望 True，实际 False"
+          },
+          {
+            "tc_id": "H09",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCRun 期望 True，实际 False",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": "H09（承接上一条：液位到 85cm（>=80）→ 关 B；processMode=TRUE → 开 C 继续进料）：valveCRun 期望 True，实际 False"
+          },
+          {
+            "tc_id": "H10",
+            "passed": false,
+            "mode": "sequence",
+            "message": "mixMotorRun 期望 True，实际 False",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": "H10（承接上一条：液位到 105cm（>=100）→ 关 C 启动混合电机）：mixMotorRun 期望 True，实际 False"
+          },
+          {
+            "tc_id": "H11",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveDRun 期望 True，实际 False",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": "H11（承接上一条：收到混合完成信号 → 停电机开 D，自动流程结束（D 保持开启））：valveDRun 期望 True，实际 False"
+          },
+          {
+            "tc_id": "H12",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveARun 期望 True，实际 False",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": "H12（承接上一条：再次 autoStart → 关 D 开 A，开始新一周期（processMode=FALSE 分支））：valveARun 期望 True，实际 False"
+          },
+          {
+            "tc_id": "H13",
+            "passed": false,
+            "mode": "sequence",
+            "message": "mixMotorRun 期望 True，实际 False",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": "H13（承接上一条：液位到 85cm，2 拍内走完 50cm 关 A 开 B、80cm 关 B；processMode=FALSE → 直接启动混合电机）：mixMotorRun 期望 True，实际 False"
+          },
+          {
+            "tc_id": "H14",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveDRun 期望 True，实际 False",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": "H14（承接上一条：混合完成 → 停电机开 D，流程结束）：valveDRun 期望 True，实际 False"
+          },
+          {
+            "tc_id": "ha-mix-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-3",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveBRun 期望 True，实际 False",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": "ha-mix-3（升液位阈值与出料顺序。）：valveBRun 期望 True，实际 False"
+          },
+          {
+            "tc_id": "ha-mix-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-5",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCRun 期望 True，实际 False",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": "ha-mix-5（升液位阈值与出料顺序。）：valveCRun 期望 True，实际 False"
+          },
+          {
+            "tc_id": "ha-mix-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-7",
+            "passed": false,
+            "mode": "sequence",
+            "message": "mixMotorRun 期望 True，实际 False",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": "ha-mix-7（升液位阈值与出料顺序。）：mixMotorRun 期望 True，实际 False"
+          },
+          {
+            "tc_id": "ha-mix-not-done",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "mixMotorRun": true,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-8",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveDRun 期望 True，实际 False",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": "ha-mix-8（升液位阈值与出料顺序。）：valveDRun 期望 True，实际 False"
+          },
+          {
+            "tc_id": "ha-manual-hold-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-manual-hold-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-idle",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-idle-interlock-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-idle-interlock-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-idle-interlock-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 16.094000000040978,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-01_378401e883",
+            "source_sha256": "7a7b1b6de00675f4ac7cb63f5caea83f87ffed42d504d9b04d852a86c73314db",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "7a7b1b6de00675f4ac7cb63f5caea83f87ffed42d504d9b04d852a86c73314db",
+          "task_json_sha256": "ddd5d9e65991f009c963bb0984d7ca10e3c847015e4e33b61e8a650585700027",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "自动测试：18/29。\n用例 H08，模式 sequence，行为不匹配，请检查 mixMotorRun, valveARun, valveBRun, valveCRun, valveDRun。\n用例 H09，模式 sequence，行为不匹配，请检查 mixMotorRun, valveARun, valveBRun, valveCRun, valveDRun。\n用例 H10，模式 sequence，行为不匹配，请检查 mixMotorRun, valveARun, valveBRun, valveCRun, valveDRun。\n用例 H11，模式 sequence，行为不匹配，请检查 mixMotorRun, valveARun, valveBRun, valveCRun, valveDRun。\n用例 H12，模式 sequence，行为不匹配，请检查 mixMotorRun, valveARun, valveBRun, valveCRun, valveDRun。\n用例 H13，模式 sequence，行为不匹配，请检查 mixMotorRun, valveARun, valveBRun, valveCRun, valveDRun。\nLTL 检查：not_run。",
+      "idx": 1,
+      "code": "// Material Proportioning Process Control - ST Implementation\nFUNCTION_BLOCK MaterialProportioning\nVAR_INPUT\n    estop            : BOOL;   // Emergency Stop Signal (FALSE = triggered)\n    opeMode          : BOOL;   // Operation Mode (FALSE = Manual, TRUE = Auto)\n    valveAStart      : BOOL;   // Valve A Start Button\n    valveBStart      : BOOL;   // Valve B Start Button\n    valveCStart      : BOOL;   // Valve C Start Button\n    valveDStart      : BOOL;   // Valve D Start Button\n    mixMotorStart    : BOOL;   // Mixing Motor Start Button\n    autoStart        : BOOL;   // Automatic Start Button\n    processMode      : BOOL;   // Process Mode (FALSE = Basic, TRUE = Extended)\n    levelSensor      : INT;    // Liquid Level Sensor (unit: cm)\n    mixMotorComplete : BOOL;   // Mixing Complete Signal\nEND_VAR\n\nVAR_OUTPUT\n    valveARun  : BOOL;   // Valve A Run Command\n    valveBRun  : BOOL;   // Valve B Run Command\n    valveCRun  : BOOL;   // Valve C Run Command\n    valveDRun  : BOOL;   // Valve D Run Command\n    mixMotorRun: BOOL;   // Mixing Motor Run Command\nEND_VAR\n\nVAR\n    prevValveAStart   : BOOL;   // Previous state for edge detection\n    prevValveBStart   : BOOL;\n    prevValveCStart   : BOOL;\n    prevValveDStart   : BOOL;\n    prevMixMotorStart : BOOL;\n    prevAutoStart     : BOOL;\n    autoState : INT;     // 0=IDLE, 1=FILL_A, 2=FILL_B, 3=MIX_BASIC, \n                         // 4=FILL_C, 5=MIX_EXT, 6=DRAIN\nEND_VAR\n\nVAR CONSTANT\n    STATE_IDLE      : INT := 0;\n    STATE_FILL_A    : INT := 1;\n    STATE_FILL_B    : INT := 2;\n    STATE_MIX_BASIC : INT := 3;\n    STATE_FILL_C    : INT := 4;\n    STATE_MIX_EXT   : INT := 5;\n    STATE_DRAIN     : INT := 6;\nEND_VAR\n\n// ============================================================================\n// Main Control Logic\n// ============================================================================\n\n// ---------------------------------------------------------------------------\n// Emergency Stop Logic\n// When estop=FALSE, all equipment stops immediately\n// ---------------------------------------------------------------------------\nIF NOT estop THEN\n    valveARun  := FALSE;\n    valveBRun  := FALSE;\n    valveCRun  := FALSE;\n    valveDRun  := FALSE;\n    mixMotorRun:= FALSE;\n    autoState  := STATE_IDLE;\n    \n    prevValveAStart   := FALSE;\n    prevValveBStart   := FALSE;\n    prevValveCStart   := FALSE;\n    prevValveDStart   := FALSE;\n    prevMixMotorStart := FALSE;\n    prevAutoStart     := FALSE;\n    RETURN;\nEND_IF\n\n// ---------------------------------------------------------------------------\n// Mode Selection: Manual vs Automatic\n// ---------------------------------------------------------------------------\nIF NOT opeMode THEN\n    // MANUAL OPERATION MODE\n    // Toggle each device on rising edge of corresponding button\n    \n    IF valveAStart AND NOT prevValveAStart THEN\n        valveARun := NOT valveARun;\n    END_IF;\n    prevValveAStart := valveAStart;\n    \n    IF valveBStart AND NOT prevValveBStart THEN\n        valveBRun := NOT valveBRun;\n    END_IF;\n    prevValveBStart := valveBStart;\n    \n    IF valveCStart AND NOT prevValveCStart THEN\n        valveCRun := NOT valveCRun;\n    END_IF;\n    prevValveCStart := valveCStart;\n    \n    IF valveDStart AND NOT prevValveDStart THEN\n        valveDRun := NOT valveDRun;\n    END_IF;\n    prevValveDStart := valveDStart;\n    \n    IF mixMotorStart AND NOT prevMixMotorStart THEN\n        mixMotorRun := NOT mixMotorRun;\n    END_IF;\n    prevMixMotorStart := mixMotorStart;\n\nELSE\n    // AUTOMATIC OPERATION MODE\n    \n    valveARun  := FALSE;\n    valveBRun  := FALSE;\n    valveCRun  := FALSE;\n    valveDRun  := FALSE;\n    mixMotorRun:= FALSE;\n    \n    IF autoStart AND NOT prevAutoStart THEN\n        IF autoState = STATE_IDLE THEN\n            autoState := STATE_FILL_A;\n        END_IF;\n    END_IF;\n    prevAutoStart := autoStart;\n    \n    CASE autoState OF\n        \n        STATE_IDLE:\n            valveARun  := FALSE;\n            valveBRun  := FALSE;\n            valveCRun  := FALSE;\n            valveDRun  := FALSE;\n            mixMotorRun:= FALSE;\n        \n        STATE_FILL_A:\n            valveARun := TRUE;\n            IF levelSensor >= 50 THEN\n                valveARun := FALSE;\n                autoState := STATE_FILL_B;\n            END_IF;\n        \n        STATE_FILL_B:\n            valveBRun := TRUE;\n            IF levelSensor >= 80 THEN\n                valveBRun := FALSE;\n                IF NOT processMode THEN\n                    autoState := STATE_MIX_BASIC;\n                ELSE\n                    autoState := STATE_FILL_C;\n                END_IF;\n            END_IF;\n        \n        STATE_MIX_BASIC:\n            mixMotorRun := TRUE;\n            IF mixMotorComplete THEN\n                mixMotorRun := FALSE;\n                autoState := STATE_DRAIN;\n            END_IF;\n        \n        STATE_FILL_C:\n            valveCRun := TRUE;\n            IF levelSensor >= 100 THEN\n                valveCRun := FALSE;\n                autoState := STATE_MIX_EXT;\n            END_IF;\n        \n        STATE_MIX_EXT:\n            mixMotorRun := TRUE;\n            IF mixMotorComplete THEN\n                mixMotorRun := FALSE;\n                autoState := STATE_DRAIN;\n            END_IF;\n        \n        STATE_DRAIN:\n            valveDRun := TRUE;\n            IF levelSensor < 10 THEN\n                valveDRun := FALSE;\n                autoState := STATE_IDLE;\n            END_IF;\n    \n    END_CASE;\n\nEND_IF;\n\nEND_FUNCTION_BLOCK\n\nPROGRAM PLC_PRG\nVAR\n    inst : MaterialProportioning;\nEND_VAR\n\ninst(\n    estop            := estop,\n    opeMode          := opeMode,\n    valveAStart      := valveAStart,\n    valveBStart      := valveBStart,\n    valveCStart      := valveCStart,\n    valveDStart      := valveDStart,\n    mixMotorStart    := mixMotorStart,\n    autoStart        := autoStart,\n    processMode      := processMode,\n    levelSensor      := levelSensor,\n    mixMotorComplete := mixMotorComplete,\n    valveARun        => valveARun,\n    valveBRun        => valveBRun,\n    valveCRun        => valveCRun,\n    valveDRun        => valveDRun,\n    mixMotorRun      => mixMotorRun\n);\nEND_PROGRAM",
+      "code_hash": "7a7b1b6de00675f4ac7cb63f5caea83f87ffed42d504d9b04d852a86c73314db",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 9104,
+      "completion_tokens": 1566,
+      "cost_cny": 0.025495512,
+      "latency_s": 52.828,
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 29,
+  "study_plan_sha256": "37d0bbf483d634f65b4ebb0012a1fd7ae9032462fbc920a1dd5300ca31d0a7e2",
+  "started_at": "2026-11-12T00:50:18.539651+08:00",
+  "wall_seconds": 126.218,
+  "finished_at": "2026-11-12T00:52:24.740159+08:00",
+  "credential_batch": "primary"
+}
