@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794415547,
+    "id": "resp_0217944155469576cb63cadb26a6eb1a5dd8bb71cce3d7f9c7dc5",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179441554796500000000000000000000ffffac183b0f54d57f",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need respond in Chinese likely. User says static check says missing END_FUNCTION_BLOCK? Need provide fixed full ST code. We need identify issues: our code uses CASE but syntax may be wrong semicolon before END_CASE? In ST, CASE ... OF, labels colon, statements, END_CASE; no semicolon after final statement maybe okay? Let's inspect. Missing end keyword likely because provided code ended without END_FUNCTION_BLOCK. Need add. Also possible assignments to outputs within function block body okay. Need maybe E_No_POU because not end. Return complete code with END_FUNCTION_BLOCK. But perhaps the previous response didn't include END_FUNCTION_BLOCK indeed. Need produce complete corrected ST. Need follow interface exactly, no task changes. We need ensure syntax valid for TwinCAT/CODESYS-like. Let's formulate full code.\n\nPotential pitfalls:\n- FUNCTION_BLOCK declaration, VAR_INPUT, VAR_OUTPUT, VAR, code, ends with END_FUNCTION_BLOCK.\n- CASE autoState OF:\n    10:\n        ...\n        20:\n        ...\n        30:\n        ...\n        40:\n        ...\n        50:\n            ;\n    END_CASE; Might trailing semicolon before ELSE? Actually after IF ... THEN; END_CASE; no need semicolon after END_CASE? Statements separated by semicolons. Typically END_CASE no semicolon required. A semicolon before END_CASE after 50: ; may be accepted. We can remove empty statement maybe use `50: ;` common. Could be parse issue? The missing END_POU due simply absent END_FUNCTION_BLOCK. Need add.\n\n- `mixMotorComplete_RE := mixMotorComplete AND NOT mixMotorComplete_prev;` This detects rising edge; but if emergency stop/mode change while complete high then after reset prev updates and no false transition? Not relevant.\n\n- modeChanged resets outputs whenever opeMode changes. However on initial PLC startup opeMode_prev default FALSE, modeChanged if opeMode TRUE. Fine.\n\n- In manual mode outputs assigned before toggling based on current manual state, meaning the newly toggled state won't reflect until next cycle. For manual rising-edge toggle, if press button this cycle, output should update same cycle per requirement. We assign before toggle then toggle, so outputs one cycle delayed. Need fix: toggle manual states first, then assign outputs. Or assign after toggles. In automatic mode fine state outputs computed same cycle.\n\n- In auto mode, autoStart_RE starts from idle 0 or finished 50. But if autoStart remains high and process ends at 50, next cycle? If persistent high no rising edge so won't restart. Fine. At initial process, state 10 causes valveA open immediately. Good.\n- Need perhaps when autoStart pressed and processMode C, state sequence 10 -> 20 -> 30 -> 40 -> 50. At 20 when level >=80 then state 30; then same cycle later valve outputs based on state 30, okay valve C run. At next cycles fill to 100. Fine.\n- At state 30, close C when reaches 100 and start mixing. output mix motor true same cycle state40. Fine.\n- At state 40, wait for rising mixMotorComplete. If signal is high before entering state 40 (should not? maybe signal remains high from manual?), But auto process start should maybe wait? In ordinary, after mixing complete output set false. Edges okay.\n- State 50 D on. Process ends but autoState remains 50 with D run until new start, stop, mode change. Requirement \"open valve D, and automatic process ends.\" Does D stay open after process ends? It says open valve D, process ends, likely D remains running until manual/next? Could be either. Previous solution kept D on at state 50. Probably accepted? In automatic process, after automatic process ends, perhaps D should remain open? Since no explicit close. We might set autoState 0 after opening D? But then valve D would close immediately, violating open valve D. \"open valve D, and automatic process ends\" could mean at end D open and should remain because process finished. We'll leave on.\n\n- Emergency stop logic: estop FALSE => all outputs false. \"FALSE emergency stop triggered.\" Good.\n- Mode change: all stop, reset states. Maybe safe.\n\n- Manual outputs: should direct toggle on each rising edge. Need ensure button held causes only one toggle. yes.\n- Manual mode and manual button toggles while estop false? We bypass edge output; still prev update. Manual states reset. Good.\n\n- Interface exact: BOOL, BOOL etc. We can maybe use VAR_IN_OUT? no.\n\n- Could avoid CASE because sometimes CASE with integer states accepted. Fine.\n\nNeed answer likely just code block. User asks \"修复并返回完整代码\". We should state fixed END_FUNCTION_BLOCK and assign outputs after toggling. But final can include brief plus full code. Need ensure no extra commentary? Fine.\n\nLet's craft."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nFUNCTION_BLOCK MaterialProportioningControl\nVAR_INPUT\n    estop            : BOOL;  (* FALSE: emergency stop triggered *)\n    opeMode          : BOOL;  (* FALSE: manual, TRUE: automatic *)\n    valveAStart      : BOOL;\n    valveBStart      : BOOL;\n    valveCStart      : BOOL;\n    valveDStart      : BOOL;\n    mixMotorStart    : BOOL;\n    autoStart        : BOOL;\n    processMode      : BOOL;\n    levelSensor      : INT;   (* cm *)\n    mixMotorComplete : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    valveARun   : BOOL;\n    valveBRun   : BOOL;\n    valveCRun   : BOOL;\n    valveDRun   : BOOL;\n    mixMotorRun : BOOL;\nEND_VAR\n\nVAR\n    valveAStart_RE      : BOOL;\n    valveBStart_RE      : BOOL;\n    valveCStart_RE      : BOOL;\n    valveDStart_RE      : BOOL;\n    mixMotorStart_RE    : BOOL;\n    autoStart_RE        : BOOL;\n    mixMotorComplete_RE : BOOL;\n    modeChanged         : BOOL;\n\n    valveAStart_prev      : BOOL;\n    valveBStart_prev      : BOOL;\n    valveCStart_prev      : BOOL;\n    valveDStart_prev      : BOOL;\n    mixMotorStart_prev    : BOOL;\n    autoStart_prev        : BOOL;\n    mixMotorComplete_prev : BOOL;\n    opeMode_prev          : BOOL;\n\n    manualValveA   : BOOL;\n    manualValveB   : BOOL;\n    manualValveC   : BOOL;\n    manualValveD   : BOOL;\n    manualMixMotor : BOOL;\n\n    autoState : INT := 0; (* 0=idle,10=A,20=B,30=C,40=mix,50=discharge *)\nEND_VAR\n\n(* Rising edge detection *)\nvalveAStart_RE      := valveAStart AND NOT valveAStart_prev;\nvalveBStart_RE      := valveBStart AND NOT valveBStart_prev;\nvalveCStart_RE      := valveCStart AND NOT valveCStart_prev;\nvalveDStart_RE      := valveDStart AND NOT valveDStart_prev;\nmixMotorStart_RE    := mixMotorStart AND NOT mixMotorStart_prev;\nautoStart_RE        := autoStart AND NOT autoStart_prev;\nmixMotorComplete_RE := mixMotorComplete AND NOT mixMotorComplete_prev;\nmodeChanged         := opeMode <> opeMode_prev;\n\nIF NOT estop THEN\n    (* Emergency stop: stop all equipment and reset control states *)\n    valveARun   := FALSE;\n    valveBRun   := FALSE;\n    valveCRun   := FALSE;\n    valveDRun   := FALSE;\n    mixMotorRun := FALSE;\n\n    autoState      := 0;\n    manualValveA   := FALSE;\n    manualValveB   := FALSE;\n    manualValveC   := FALSE;\n    manualValveD   := FALSE;\n    manualMixMotor := FALSE;\n\nELSIF modeChanged THEN\n    (* Mode change: stop all equipment and clear both mode states *)\n    valveARun   := FALSE;\n    valveBRun   := FALSE;\n    valveCRun   := FALSE;\n    valveDRun   := FALSE;\n    mixMotorRun := FALSE;\n\n    autoState      := 0;\n    manualValveA   := FALSE;\n    manualValveB   := FALSE;\n    manualValveC   := FALSE;\n    manualValveD   := FALSE;\n    manualMixMotor := FALSE;\n\nELSIF opeMode THEN\n    (* Automatic mode *)\n    IF autoStart_RE AND ((autoState = 0) OR (autoState = 50)) THEN\n        autoState := 10;\n    END_IF;\n\n    CASE autoState OF\n        10:\n            IF levelSensor >= 50 THEN\n                autoState := 20;\n            END_IF;\n\n        20:\n            IF levelSensor >= 80 THEN\n                IF processMode THEN\n                    autoState := 30;\n                ELSE\n                    autoState := 40;\n                END_IF;\n            END_IF;\n\n        30:\n            IF levelSensor >= 100 THEN\n                autoState := 40;\n            END_IF;\n\n        40:\n            IF mixMotorComplete_RE THEN\n                autoState := 50;\n            END_IF;\n\n        50:\n            ; (* Valve D remains open; automatic process finished *)\n    END_CASE;\n\n    valveARun   := autoState = 10;\n    valveBRun   := autoState = 20;\n    valveCRun   := autoState = 30;\n    valveDRun   := autoState = 50;\n    mixMotorRun := autoState = 40;\n\nELSE\n    (* Manual mode *)\n    IF valveAStart_RE THEN\n        manualValveA := NOT manualValveA;\n    END_IF;\n\n    IF valveBStart_RE THEN\n        manualValveB := NOT manualValveB;\n    END_IF;\n\n    IF valveCStart_RE THEN\n        manualValveC := NOT manualValveC;\n    END_IF;\n\n    IF valveDStart_RE THEN\n        manualValveD := NOT manualValveD;\n    END_IF;\n\n    IF mixMotorStart_RE THEN\n        manualMixMotor := NOT manualMixMotor;\n    END_IF;\n\n    valveARun   := manualValveA;\n    valveBRun   := manualValveB;\n    valveCRun   := manualValveC;\n    valveDRun   := manualValveD;\n    mixMotorRun := manualMixMotor;\nEND_IF;\n\n(* Save current input states for next edge detection *)\nvalveAStart_prev      := valveAStart;\nvalveBStart_prev      := valveBStart;\nvalveCStart_prev      := valveCStart;\nvalveDStart_prev      := valveDStart;\nmixMotorStart_prev    := mixMotorStart;\nautoStart_prev        := autoStart;\nmixMotorComplete_prev := mixMotorComplete;\nopeMode_prev          := opeMode;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179441556393000000000000000000000ffffac183b0f86e73d",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 9256,
+      "output_tokens": 2393,
+      "total_tokens": 11649,
+      "input_tokens_details": {
+        "cached_tokens": 6144
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 1056
+      },
+      "cost": "¥0.037312"
+    }
+  }
+}
