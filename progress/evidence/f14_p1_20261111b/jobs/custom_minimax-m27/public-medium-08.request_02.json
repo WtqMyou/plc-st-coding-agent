@@ -1,0 +1,25 @@
+{
+  "model": "MiniMax-M2.7",
+  "protocol": "chat",
+  "max_output_tokens": 16384,
+  "timeout_seconds": 420,
+  "parameters": {},
+  "messages": [
+    {
+      "role": "system",
+      "content": "Return one complete ST implementation. Follow the user requirements and interface exactly. Do not change task inputs or outputs."
+    },
+    {
+      "role": "user",
+      "content": "# IPv4 Parsing with Format and Range Checks\n\n- **Difficulty:** Medium (medium)\n\n## Requirements\n\nDesign a PLC function block in Structured Text (ST) that parses a dotted-decimal IPv4 string into a 32-bit unsigned integer.\n\n1. ipText must contain four nonempty decimal-digit segments separated by periods. Each segment must have a value from 0 through 255.\n2. Assemble the address in network byte order: the first segment occupies the most significant 8 bits and the fourth occupies the least significant 8 bits. Write the result to ipValue.\n3. Set ipValue to 0 for malformed input, a nondigit segment, an incorrect segment count or any out-of-range segment. The valid address 0.0.0.0 also produces 0.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `ipText` | `STRING(254)` | IPv4 text to parse, with a capacity of 254 characters. A valid dotted-decimal address requires at most 15 characters. |\n| Output | `ipValue` | `UDINT` | 32-bit address in network byte order; zero for invalid input. |"
+    },
+    {
+      "role": "assistant",
+      "content": "FUNCTION_BLOCK FB_ParseIPv4\nVAR_INPUT\n    ipText : STRING(254);\nEND_VAR\nVAR_OUTPUT\n    ipValue : UDINT;\nEND_VAR\nVAR\n    i           : INT;\n    length      : INT;\n    segmentIdx  : INT;\n    segValue    : UDINT;\n    isValid     : BOOL;\n    ch          : BYTE;\n    digit       : BYTE;\n    segments    : ARRAY[0..3] OF UDINT;\nEND_VAR\n\n// Initialize output to invalid state\nipValue := 0;\n\n// Reset parsing state\nisValid    := TRUE;\nsegmentIdx := 0;\nsegValue   := 0;\nlength     := LEN(ipText);\n\n// Empty input check\nIF length = 0 THEN\n    RETURN;\nEND_IF\n\n// Parse through each character\nFOR i := 1 TO length DO\n    ch := BYTE_TO_INT(CHAR_TO_BYTE(MID(ipText, 1, i)));\n\n    // Digit: 0-9 ASCII range 48-57\n    IF ch >= 48 AND ch <= 57 THEN\n        digit := ch - 48;\n\n        // Check for overflow before multiplying\n        // Max valid segment is 255\n        // If current value > 25, multiplying by 10 would exceed 255\n        // If current value = 25, digit > 5 would exceed 255\n        IF segValue > 25 OR (segValue = 25 AND digit > 5) THEN\n            isValid := FALSE;\n            EXIT;\n        END_IF;\n\n        segValue := segValue * 10 + digit;\n\n    // Period: segment delimiter\n    ELSIF ch = 46 THEN\n        IF segmentIdx > 3 THEN\n            isValid := FALSE;\n            EXIT;\n        END_IF;\n\n        segments[segmentIdx] := segValue;\n        segmentIdx := segmentIdx + 1;\n        segValue   := 0;\n\n    // Any other character is invalid\n    ELSE\n        isValid := FALSE;\n        EXIT;\n    END_IF\nEND_FOR\n\n// Process final segment\nIF isValid THEN\n    IF segmentIdx > 3 THEN\n        isValid := FALSE;\n    ELSE\n        segments[segmentIdx] := segValue;\n        segmentIdx := segmentIdx + 1;\n    END_IF\nEND_IF\n\n// Validate exactly 4 segments\nIF isValid AND segmentIdx <> 4 THEN\n    isValid := FALSE;\nEND_IF\n\n// Assemble result in network byte order (MSB first)\n// ipValue[31:24] = segments[0]\n// ipValue[23:16] = segments[1]\n// ipValue[15:8]  = segments[2]\n// ipValue[7:0]   = segments[3]\nIF isValid THEN\n    ipValue := SHL(segments[0], 24) OR SHL(segments[1], 16) \n             OR SHL(segments[2], 8)  OR segments[3];\nELSE\n    ipValue := 0;\nEND_IF\n\nEND_FUNCTION_BLOCK"
+    },
+    {
+      "role": "user",
+      "content": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\nGenerate code...\nCannot convert type 'INT' to type 'BYTE'\nCannot convert type 'Unknown type: 'CHAR_TO_BYTE(MID(STR := ipText, LEN := INT#1, POS := i))'' to type 'BYTE'\nIdentifier 'CHAR_TO_BYTE' not defined\nProgram name, function or function block instance expected instead of 'CHAR_TO_BYTE'\nBuild complete -- 4 errors, 0 warnings : No download possible\n自动测试：0/14。\nLTL 检查：not_run。\n修复并返回完整代码，保持题面接口。"
+    }
+  ]
+}
