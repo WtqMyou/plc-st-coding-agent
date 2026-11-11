@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794420431,
+    "id": "resp_021794420430455a4e0bfe9b623ca70f9090a72d521bae2151d76",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179442043157200000000000000000000ffffac183b6ad512d4",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need to add END_FUNCTION_BLOCK at the end. The user provided code may have been truncated. We need to return the complete FB with proper ending. Also ensure the code is syntactically correct for IEC 61131-3 ST. Let's re-evaluate the logic for correctness.\n\nOriginal code: \n- It has triggerEdge detection, but note that when cyclicExecution is TRUE, trigger should have no effect. That is satisfied: `ELSIF cyclicExecution OR triggerEdge THEN` -> if cyclicExecution is TRUE, it will enter, regardless of triggerEdge. But if both cyclicExecution and triggerEdge are true, it's fine. The order is: check reset first, then if cyclicExecution OR triggerEdge. Good.\n\nHowever, there is a potential issue: The buffer shift logic when count == windowSize (full). If windowSize = 1, then the FOR loop from 1 to 0 does nothing, which is correct. But after the shift, we set buffer[windowSize] = value. That's fine. But we also subtracted buffer[1] before shifting. For windowSize=1, buffer[1] is the old value, subtract it, then shift loop skipped, set buffer[1]=value, and sum already had -old + value? Actually we did `sum := sum - buffer[1] + value;` then we do shift (no shift for 1), then set buffer[windowSize] = value. But sum already includes new value. However, after setting buffer[1] = value, the sum is correct because we already added value after subtracting old. So it's okay.\n\nBut there is a subtle bug: In the branch where count < windowSize, we do buffer[count] := value; sum := sum + value. Then later average = sum / count. This is correct. When count reaches windowSize, next new value will go to else branch: sum := sum - buffer[1] + value; then shift; then buffer[windowSize] := value. Sum already updated with new value, so after shift and assignment, sum is still correct. However, after shift, buffer[1] now holds the second oldest value, but we subtracted the oldest before shift. That's correct.\n\nBut note: In the else branch, after assigning buffer[windowSize] := value, we don't add value again. The sum already includes it. So good.\n\nNow, need to ensure the code compiles, including proper variable declarations and conversion. SUM and average are LREAL; count is INT. When we do `sum / INT_TO_LREAL(count)`, that is fine.\n\nOne potential issue: The buffer array is declared with indices 1..100, but in reset branch we loop from 1 to 100 to clear. That's okay. In the FOR shift loop, we use `FOR i := 1 TO windowSize - 1 DO` which will run for windowSize >1 only. That's okay.\n\nNow, we need to add END_FUNCTION_BLOCK at the end. Also note: The code might contain extra spaces or line breaks but should be fine. Let's produce the complete FB.\n\nBut the user also said \"返回完整代码，保持题面接口\", so we output only the code block, no extra text. Ensure no missing keywords.\n\nLet's also verify the status codes: We set status to 16#8200 on error, 16#0000 otherwise. In the error branch, we also reset average, count, sum, buffer? That might be odd: If window size becomes invalid, we clear internal state. That's acceptable. Also we set error TRUE and status code. In normal operation, error FALSE and status 16#0000. Good.\n\nOne more nuance: The reset signal should reset the moving average calculation when TRUE. Our code: If reset is TRUE, we clear everything, and skip the update (because it's ELSIF). So if reset and cyclicExecution are both TRUE simultaneously, reset takes precedence. That's acceptable per spec: \"resets the moving average calculation when the reset signal is TRUE\". So yes.\n\nPotential issue: When windowSize is invalid, the error branch sets count=0 and sum=0 and clears buffer, but it also sets average=0, windowSizeReached=FALSE. This means if windowSize becomes invalid after having valid data, we lose data; but that's okay because error condition should reset. However, note that the error branch executes every cycle while windowSize is invalid, so it keeps resetting. That's fine.\n\nNow produce final code with END_FUNCTION_BLOCK.\n\nWe should also include all declarations properly. The original code had a line `triggerEdge : BOOL;` but it is not declared as VAR or VAR_TEMP? Actually it is declared under VAR, which is persistent. That is fine but might not need to be persistent. Could be localized but for simplicity okay.\n\nOne thing: In IEC 61131-3, variables inside FUNCTION_BLOCK are declared in VAR block, not VAR_INPUT/VAR_OUTPUT. The provided code already has VAR ... END_VAR for internal variables. That's correct.\n\nWe also need to make sure there is no missing semicolon or syntax error. The original code had a missing END_VAR after VAR block? Actually it has VAR ... END_VAR, yes.\n\nLet's re-write the code cleanly with proper indentation, ensure all keywords are present.\n\nAlso, note that `INT_TO_LREAL` is a standard conversion function. In some PLC environments it's `INT_TO_LREAL` or `INT_TO_REAL`, but for LREAL it should be `INT_TO_LREAL`. That's fine.\n\nNow produce final answer."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```iecst\nFUNCTION_BLOCK FB_MovingAverage\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger : BOOL;\n    value : LREAL;\n    windowSize : INT;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    average : LREAL;\n    windowSizeReached : BOOL;\n    error : BOOL;\n    status : WORD;\nEND_VAR\nVAR\n    buffer : ARRAY[1..100] OF LREAL;\n    count : INT := 0;\n    sum : LREAL := 0.0;\n    lastTrigger : BOOL := FALSE;\n    triggerEdge : BOOL;\n    i : INT;\nEND_VAR\n\n// Rising edge detection for external trigger\ntriggerEdge := trigger AND NOT lastTrigger;\nlastTrigger := trigger;\n\n// Validate window size\nIF (windowSize < 1) OR (windowSize > 100) THEN\n    error := TRUE;\n    status := 16#8200;\n    average := 0.0;\n    windowSizeReached := FALSE;\n    count := 0;\n    sum := 0.0;\n    FOR i := 1 TO 100 DO\n        buffer[i] := 0.0;\n    END_FOR;\nELSE\n    error := FALSE;\n    status := 16#0000;\n\n    IF reset THEN\n        // Reset all internal state\n        count := 0;\n        sum := 0.0;\n        FOR i := 1 TO 100 DO\n            buffer[i] := 0.0;\n        END_FOR;\n    ELSIF cyclicExecution OR triggerEdge THEN\n        // New value should be added\n        IF count < windowSize THEN\n            // Still filling the window\n            count := count + 1;\n            buffer[count] := value;\n            sum := sum + value;\n        ELSE\n            // Window full: remove oldest, add newest\n            sum := sum - buffer[1] + value;\n            // Shift buffer left\n            IF windowSize > 1 THEN\n                FOR i := 1 TO windowSize - 1 DO\n                    buffer[i] := buffer[i + 1];\n                END_FOR;\n            END_IF;\n            buffer[windowSize] := value;\n        END_IF;\n    END_IF;\n\n    IF count > 0 THEN\n        average := sum / INT_TO_LREAL(count);\n    ELSE\n        average := 0.0;\n    END_IF;\n    windowSizeReached := (count >= windowSize);\nEND_IF;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179442044793400000000000000000000ffffac183b6a4ca4fd",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 1033,
+      "output_tokens": 1735,
+      "total_tokens": 2768,
+      "input_tokens_details": {
+        "cached_tokens": 0
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 1189
+      },
+      "cost": "¥0.022176"
+    }
+  }
+}
