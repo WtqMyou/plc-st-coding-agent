@@ -1,0 +1,158 @@
+{
+  "job_id": "custom_deepseek-v4pro/public-easy-01",
+  "pid": "public-easy-01",
+  "condition": "custom_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 10,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 117,
+            "code": "E_MISSING_END_POU",
+            "message": "PROGRAM AutomatedFillingLine 缺少结束关键字"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 10,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "04560c414447fafb143ae6f05c4d4d0d8c1fc88da88e8c3b3579aa0f0051373a",
+          "task_json_sha256": "d5e3193a392e530d6313e896089742e396e37be0beb664c7fd4f906a9a800de6",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 117 行 [E_MISSING_END_POU] PROGRAM AutomatedFillingLine 缺少结束关键字\n第 0 行 [E_NO_POU] 未找到可执行 POU\nLTL 检查：not_run。",
+      "idx": 0,
+      "code": "PROGRAM AutomatedFillingLine\nVAR_INPUT\n    bottleSensor         : BOOL;  // Bottle detection sensor\n    cleaningConfirmButton : BOOL; // Cleaning completion confirmation\n    fillingConfirmButton  : BOOL; // Filling completion confirmation\n    cappingConfirmButton  : BOOL; // Capping completion confirmation\n    packingConfirmButton  : BOOL; // Packaging completion confirmation\n    finishedButton        : BOOL; // Bottle pickup confirmation\nEND_VAR\nVAR_OUTPUT\n    Pump_Motor        : BOOL; // Cleaning pump motor\n    Filling_Valve     : BOOL; // Filling valve\n    Capping_Machine   : BOOL; // Capping machine\n    Packing_Machine   : BOOL; // Packing machine\n    Completion_Light  : BOOL; // Packaging completion indicator\nEND_VAR\nVAR\n    state    : INT := 0; // 0=Idle, 1=Cleaning, 2=Filling, 3=Capping, 4=Packing, 5=Complete\n    rBottle  : R_TRIG;\n    rClean   : R_TRIG;\n    rFill    : R_TRIG;\n    rCap     : R_TRIG;\n    rPack    : R_TRIG;\n    rFinish  : R_TRIG;\nEND_VAR\n\n// Edge detection for all digital signals\nrBottle(CLK := bottleSensor);\nrClean(CLK := cleaningConfirmButton);\nrFill(CLK := fillingConfirmButton);\nrCap(CLK := cappingConfirmButton);\nrPack(CLK := packingConfirmButton);\nrFinish(CLK := finishedButton);\n\nCASE state OF\n    // Idle: wait for bottle sensor\n    0:\n        Pump_Motor := FALSE;\n        Filling_Valve := FALSE;\n        Capping_Machine := FALSE;\n        Packing_Machine := FALSE;\n        Completion_Light := FALSE;\n\n        IF rBottle.Q THEN\n            state := 1;              // Start cleaning\n            Pump_Motor := TRUE;\n        END_IF;\n\n    // Cleaning: run pump until operator confirms\n    1:\n        Pump_Motor := TRUE;\n        Filling_Valve := FALSE;\n        Capping_Machine := FALSE;\n        Packing_Machine := FALSE;\n        Completion_Light := FALSE;\n\n        IF rClean.Q THEN\n            state := 2;              // Cleaning done, start filling\n            Pump_Motor := FALSE;\n            Filling_Valve := TRUE;\n        END_IF;\n\n    // Filling: open valve until operator confirms\n    2:\n        Pump_Motor := FALSE;\n        Filling_Valve := TRUE;\n        Capping_Machine := FALSE;\n        Packing_Machine := FALSE;\n        Completion_Light := FALSE;\n\n        IF rFill.Q THEN\n            state := 3;              // Filling done, start capping\n            Filling_Valve := FALSE;\n            Capping_Machine := TRUE;\n        END_IF;\n\n    // Capping: run capping machine until operator confirms\n    3:\n        Pump_Motor := FALSE;\n        Filling_Valve := FALSE;\n        Capping_Machine := TRUE;\n        Packing_Machine := FALSE;\n        Completion_Light := FALSE;\n\n        IF rCap.Q THEN\n            state := 4;              // Capping done, start packing\n            Capping_Machine := FALSE;\n            Packing_Machine := TRUE;\n        END_IF;\n\n    // Packing: run packing machine until operator confirms\n    4:\n        Pump_Motor := FALSE;\n        Filling_Valve := FALSE;\n        Capping_Machine := FALSE;\n        Packing_Machine := TRUE;\n        Completion_Light := FALSE;\n\n        IF rPack.Q THEN\n            state := 5;              // Packing done, light indicator\n            Packing_Machine := FALSE;\n            Completion_Light := TRUE;\n        END_IF;\n\n    // Complete: wait for operator to pick up bottle\n    5:\n        Pump_Motor := FALSE;\n        Filling_Valve := FALSE;\n        Capping_Machine := FALSE;\n        Packing_Machine := FALSE;\n        Completion_Light := TRUE;\n\n        IF rFinish.Q THEN\n            state := 0;              // Reset for next bottle\n            Completion_Light := FALSE;\n        END_IF;\nEND_CASE;",
+      "code_hash": "04560c414447fafb143ae6f05c4d4d0d8c1fc88da88e8c3b3579aa0f0051373a",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 563,
+      "completion_tokens": 3424,
+      "cost_cny": 0.07703685,
+      "latency_s": 43.485,
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 10,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_POU_KIND",
+            "line": 1,
+            "message": "POU 类型与题面不一致"
+          }
+        ],
+        "tests_total": 10,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "d9fe2ed0d45e664737a642393fa3f684491b1edd97702cc2404bcb86036fa297",
+          "task_json_sha256": "d5e3193a392e530d6313e896089742e396e37be0beb664c7fd4f906a9a800de6",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 1 行 [E_POU_KIND] POU 类型与题面不一致\nLTL 检查：not_run。",
+      "idx": 1,
+      "code": "PROGRAM AutomatedFillingLine\nVAR_INPUT\n    bottleSensor         : BOOL;  // Bottle detection sensor\n    cleaningConfirmButton : BOOL; // Cleaning completion confirmation\n    fillingConfirmButton  : BOOL; // Filling completion confirmation\n    cappingConfirmButton  : BOOL; // Capping completion confirmation\n    packingConfirmButton  : BOOL; // Packaging completion confirmation\n    finishedButton        : BOOL; // Bottle pickup confirmation\nEND_VAR\nVAR_OUTPUT\n    Pump_Motor        : BOOL; // Cleaning pump motor\n    Filling_Valve     : BOOL; // Filling valve\n    Capping_Machine   : BOOL; // Capping machine\n    Packing_Machine   : BOOL; // Packing machine\n    Completion_Light  : BOOL; // Packaging completion indicator\nEND_VAR\nVAR\n    state    : INT := 0; // 0=Idle, 1=Cleaning, 2=Filling, 3=Capping, 4=Packing, 5=Complete\n    rBottle  : R_TRIG;\n    rClean   : R_TRIG;\n    rFill    : R_TRIG;\n    rCap     : R_TRIG;\n    rPack    : R_TRIG;\n    rFinish  : R_TRIG;\nEND_VAR\n\n// Edge detection for all digital signals\nrBottle(CLK := bottleSensor);\nrClean(CLK := cleaningConfirmButton);\nrFill(CLK := fillingConfirmButton);\nrCap(CLK := cappingConfirmButton);\nrPack(CLK := packingConfirmButton);\nrFinish(CLK := finishedButton);\n\nCASE state OF\n    // Idle: wait for bottle sensor\n    0:\n        Pump_Motor := FALSE;\n        Filling_Valve := FALSE;\n        Capping_Machine := FALSE;\n        Packing_Machine := FALSE;\n        Completion_Light := FALSE;\n\n        IF rBottle.Q THEN\n            state := 1;              // Start cleaning\n            Pump_Motor := TRUE;\n        END_IF;\n\n    // Cleaning: run pump until operator confirms\n    1:\n        Pump_Motor := TRUE;\n        Filling_Valve := FALSE;\n        Capping_Machine := FALSE;\n        Packing_Machine := FALSE;\n        Completion_Light := FALSE;\n\n        IF rClean.Q THEN\n            state := 2;              // Cleaning done, start filling\n            Pump_Motor := FALSE;\n            Filling_Valve := TRUE;\n        END_IF;\n\n    // Filling: open valve until operator confirms\n    2:\n        Pump_Motor := FALSE;\n        Filling_Valve := TRUE;\n        Capping_Machine := FALSE;\n        Packing_Machine := FALSE;\n        Completion_Light := FALSE;\n\n        IF rFill.Q THEN\n            state := 3;              // Filling done, start capping\n            Filling_Valve := FALSE;\n            Capping_Machine := TRUE;\n        END_IF;\n\n    // Capping: run capping machine until operator confirms\n    3:\n        Pump_Motor := FALSE;\n        Filling_Valve := FALSE;\n        Capping_Machine := TRUE;\n        Packing_Machine := FALSE;\n        Completion_Light := FALSE;\n\n        IF rCap.Q THEN\n            state := 4;              // Capping done, start packing\n            Capping_Machine := FALSE;\n            Packing_Machine := TRUE;\n        END_IF;\n\n    // Packing: run packing machine until operator confirms\n    4:\n        Pump_Motor := FALSE;\n        Filling_Valve := FALSE;\n        Capping_Machine := FALSE;\n        Packing_Machine := TRUE;\n        Completion_Light := FALSE;\n\n        IF rPack.Q THEN\n            state := 5;              // Packing done, light indicator\n            Packing_Machine := FALSE;\n            Completion_Light := TRUE;\n        END_IF;\n\n    // Complete: wait for operator to pick up bottle\n    5:\n        Pump_Motor := FALSE;\n        Filling_Valve := FALSE;\n        Capping_Machine := FALSE;\n        Packing_Machine := FALSE;\n        Completion_Light := TRUE;\n\n        IF rFinish.Q THEN\n            state := 0;              // Reset for next bottle\n            Completion_Light := FALSE;\n        END_IF;\nEND_CASE;\n\nEND_PROGRAM",
+      "code_hash": "d9fe2ed0d45e664737a642393fa3f684491b1edd97702cc2404bcb86036fa297",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 1556,
+      "completion_tokens": 1173,
+      "cost_cny": 0.03608325,
+      "latency_s": 12.844,
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 10,
+  "study_plan_sha256": "37d0bbf483d634f65b4ebb0012a1fd7ae9032462fbc920a1dd5300ca31d0a7e2",
+  "started_at": "2026-11-12T00:02:27.409523+08:00",
+  "wall_seconds": 56.359,
+  "finished_at": "2026-11-12T00:03:23.756305+08:00",
+  "credential_batch": "primary"
+}
