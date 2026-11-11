@@ -1,0 +1,21 @@
+{
+  "model": "deepseek-v4-pro-0813",
+  "protocol": "responses",
+  "max_tokens": 16384,
+  "timeout_seconds": 420,
+  "parameters": {
+    "reasoning": {
+      "effort": "low"
+    }
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "你是一名精通 IEC 61131-3 结构化文本（ST）的 PLC 工程师，正在为工业自动化控制场景编写功能块。\n\n硬性要求：\n1. 只输出**一个** ```st 代码块，代码块外不要写任何解释。\n2. 必须实现题目指定的功能块名与完整接口声明（VAR_INPUT / VAR_OUTPUT / VAR_IN_OUT / VAR），\n   变量名、类型、方向与题目接口表**逐个一致**，不得增删、不得改名、不得改类型。\n3. 所有中间变量必须在 VAR 区显式声明；不得使用未声明的变量。\n4. VAR_INPUT 在功能块内部只读，需要写入的形参必须用 VAR_IN_OUT。\n5. 代码要能在真实 PLC 上编译：每个 IF / FOR / CASE / WHILE 都要正确闭合，\n   END_FUNCTION_BLOCK 结尾。\n6. 不要用注释掉的代码\"占位\"，不要留 TODO。\n7. 目标为 CODESYS 3.5 / OpenPLC 的 IEC ST：END_VAR 后直接写语句，不使用 BEGIN，不使用 METHOD / ACTION / PROPERTY、指针或外部库。\n8. 返回简洁的完整实现；不附测试程序或重复实现。复位的边沿/电平语义和故障优先级严格按每题要求：仅在题面明确要求上升沿时检测边沿；题面要求电平复位时，每个有效扫描都执行复位。不要将某一题的复位约定套用到其它题。\n仅输出完整 FUNCTION_BLOCK FB 及必要 TYPE。不要使用 METHOD、ACTION、PROPERTY、指针或外部定时器。变量避免 s、r、dt、if 等保留名；位移采用 SHL/SHR 函数。数组上下界和类型转换须显式检查。"
+    },
+    {
+      "role": "user",
+      "content": "# 任务：定量灌装阀控制（浮点累计与计数去抖）\n\n## 需求\n写一个功能块 FB，控制一条定量灌装工位。\n控制要求：\n1. startBtn 的上升沿开始一瓶的灌装：valveOpen 置 TRUE，并把内部累计体积清零；\n2. 每个扫描周期把 flowVol 累加到内部体积；**累计值达到或超过** targetVol 时立即关阀；\n3. 关阀后等待 doneSensor 为 TRUE，确认该瓶装满；\n4. **只有确认之后** fillsToday 才加 1；阀未确认就再次启动不得重复计数；\n5. 正在灌装过程中 startBtn 再次按下无效（不重新开始，也不重复计数）；\n6. resetBtn 的上升沿把 fillsToday 清零，并关闭灌装阀、清除内部累计。\nr6明确INT满量程约定：计数到32767后保持，继续完成灌装握手；合法复位后重新计数。人工工艺复审待确认。\n\n## 接口定义（必须逐字实现，不得改动）\n\n功能块名：`FB`（FUNCTION_BLOCK FB）\n\n| 变量名 | 类型 | 方向 | 说明 |\n| --- | --- | --- | --- |\n| startBtn | BOOL | INPUT | 启动按钮（上升沿有效） |\n| resetBtn | BOOL | INPUT | 复位按钮（上升沿有效） |\n| doneSensor | BOOL | INPUT | 满瓶检测传感器 |\n| targetVol | REAL | INPUT | 目标灌装体积 mL |\n| flowVol | REAL | INPUT | 本周期累计流量增量 mL |\n| valveOpen | BOOL | OUTPUT | 灌装阀开命令 |\n| fillsToday | INT | OUTPUT | 今日完成瓶数 |\n\n## 必须满足的形式化性质\n- [S1] 复位按钮上升沿必须在**当周期**把今日计数清零。\n  LTL: `G(rising(resetBtn) -> fillsToday = 0)`\n- [S2] 开阀只允许发生在启动按钮的上升沿：阀从关到开的那一拍必须有新按下。\n  LTL: `G((!prev(valveOpen) AND valveOpen) -> rising(startBtn))`\n- [S3] 除复位那一拍外，计数单调不减（不得回退）。\n  LTL: `G(!rising(resetBtn) -> fillsToday >= prev(fillsToday))`\n- [S6] 每拍计数最多增加 1（不得因阀抖动重复计数）。\n  LTL: `G(fillsToday <= prev(fillsToday) + 1)`\n- [S4] 计数只发生在满瓶确认之后：计数增加的那一拍 doneSensor 必须为真。\n  LTL: `G(fillsToday > prev(fillsToday) -> doneSensor)`\n- [S5] 累计流量达到目标体积后，灌装阀必须在当周期关闭（涉及内部累计量，只在用例中校验）。\n- [N10-S2] 11.10补充：阀门本拍由关变开时，本拍必须有启动按钮上升沿；上电前阀门关闭。\n  LTL: `G(rising(valveOpen) -> rising(startBtn))`\n- [N10-S7] 11.10补充：复位沿优先，关阀并归零。\n  LTL: `G(rising(resetBtn) -> !valveOpen)`\n- [N10-S8] 11.10补充：新瓶启动拍即计入流量，未达标开阀、达标当拍关阀。\n  LTL: `G((!rising(resetBtn) AND rising(startBtn) AND !prev(valveOpen)) -> (valveOpen <-> flowVol < targetVol))`\n- [N10-S9] 11.10补充：运行中本拍无新增流量且目标不变，保持开阀。\n  LTL: `G((!rising(resetBtn) AND prev(valveOpen) AND flowVol = 0.0 AND targetVol = prev(targetVol)) -> valveOpen)`\n- [N10-S10] 11.10补充：非复位关阀且关阀拍尚未确认，下一拍没有复位或新启动而确认时，未饱和计数加一。\n  LTL: `G((prev(falling(valveOpen) AND !rising(resetBtn) AND !doneSensor) AND !rising(resetBtn) AND !rising(startBtn) AND doneSensor AND !prev(fillsToday = 32767)) -> fillsToday = prev(fillsToday) + 1)`\n- [N10-S11] 11.10补充：复位已清除待确认标志；其后未新启动时，确认信号不能计瓶。\n  LTL: `G((prev(rising(resetBtn)) AND !rising(resetBtn) AND !rising(startBtn)) -> fillsToday = prev(fillsToday))`\n- [N10-S12] 11.10补充：首次启动贡献至少半个目标体积，下一拍无复位且不倒流仍开阀；第三拍再次启动且补入至少另一半时，须按原累计关阀。\n  LTL: `G((prev(prev(rising(startBtn) AND !prev(valveOpen) AND !rising(resetBtn) AND valveOpen AND flowVol + flowVol >= targetVol)) AND prev(!startBtn AND !rising(resetBtn) AND valveOpen AND flowVol >= 0.0 AND targetVol = prev(targetVol)) AND rising(startBtn) AND !rising(resetBtn) AND targetVol = prev(targetVol) AND flowVol + flowVol >= targetVol) -> !valveOpen)`\n- [N10-S13] 11.10补充：本拍结束时新瓶仍在开阀灌装，确认信号不能给上一瓶计数。\n  LTL: `G((!rising(resetBtn) AND valveOpen) -> fillsToday = prev(fillsToday))`\n\n## 补充说明\n- 功能块在**每个扫描周期**被调用一次，输出在周期结束时被采样。\n- 不要假设任何隐藏的定时器或全局变量；需要跨周期记住的状态请用 VAR 区静态变量。\n\n请直接给出完整的 ```st 代码块。\n实现检查清单：接口匹配；复位/安全优先；状态保持；边沿先计算再更新历史；数组边界；扫描周期。"
+    }
+  ]
+}
