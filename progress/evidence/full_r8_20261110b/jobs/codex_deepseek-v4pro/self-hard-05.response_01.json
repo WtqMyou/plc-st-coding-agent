@@ -1,0 +1,74 @@
+{
+  "model": "deepseek-v4-pro-0813",
+  "protocol": "responses",
+  "usage": {
+    "input_tokens": 9416,
+    "output_tokens": 1879,
+    "total_tokens": 11295,
+    "input_tokens_details": {
+      "cached_tokens": 6144
+    },
+    "output_tokens_details": {
+      "reasoning_tokens": 1393
+    },
+    "cost": "¥0.0648"
+  },
+  "finish_reason": "completed",
+  "message": {
+    "content": "```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    runRequest : BOOL;\n    flameOK    : BOOL;\n    o2Valid    : BOOL;\n    o2PV       : REAL;\n    baseAir    : REAL;\n    resetBtn   : BOOL;\nEND_VAR\nVAR_OUTPUT\n    fuelPermit  : BOOL;\n    trimEnable  : BOOL;\n    airTrim     : REAL;\n    airCommand  : REAL;\n    tripLatched : BOOL;\n    o2Fault     : BOOL;\nEND_VAR\nVAR\n    resetPrev   : BOOL;\n    resetRising : BOOL;\n    rawTrim     : REAL;\n    rawCommand  : REAL;\nEND_VAR\n\nresetRising := resetBtn AND NOT resetPrev;\n\nIF runRequest AND NOT flameOK THEN\n    tripLatched := TRUE;\nELSIF tripLatched AND resetRising AND NOT runRequest AND NOT flameOK THEN\n    tripLatched := FALSE;\nELSE\n    tripLatched := tripLatched;\nEND_IF\n\nfuelPermit := runRequest AND flameOK AND NOT tripLatched;\n\no2Fault := (NOT o2Valid) OR (o2PV < 0.0) OR (o2PV > 21.0);\n\ntrimEnable := fuelPermit AND NOT o2Fault;\n\nIF trimEnable THEN\n    rawTrim := 2.0 * (2.0 - o2PV);\n    IF rawTrim < -10.0 THEN\n        airTrim := -10.0;\n    ELSIF rawTrim > 10.0 THEN\n        airTrim := 10.0;\n    ELSE\n        airTrim := rawTrim;\n    END_IF\nELSE\n    airTrim := 0.0;\nEND_IF\n\nIF fuelPermit THEN\n    rawCommand := baseAir + airTrim;\n    IF rawCommand < 0.0 THEN\n        airCommand := 0.0;\n    ELSIF rawCommand > 100.0 THEN\n        airCommand := 100.0;\n    ELSE\n        airCommand := rawCommand;\n    END_IF\nELSE\n    airCommand := 0.0;\nEND_IF\n\nresetPrev := resetBtn;\n\nEND_FUNCTION_BLOCK\n```"
+  },
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794364029,
+    "id": "resp_02179436402789555eac14dce3bb90e0d7c435405ce6cafafcce5",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179436402928400000000000000000000ffffac1835f7d68eb2",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need answer only one st code block. Need implement FB. Need careful semantics, especially reset edge: must calculate resetRising with previous reset input stored in VAR before clearing trip. Also trip set same cycle when runRequest&!flameOK. Need ensure prevReset assigned before trip logic. Need order. Variables only interface and internal prevReset BOOL. Could also use no other. We need exact code no comments ideally. Need satisfy S2/S16 biconditional. Let's derive.\n\nFB:\nVAR_INPUT runRequest flameOK o2Valid REAL o2PV baseAir resetBtn.\nVAR_OUTPUT ...\nVAR prevReset : BOOL; END_VAR\n\nLogic:\nprevReset stored from prior scan. resetRising := resetBtn AND NOT prevReset. Need calculate before update prevReset. Given static var. Then trip:\nIF runRequest AND NOT flameOK THEN tripLatched := TRUE;\nELSIF tripLatched AND resetRising AND NOT runRequest AND NOT flameOK THEN tripLatched := FALSE;\nELSE? preserve: also trip set semantics if already trip and reset absent. Existing if tripLatched and condition? If no branch, assignment remains from prior scan? In ST, output retains its value between calls? FB instance retains outputs. But to ensure, maybe rewrite else tripLatched:=tripLatched. Not needed. Yet if not set/reset, output remains prior value because assigned earlier? In CODESYS outputs persistent. However every scan logic maybe yes. But explicit is safer and formally sees. But if tripLatched false and no set, remains false. Could assign:\nIF runRequest AND NOT flameOK THEN tripLatched := TRUE;\nELSIF tripLatched AND resetRising AND NOT runRequest AND NOT flameOK THEN tripLatched := FALSE;\nELSE tripLatched := tripLatched;\nEND_IF\nWould satisfy. However note reset condition includes both runRequest FALSE flameOK FALSE. The trip set occurs only if runRequest true and flame false, so can't both set and reset same cycle. Fine.\n\nPotential edge: reset edge calculated before updating prevReset, then finally prevReset := resetBtn. Should update prevReset after use. If set before, no edge. Do this at end. order:\nresetRising := resetBtn AND NOT resetPrev;\n...\nprevReset := resetBtn;\n\nS2 says reset edge only allowed if runRequest false and flame false. If tripLatched false, reset irrelevant. Good.\n\nFuelPermit := runRequest AND flameOK AND NOT tripLatched. Since trip set same scan if runRequest&!flame, fuel false. If tripLatched true, false. Good.\n\no2Fault := NOT o2Valid OR o2PV<0 or >21. ST OR syntax. Need ensure real comparators.\n\ntrimEnable := fuelPermit AND NOT o2Fault.\n\nairTrim: if trimEnable then raw:=2.0*(2.0-o2PV), clamp -10..10. Since below threshold. Could implement raw and comparisons. Else 0.0. Need ensure S11/S12 exact. Let's inspect: raw = 4 - 2*o2PV. At o2PV=7 raw=-10. Requirement says o2PV >7 negative limit; for <=7 exact raw. At o2PV=7 output -10 equals raw. S11 only >7 => -10. clamp code:\nIF trimEnable THEN\n  rawTrim := 2.0*(2.0-o2PV);\n  IF rawTrim < -10.0 THEN airTrim := -10.0;\n  ELSIF rawTrim > 10.0 THEN airTrim := 10.0;\n  ELSE airTrim := rawTrim;\n  END_IF;\nELSE airTrim:=0.0;\nEND_IF;\nThis yields <=7 exact as raw (floor? no since raw at 7 -10 and not lower because only if strictly less). Good. >7 raw< -10 -> -10. Positive impossible, but clamp included. Matches form.\n\nairCommand if fuelPermit TRUE then rawCommand:=baseAir+airTrim; clamp 0..100. Else 0.0. Need S17 when sum in range exact. ST floating equality maybe comp fine. Use real. If fuelPermit false, air=0 even though S17 antecedent false. Good. Inside if clamp. Need use integers with dots.\n\nPotential order: o2Fault defined before trim. outputs can depend. Good.\n\nNeed only code block. Must avoid comments perhaps okay? \"output constraints no explanation\". Hard says only one st code block. Code block outer. Could include no comments else if not. Let's craft valid IEC ST.\n\nNeed avoid undefined raw variables. Declare rawTrim : REAL; rawCommand : REAL; resetPrev : BOOL; resetRising : BOOL. Do we need resetPrev initial FALSE? Static VAR BOOL defaults FALSE in PLC. But maybe formally prev(resetBtn) initial unknown? We can declare resetPrev : BOOL := FALSE; resetRising. CODESYS allows initial assignment? \"VAR resetPrev : BOOL := FALSE;\" valid. But OpenPLC? Likely. They ask target CODESYS 3.5/OpenPLC. Initial values supported. Could just assume false. Formal starting prev reset false. Either okay. To be safe add := FALSE? Interface variables must exact, internal can. CODESYS supports. But maybe evaluator parses? Fine.\n\nNeed consider if `NOT` precedence with `AND`. Use parentheses. `((NOT o2Valid) OR (o2PV < 0.0) OR (o2PV > 21.0))`.\n\nNeed S16 biconditional: our trip logic: first if run&!flame true, second elsif if trip and reset edge allowed clear. Third else hold. Note when trip false and run&!flame false, else assign false, so okay. The biconditional discontinuity: `tripLatched <-> (run&!flame) OR (prev_trip & !(edge reset safe))`. If trip false and reset safe edge, next false. okay. If trip is true due previous state and run&!flame false then safe reset edge clears. fallback runs when first false and second true -> false. Good. if both trip set condition and trip & safe edge? Can't due set requires run true/flame false while safe reset requires run false/flame false. no.\n\nOne subtlety: order if runRequest&!flame immediately sets TRUE. If trip was false, fine. If trip is already true, set true. Good.\n\nNow write. Ensure only code."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    runRequest : BOOL;\n    flameOK    : BOOL;\n    o2Valid    : BOOL;\n    o2PV       : REAL;\n    baseAir    : REAL;\n    resetBtn   : BOOL;\nEND_VAR\nVAR_OUTPUT\n    fuelPermit  : BOOL;\n    trimEnable  : BOOL;\n    airTrim     : REAL;\n    airCommand  : REAL;\n    tripLatched : BOOL;\n    o2Fault     : BOOL;\nEND_VAR\nVAR\n    resetPrev   : BOOL;\n    resetRising : BOOL;\n    rawTrim     : REAL;\n    rawCommand  : REAL;\nEND_VAR\n\nresetRising := resetBtn AND NOT resetPrev;\n\nIF runRequest AND NOT flameOK THEN\n    tripLatched := TRUE;\nELSIF tripLatched AND resetRising AND NOT runRequest AND NOT flameOK THEN\n    tripLatched := FALSE;\nELSE\n    tripLatched := tripLatched;\nEND_IF\n\nfuelPermit := runRequest AND flameOK AND NOT tripLatched;\n\no2Fault := (NOT o2Valid) OR (o2PV < 0.0) OR (o2PV > 21.0);\n\ntrimEnable := fuelPermit AND NOT o2Fault;\n\nIF trimEnable THEN\n    rawTrim := 2.0 * (2.0 - o2PV);\n    IF rawTrim < -10.0 THEN\n        airTrim := -10.0;\n    ELSIF rawTrim > 10.0 THEN\n        airTrim := 10.0;\n    ELSE\n        airTrim := rawTrim;\n    END_IF\nELSE\n    airTrim := 0.0;\nEND_IF\n\nIF fuelPermit THEN\n    rawCommand := baseAir + airTrim;\n    IF rawCommand < 0.0 THEN\n        airCommand := 0.0;\n    ELSIF rawCommand > 100.0 THEN\n        airCommand := 100.0;\n    ELSE\n        airCommand := rawCommand;\n    END_IF\nELSE\n    airCommand := 0.0;\nEND_IF\n\nresetPrev := resetBtn;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179436405242600000000000000000000ffffac1835f72a8d20",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 9416,
+      "output_tokens": 1879,
+      "total_tokens": 11295,
+      "input_tokens_details": {
+        "cached_tokens": 6144
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 1393
+      },
+      "cost": "¥0.0648"
+    }
+  }
+}
