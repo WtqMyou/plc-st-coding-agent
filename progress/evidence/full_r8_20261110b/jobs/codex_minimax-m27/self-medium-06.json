@@ -1,0 +1,262 @@
+{
+  "pid": "self-medium-06",
+  "model": "MiniMax-M2.7",
+  "provider": "codex-cli",
+  "setting": "codex_minimax-m27",
+  "max_iters": 2,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    enable         : BOOL;\n    resetBtn       : BOOL;\n    sensorValid    : BOOL;\n    setpoint       : REAL;\n    temperature    : REAL;\n    scanSeconds    : REAL;\n    bias           : REAL;\nEND_VAR\nVAR_OUTPUT\n    power          : REAL;\n    correction     : REAL;\n    fault          : BOOL;\nEND_VAR\nVAR\n    ePrev          : REAL := 0.0;\n    histCleared    : BOOL := FALSE;\n    prevResetBtn   : BOOL := FALSE;\n    prevEnable     : BOOL := FALSE;\n    prevFault      : BOOL := FALSE;\n    e              : REAL;\n    de             : REAL;\n    x              : REAL;\n    y              : REAL;\n    muNx           : REAL;\n    muZx           : REAL;\n    muPx           : REAL;\n    muNy           : REAL;\n    muZy           : REAL;\n    muPy           : REAL;\n    w              : ARRAY[1..3, 1..3] OF REAL;\n    sumWC          : REAL;\n    sumW           : REAL;\n    tempReal       : REAL;\nEND_VAR\n\n// Fault detection\nfault := NOT sensorValid OR scanSeconds <= 0.0 OR scanSeconds > 10.0;\n\n// Edge detection for reset\ntempReal := resetBtn AND NOT prevResetBtn;\n\n// Update history state for next cycle\nprevResetBtn := resetBtn;\nprevEnable := enable;\nprevFault := fault;\n\n// Handle clearing conditions\nIF fault OR NOT enable OR tempReal THEN\n    power := 0.0;\n    correction := 0.0;\n    ePrev := 0.0;\n    histCleared := FALSE;\nELSE\n    // Normal operation\n    e := setpoint - temperature;\n    \n    // Determine if this is a \"first run\" after clear\n    IF NOT histCleared THEN\n        de := 0.0;\n        histCleared := TRUE;\n    ELSE\n        IF scanSeconds > 0.0 THEN\n            de := (e - ePrev) / scanSeconds;\n        ELSE\n            de := 0.0;\n        END_IF\n    END_IF;\n    \n    // Normalize\n    tempReal := e / 10.0;\n    IF tempReal > 1.0 THEN\n        x := 1.0;\n    ELSIF tempReal < -1.0 THEN\n        x := -1.0;\n    ELSE\n        x := tempReal;\n    END_IF;\n    \n    tempReal := de / 2.0;\n    IF tempReal > 1.0 THEN\n        y := 1.0;\n    ELSIF tempReal < -1.0 THEN\n        y := -1.0;\n    ELSE\n        y := tempReal;\n    END_IF;\n    \n    // Membership functions for x\n    IF x < 0.0 THEN\n        muNx := -x;\n    ELSE\n        muNx := 0.0;\n    END_IF;\n    muZx := 1.0 - ABS(x);\n    IF x > 0.0 THEN\n        muPx := x;\n    ELSE\n        muPx := 0.0;\n    END_IF;\n    \n    // Membership functions for y\n    IF y < 0.0 THEN\n        muNy := -y;\n    ELSE\n        muNy := 0.0;\n    END_IF;\n    muZy := 1.0 - ABS(y);\n    IF y > 0.0 THEN\n        muPy := y;\n    ELSE\n        muPy := 0.0;\n    END_IF;\n    \n    // Calculate weights for 9 rules (row=x, col=y)\n    // N×N=-30\n    w[1, 1] := muNx * muNy;\n    // N×Z=-20\n    w[1, 2] := muNx * muZy;\n    // N×P=-10\n    w[1, 3] := muNx * muPy;\n    // Z×N=-10\n    w[2, 1] := muZx * muNy;\n    // Z×Z=0\n    w[2, 2] := muZx * muZy;\n    // Z×P=10\n    w[2, 3] := muZx * muPy;\n    // P×N=10\n    w[3, 1] := muPx * muNy;\n    // P×Z=20\n    w[3, 2] := muPx * muZy;\n    // P×P=30\n    w[3, 3] := muPx * muPy;\n    \n    // Center of gravity defuzzification\n    sumWC := w[1,1]*(-30.0) + w[1,2]*(-20.0) + w[1,3]*(-10.0) +\n             w[2,1]*(-10.0) + w[2,2]*0.0      + w[2,3]*10.0   +\n             w[3,1]*10.0   + w[3,2]*20.0      + w[3,3]*30.0;\n    sumW := w[1,1] + w[1,2] + w[1,3] +\n            w[2,1] + w[2,2] + w[2,3] +\n            w[3,1] + w[3,2] + w[3,3];\n    \n    IF sumW > 0.0 THEN\n        correction := sumWC / sumW;\n    ELSE\n        correction := 0.0;\n    END_IF;\n    \n    tempReal := bias + correction;\n    IF tempReal > 100.0 THEN\n        power := 100.0;\n    ELSIF tempReal < 0.0 THEN\n        power := 0.0;\n    ELSE\n        power := tempReal;\n    END_IF;\n    \n    // Store error for next cycle\n    ePrev := e;\nEND_IF;\nEND_FUNCTION_BLOCK",
+      "compiles": false,
+      "tests_passed": 0,
+      "tests_total": 41,
+      "feedback": "静态检查或接口契约失败：\n第 42 行 [E_TYPE_MISMATCH] 类型不匹配：BOOL 不能赋给 REAL\n第 50 行 [E_LOGIC_TYPE] OR 的右操作数类型是 REAL，应为 BOOL\nLTL 检查：not_run。",
+      "prompt_tokens": 8737,
+      "completion_tokens": 1808,
+      "latency_s": 52.53099999995902,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {},
+      "code_hash": "0e6733af64cd1b2bfb2726da5bb2536e279624b0226aafe5f19eedc2c03c91a0",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 42,
+            "code": "E_TYPE_MISMATCH",
+            "message": "类型不匹配：BOOL 不能赋给 REAL"
+          },
+          {
+            "level": "error",
+            "line": 50,
+            "code": "E_LOGIC_TYPE",
+            "message": "OR 的右操作数类型是 REAL，应为 BOOL"
+          }
+        ],
+        "tests_total": 41,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态类型检查失败",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {},
+        "evidence_metadata": {
+          "classification": "candidate_static_error",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "0e6733af64cd1b2bfb2726da5bb2536e279624b0226aafe5f19eedc2c03c91a0",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.026492571000000003,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    },
+    {
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    enable         : BOOL;\n    resetBtn       : BOOL;\n    sensorValid    : BOOL;\n    setpoint       : REAL;\n    temperature    : REAL;\n    scanSeconds    : REAL;\n    bias           : REAL;\nEND_VAR\nVAR_OUTPUT\n    power          : REAL;\n    correction     : REAL;\n    fault          : BOOL;\nEND_VAR\nVAR\n    ePrev          : REAL := 0.0;\n    histCleared    : BOOL := FALSE;\n    prevResetBtn   : BOOL := FALSE;\n    prevEnable     : BOOL := FALSE;\n    prevFault      : BOOL := FALSE;\n    risingReset    : BOOL;\n    e              : REAL;\n    de             : REAL;\n    x              : REAL;\n    y              : REAL;\n    muNx           : REAL;\n    muZx           : REAL;\n    muPx           : REAL;\n    muNy           : REAL;\n    muZy           : REAL;\n    muPy           : REAL;\n    w              : ARRAY[1..3, 1..3] OF REAL;\n    sumWC          : REAL;\n    sumW           : REAL;\nEND_VAR\n\n// Fault detection\nfault := NOT sensorValid OR scanSeconds <= 0.0 OR scanSeconds > 10.0;\n\n// Edge detection for reset\nrisingReset := resetBtn AND NOT prevResetBtn;\n\n// Update history state for next cycle\nprevResetBtn := resetBtn;\nprevEnable := enable;\nprevFault := fault;\n\n// Handle clearing conditions\nIF fault OR NOT enable OR risingReset THEN\n    power := 0.0;\n    correction := 0.0;\n    ePrev := 0.0;\n    histCleared := FALSE;\nELSE\n    // Normal operation\n    e := setpoint - temperature;\n    \n    // Determine if this is a \"first run\" after clear\n    IF NOT histCleared THEN\n        de := 0.0;\n        histCleared := TRUE;\n    ELSE\n        IF scanSeconds > 0.0 THEN\n            de := (e - ePrev) / scanSeconds;\n        ELSE\n            de := 0.0;\n        END_IF\n    END_IF;\n    \n    // Normalize e to x\n    IF e / 10.0 > 1.0 THEN\n        x := 1.0;\n    ELSIF e / 10.0 < -1.0 THEN\n        x := -1.0;\n    ELSE\n        x := e / 10.0;\n    END_IF;\n    \n    // Normalize de to y\n    IF de / 2.0 > 1.0 THEN\n        y := 1.0;\n    ELSIF de / 2.0 < -1.0 THEN\n        y := -1.0;\n    ELSE\n        y := de / 2.0;\n    END_IF;\n    \n    // Membership functions for x\n    IF x < 0.0 THEN\n        muNx := -x;\n    ELSE\n        muNx := 0.0;\n    END_IF;\n    muZx := 1.0 - ABS(x);\n    IF x > 0.0 THEN\n        muPx := x;\n    ELSE\n        muPx := 0.0;\n    END_IF;\n    \n    // Membership functions for y\n    IF y < 0.0 THEN\n        muNy := -y;\n    ELSE\n        muNy := 0.0;\n    END_IF;\n    muZy := 1.0 - ABS(y);\n    IF y > 0.0 THEN\n        muPy := y;\n    ELSE\n        muPy := 0.0;\n    END_IF;\n    \n    // Calculate weights for 9 rules (row=x, col=y)\n    // N×N=-30\n    w[1, 1] := muNx * muNy;\n    // N×Z=-20\n    w[1, 2] := muNx * muZy;\n    // N×P=-10\n    w[1, 3] := muNx * muPy;\n    // Z×N=-10\n    w[2, 1] := muZx * muNy;\n    // Z×Z=0\n    w[2, 2] := muZx * muZy;\n    // Z×P=10\n    w[2, 3] := muZx * muPy;\n    // P×N=10\n    w[3, 1] := muPx * muNy;\n    // P×Z=20\n    w[3, 2] := muPx * muZy;\n    // P×P=30\n    w[3, 3] := muPx * muPy;\n    \n    // Center of gravity defuzzification\n    sumWC := w[1,1]*(-30.0) + w[1,2]*(-20.0) + w[1,3]*(-10.0) +\n             w[2,1]*(-10.0) + w[2,2]*0.0      + w[2,3]*10.0   +\n             w[3,1]*10.0   + w[3,2]*20.0      + w[3,3]*30.0;\n    sumW := w[1,1] + w[1,2] + w[1,3] +\n            w[2,1] + w[2,2] + w[2,3] +\n            w[3,1] + w[3,2] + w[3,3];\n    \n    IF sumW > 0.0 THEN\n        correction := sumWC / sumW;\n    ELSE\n        correction := 0.0;\n    END_IF;\n    \n    // Clamp power to 0..100\n    IF bias + correction > 100.0 THEN\n        power := 100.0;\n    ELSIF bias + correction < 0.0 THEN\n        power := 0.0;\n    ELSE\n        power := bias + correction;\n    END_IF;\n    \n    // Store error for next cycle\n    ePrev := e;\nEND_IF;\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 0,
+      "tests_total": 41,
+      "feedback": "自动测试：0/41。\n用例 q1，模式 sequence，运行期错误，请检查 相关输出。\n用例 peer-q1，模式 sequence:peer:default，运行期错误，请检查 相关输出。\n用例 peer-q19，模式 sequence:peer:fractional-dt，运行期错误，请检查 相关输出。\n用例 peer-q21，模式 sequence:peer:rule-surface，运行期错误，请检查 相关输出。\nLTL 检查：not_run。",
+      "prompt_tokens": 10128,
+      "completion_tokens": 1562,
+      "latency_s": 70.75,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 17.21799999999348,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-medium-06_907fed8b24",
+          "source_sha256": "7661f8498e35bc149e070b17479e469f9a1cb062a6aebf6a9cbef2b3f65422e1",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "7661f8498e35bc149e070b17479e469f9a1cb062a6aebf6a9cbef2b3f65422e1",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 41,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "q1: 运行期错误（第117行）：数组下标 1 越界 [0..-1]",
+        "cases": [
+          {
+            "tc_id": "q1",
+            "passed": false,
+            "mode": "sequence",
+            "message": "运行期错误（第117行）：数组下标 1 越界 [0..-1]",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q1",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "运行期错误（第117行）：数组下标 1 越界 [0..-1]",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q19",
+            "passed": false,
+            "mode": "sequence:peer:fractional-dt",
+            "message": "运行期错误（第117行）：数组下标 1 越界 [0..-1]",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q21",
+            "passed": false,
+            "mode": "sequence:peer:rule-surface",
+            "message": "运行期错误（第117行）：数组下标 1 越界 [0..-1]",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 17.21799999999348,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-medium-06_907fed8b24",
+            "source_sha256": "7661f8498e35bc149e070b17479e469f9a1cb062a6aebf6a9cbef2b3f65422e1",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "classification": "evaluated",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "group_counts": {
+            "sequence": 18,
+            "sequence:peer:default": 18,
+            "sequence:peer:fractional-dt": 2,
+            "sequence:peer:rule-surface": 3
+          },
+          "group_policy": "fresh instance per sequence group; each single case fresh",
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "7661f8498e35bc149e070b17479e469f9a1cb062a6aebf6a9cbef2b3f65422e1",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.027167784,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1794377472.3896487,
+  "finished_at": 1794377596.0419936,
+  "error": "",
+  "stop_reason": "max_candidates",
+  "run_signature": "",
+  "experiment_kind": "live",
+  "tests_total": 41,
+  "request_window_seconds": 451,
+  "prompt_version": "v2.5-task-specific-reset",
+  "solved": false,
+  "first_try": false,
+  "best_attempt": 1,
+  "fully_verified": false,
+  "compile_rate": 0.5,
+  "total_tokens": 22235,
+  "total_latency_s": 123.28099999995902,
+  "n_attempts": 2,
+  "job_done": true,
+  "study_plan_sha256": "5d34beeeeacd5265559418bf339d6cefa78c9bc504793ddbd387265486810ba8",
+  "complete_code": true
+}

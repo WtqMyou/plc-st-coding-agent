@@ -1,0 +1,100 @@
+{
+  "model": "minimax-m2.7",
+  "protocol": "chat",
+  "usage": {
+    "prompt_tokens": 8737,
+    "completion_tokens": 1808,
+    "total_tokens": 10545,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "text_tokens": 0,
+      "audio_tokens": 0,
+      "image_tokens": 0
+    },
+    "completion_tokens_details": {
+      "text_tokens": 0,
+      "audio_tokens": 0,
+      "image_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "input_tokens_details": null,
+    "claude_cache_creation_5_m_tokens": 0,
+    "claude_cache_creation_1_h_tokens": 0,
+    "cost": "¥0.026492"
+  },
+  "finish_reason": "stop",
+  "message": {
+    "content": "\n```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    enable         : BOOL;\n    resetBtn       : BOOL;\n    sensorValid    : BOOL;\n    setpoint       : REAL;\n    temperature    : REAL;\n    scanSeconds    : REAL;\n    bias           : REAL;\nEND_VAR\nVAR_OUTPUT\n    power          : REAL;\n    correction     : REAL;\n    fault          : BOOL;\nEND_VAR\nVAR\n    ePrev          : REAL := 0.0;\n    histCleared    : BOOL := FALSE;\n    prevResetBtn   : BOOL := FALSE;\n    prevEnable     : BOOL := FALSE;\n    prevFault      : BOOL := FALSE;\n    e              : REAL;\n    de             : REAL;\n    x              : REAL;\n    y              : REAL;\n    muNx           : REAL;\n    muZx           : REAL;\n    muPx           : REAL;\n    muNy           : REAL;\n    muZy           : REAL;\n    muPy           : REAL;\n    w              : ARRAY[1..3, 1..3] OF REAL;\n    sumWC          : REAL;\n    sumW           : REAL;\n    tempReal       : REAL;\nEND_VAR\n\n// Fault detection\nfault := NOT sensorValid OR scanSeconds <= 0.0 OR scanSeconds > 10.0;\n\n// Edge detection for reset\ntempReal := resetBtn AND NOT prevResetBtn;\n\n// Update history state for next cycle\nprevResetBtn := resetBtn;\nprevEnable := enable;\nprevFault := fault;\n\n// Handle clearing conditions\nIF fault OR NOT enable OR tempReal THEN\n    power := 0.0;\n    correction := 0.0;\n    ePrev := 0.0;\n    histCleared := FALSE;\nELSE\n    // Normal operation\n    e := setpoint - temperature;\n    \n    // Determine if this is a \"first run\" after clear\n    IF NOT histCleared THEN\n        de := 0.0;\n        histCleared := TRUE;\n    ELSE\n        IF scanSeconds > 0.0 THEN\n            de := (e - ePrev) / scanSeconds;\n        ELSE\n            de := 0.0;\n        END_IF\n    END_IF;\n    \n    // Normalize\n    tempReal := e / 10.0;\n    IF tempReal > 1.0 THEN\n        x := 1.0;\n    ELSIF tempReal < -1.0 THEN\n        x := -1.0;\n    ELSE\n        x := tempReal;\n    END_IF;\n    \n    tempReal := de / 2.0;\n    IF tempReal > 1.0 THEN\n        y := 1.0;\n    ELSIF tempReal < -1.0 THEN\n        y := -1.0;\n    ELSE\n        y := tempReal;\n    END_IF;\n    \n    // Membership functions for x\n    IF x < 0.0 THEN\n        muNx := -x;\n    ELSE\n        muNx := 0.0;\n    END_IF;\n    muZx := 1.0 - ABS(x);\n    IF x > 0.0 THEN\n        muPx := x;\n    ELSE\n        muPx := 0.0;\n    END_IF;\n    \n    // Membership functions for y\n    IF y < 0.0 THEN\n        muNy := -y;\n    ELSE\n        muNy := 0.0;\n    END_IF;\n    muZy := 1.0 - ABS(y);\n    IF y > 0.0 THEN\n        muPy := y;\n    ELSE\n        muPy := 0.0;\n    END_IF;\n    \n    // Calculate weights for 9 rules (row=x, col=y)\n    // N×N=-30\n    w[1, 1] := muNx * muNy;\n    // N×Z=-20\n    w[1, 2] := muNx * muZy;\n    // N×P=-10\n    w[1, 3] := muNx * muPy;\n    // Z×N=-10\n    w[2, 1] := muZx * muNy;\n    // Z×Z=0\n    w[2, 2] := muZx * muZy;\n    // Z×P=10\n    w[2, 3] := muZx * muPy;\n    // P×N=10\n    w[3, 1] := muPx * muNy;\n    // P×Z=20\n    w[3, 2] := muPx * muZy;\n    // P×P=30\n    w[3, 3] := muPx * muPy;\n    \n    // Center of gravity defuzzification\n    sumWC := w[1,1]*(-30.0) + w[1,2]*(-20.0) + w[1,3]*(-10.0) +\n             w[2,1]*(-10.0) + w[2,2]*0.0      + w[2,3]*10.0   +\n             w[3,1]*10.0   + w[3,2]*20.0      + w[3,3]*30.0;\n    sumW := w[1,1] + w[1,2] + w[1,3] +\n            w[2,1] + w[2,2] + w[2,3] +\n            w[3,1] + w[3,2] + w[3,3];\n    \n    IF sumW > 0.0 THEN\n        correction := sumWC / sumW;\n    ELSE\n        correction := 0.0;\n    END_IF;\n    \n    tempReal := bias + correction;\n    IF tempReal > 100.0 THEN\n        power := 100.0;\n    ELSIF tempReal < 0.0 THEN\n        power := 0.0;\n    ELSE\n        power := tempReal;\n    END_IF;\n    \n    // Store error for next cycle\n    ePrev := e;\nEND_IF;\nEND_FUNCTION_BLOCK\n```",
+    "role": "assistant",
+    "reasoning_content": "用户需要我实现一个温度模糊控制器功能块，使用九条规则的模糊控制，核心是重心法解模糊。\n\n让我仔细分析需求：\n\n1. 功能块名：FB\n2. 接口：\n   - enable (BOOL, INPUT)\n   - resetBtn (BOOL, INPUT) - 上升沿触发\n   - sensorValid (BOOL, INPUT)\n   - setpoint (REAL, INPUT)\n   - temperature (REAL, INPUT)\n   - scanSeconds (REAL, INPUT)\n   - bias (REAL, INPUT)\n   - power (REAL, OUTPUT)\n   - correction (REAL, OUTPUT)\n   - fault (BOOL, OUTPUT)\n\n3. 核心逻辑：\n   - e = setpoint - temperature\n   - de = (e - ePrev) / scanSeconds，首拍或历史清除时 de = 0\n   - x = clamp(e / 10.0, -1, 1)\n   - y = clamp(de / 2.0, -1, 1)\n   - 隶属度函数：μN(z)=max(-z,0)、μZ(z)=1-|z|、μP(z)=max(z,0)\n   - 九条规则和权重：\n     |      | N(y) | Z(y) | P(y) |\n     | N(x) | -30  | -20  | -10  |\n     | Z(x) | -10  |  0   |  10  |\n     | P(x) |  10  |  20  |  30  |\n   - correction = Σ(w·c)/Σw，Σw=0时correction=0\n   - power = clamp(bias + correction, 0, 100)\n\n4. 复位和安全逻辑：\n   - fault = NOT sensorValid OR scanSeconds <= 0.0 OR scanSeconds > 10.0\n   - fault、enable=FALSE或resetBtn上升沿时清除历史状态\n\n5. 状态变量需要在VAR中声明以跟踪ePrev和历史记录标志\n\n6. 边界条件处理：故障检测、启用状态、复位按钮上升沿都会触发历史清除和输出清零\n   - resetBtn的上升沿检测需要在同一扫描周期内完成边沿识别和状态更新\n   - 模糊逻辑在故障或未启用时停止执行，启用后首个有效扫描周期需要特殊处理\n   - scanSeconds的有效性检查确保分母不为零\n",
+    "reasoning_details": [
+      {
+        "type": "reasoning.text",
+        "id": "reasoning-text-1",
+        "format": "MiniMax-response-v1",
+        "index": 0,
+        "text": "用户需要我实现一个温度模糊控制器功能块，使用九条规则的模糊控制，核心是重心法解模糊。\n\n让我仔细分析需求：\n\n1. 功能块名：FB\n2. 接口：\n   - enable (BOOL, INPUT)\n   - resetBtn (BOOL, INPUT) - 上升沿触发\n   - sensorValid (BOOL, INPUT)\n   - setpoint (REAL, INPUT)\n   - temperature (REAL, INPUT)\n   - scanSeconds (REAL, INPUT)\n   - bias (REAL, INPUT)\n   - power (REAL, OUTPUT)\n   - correction (REAL, OUTPUT)\n   - fault (BOOL, OUTPUT)\n\n3. 核心逻辑：\n   - e = setpoint - temperature\n   - de = (e - ePrev) / scanSeconds，首拍或历史清除时 de = 0\n   - x = clamp(e / 10.0, -1, 1)\n   - y = clamp(de / 2.0, -1, 1)\n   - 隶属度函数：μN(z)=max(-z,0)、μZ(z)=1-|z|、μP(z)=max(z,0)\n   - 九条规则和权重：\n     |      | N(y) | Z(y) | P(y) |\n     | N(x) | -30  | -20  | -10  |\n     | Z(x) | -10  |  0   |  10  |\n     | P(x) |  10  |  20  |  30  |\n   - correction = Σ(w·c)/Σw，Σw=0时correction=0\n   - power = clamp(bias + correction, 0, 100)\n\n4. 复位和安全逻辑：\n   - fault = NOT sensorValid OR scanSeconds <= 0.0 OR scanSeconds > 10.0\n   - fault、enable=FALSE或resetBtn上升沿时清除历史状态\n\n5. 状态变量需要在VAR中声明以跟踪ePrev和历史记录标志\n\n6. 边界条件处理：故障检测、启用状态、复位按钮上升沿都会触发历史清除和输出清零\n   - resetBtn的上升沿检测需要在同一扫描周期内完成边沿识别和状态更新\n   - 模糊逻辑在故障或未启用时停止执行，启用后首个有效扫描周期需要特殊处理\n   - scanSeconds的有效性检查确保分母不为零\n"
+      }
+    ]
+  },
+  "raw_response": {
+    "id": "req-0jqbc7-1794377482667077678",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    enable         : BOOL;\n    resetBtn       : BOOL;\n    sensorValid    : BOOL;\n    setpoint       : REAL;\n    temperature    : REAL;\n    scanSeconds    : REAL;\n    bias           : REAL;\nEND_VAR\nVAR_OUTPUT\n    power          : REAL;\n    correction     : REAL;\n    fault          : BOOL;\nEND_VAR\nVAR\n    ePrev          : REAL := 0.0;\n    histCleared    : BOOL := FALSE;\n    prevResetBtn   : BOOL := FALSE;\n    prevEnable     : BOOL := FALSE;\n    prevFault      : BOOL := FALSE;\n    e              : REAL;\n    de             : REAL;\n    x              : REAL;\n    y              : REAL;\n    muNx           : REAL;\n    muZx           : REAL;\n    muPx           : REAL;\n    muNy           : REAL;\n    muZy           : REAL;\n    muPy           : REAL;\n    w              : ARRAY[1..3, 1..3] OF REAL;\n    sumWC          : REAL;\n    sumW           : REAL;\n    tempReal       : REAL;\nEND_VAR\n\n// Fault detection\nfault := NOT sensorValid OR scanSeconds <= 0.0 OR scanSeconds > 10.0;\n\n// Edge detection for reset\ntempReal := resetBtn AND NOT prevResetBtn;\n\n// Update history state for next cycle\nprevResetBtn := resetBtn;\nprevEnable := enable;\nprevFault := fault;\n\n// Handle clearing conditions\nIF fault OR NOT enable OR tempReal THEN\n    power := 0.0;\n    correction := 0.0;\n    ePrev := 0.0;\n    histCleared := FALSE;\nELSE\n    // Normal operation\n    e := setpoint - temperature;\n    \n    // Determine if this is a \"first run\" after clear\n    IF NOT histCleared THEN\n        de := 0.0;\n        histCleared := TRUE;\n    ELSE\n        IF scanSeconds > 0.0 THEN\n            de := (e - ePrev) / scanSeconds;\n        ELSE\n            de := 0.0;\n        END_IF\n    END_IF;\n    \n    // Normalize\n    tempReal := e / 10.0;\n    IF tempReal > 1.0 THEN\n        x := 1.0;\n    ELSIF tempReal < -1.0 THEN\n        x := -1.0;\n    ELSE\n        x := tempReal;\n    END_IF;\n    \n    tempReal := de / 2.0;\n    IF tempReal > 1.0 THEN\n        y := 1.0;\n    ELSIF tempReal < -1.0 THEN\n        y := -1.0;\n    ELSE\n        y := tempReal;\n    END_IF;\n    \n    // Membership functions for x\n    IF x < 0.0 THEN\n        muNx := -x;\n    ELSE\n        muNx := 0.0;\n    END_IF;\n    muZx := 1.0 - ABS(x);\n    IF x > 0.0 THEN\n        muPx := x;\n    ELSE\n        muPx := 0.0;\n    END_IF;\n    \n    // Membership functions for y\n    IF y < 0.0 THEN\n        muNy := -y;\n    ELSE\n        muNy := 0.0;\n    END_IF;\n    muZy := 1.0 - ABS(y);\n    IF y > 0.0 THEN\n        muPy := y;\n    ELSE\n        muPy := 0.0;\n    END_IF;\n    \n    // Calculate weights for 9 rules (row=x, col=y)\n    // N×N=-30\n    w[1, 1] := muNx * muNy;\n    // N×Z=-20\n    w[1, 2] := muNx * muZy;\n    // N×P=-10\n    w[1, 3] := muNx * muPy;\n    // Z×N=-10\n    w[2, 1] := muZx * muNy;\n    // Z×Z=0\n    w[2, 2] := muZx * muZy;\n    // Z×P=10\n    w[2, 3] := muZx * muPy;\n    // P×N=10\n    w[3, 1] := muPx * muNy;\n    // P×Z=20\n    w[3, 2] := muPx * muZy;\n    // P×P=30\n    w[3, 3] := muPx * muPy;\n    \n    // Center of gravity defuzzification\n    sumWC := w[1,1]*(-30.0) + w[1,2]*(-20.0) + w[1,3]*(-10.0) +\n             w[2,1]*(-10.0) + w[2,2]*0.0      + w[2,3]*10.0   +\n             w[3,1]*10.0   + w[3,2]*20.0      + w[3,3]*30.0;\n    sumW := w[1,1] + w[1,2] + w[1,3] +\n            w[2,1] + w[2,2] + w[2,3] +\n            w[3,1] + w[3,2] + w[3,3];\n    \n    IF sumW > 0.0 THEN\n        correction := sumWC / sumW;\n    ELSE\n        correction := 0.0;\n    END_IF;\n    \n    tempReal := bias + correction;\n    IF tempReal > 100.0 THEN\n        power := 100.0;\n    ELSIF tempReal < 0.0 THEN\n        power := 0.0;\n    ELSE\n        power := tempReal;\n    END_IF;\n    \n    // Store error for next cycle\n    ePrev := e;\nEND_IF;\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "用户需要我实现一个温度模糊控制器功能块，使用九条规则的模糊控制，核心是重心法解模糊。\n\n让我仔细分析需求：\n\n1. 功能块名：FB\n2. 接口：\n   - enable (BOOL, INPUT)\n   - resetBtn (BOOL, INPUT) - 上升沿触发\n   - sensorValid (BOOL, INPUT)\n   - setpoint (REAL, INPUT)\n   - temperature (REAL, INPUT)\n   - scanSeconds (REAL, INPUT)\n   - bias (REAL, INPUT)\n   - power (REAL, OUTPUT)\n   - correction (REAL, OUTPUT)\n   - fault (BOOL, OUTPUT)\n\n3. 核心逻辑：\n   - e = setpoint - temperature\n   - de = (e - ePrev) / scanSeconds，首拍或历史清除时 de = 0\n   - x = clamp(e / 10.0, -1, 1)\n   - y = clamp(de / 2.0, -1, 1)\n   - 隶属度函数：μN(z)=max(-z,0)、μZ(z)=1-|z|、μP(z)=max(z,0)\n   - 九条规则和权重：\n     |      | N(y) | Z(y) | P(y) |\n     | N(x) | -30  | -20  | -10  |\n     | Z(x) | -10  |  0   |  10  |\n     | P(x) |  10  |  20  |  30  |\n   - correction = Σ(w·c)/Σw，Σw=0时correction=0\n   - power = clamp(bias + correction, 0, 100)\n\n4. 复位和安全逻辑：\n   - fault = NOT sensorValid OR scanSeconds <= 0.0 OR scanSeconds > 10.0\n   - fault、enable=FALSE或resetBtn上升沿时清除历史状态\n\n5. 状态变量需要在VAR中声明以跟踪ePrev和历史记录标志\n\n6. 边界条件处理：故障检测、启用状态、复位按钮上升沿都会触发历史清除和输出清零\n   - resetBtn的上升沿检测需要在同一扫描周期内完成边沿识别和状态更新\n   - 模糊逻辑在故障或未启用时停止执行，启用后首个有效扫描周期需要特殊处理\n   - scanSeconds的有效性检查确保分母不为零\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "用户需要我实现一个温度模糊控制器功能块，使用九条规则的模糊控制，核心是重心法解模糊。\n\n让我仔细分析需求：\n\n1. 功能块名：FB\n2. 接口：\n   - enable (BOOL, INPUT)\n   - resetBtn (BOOL, INPUT) - 上升沿触发\n   - sensorValid (BOOL, INPUT)\n   - setpoint (REAL, INPUT)\n   - temperature (REAL, INPUT)\n   - scanSeconds (REAL, INPUT)\n   - bias (REAL, INPUT)\n   - power (REAL, OUTPUT)\n   - correction (REAL, OUTPUT)\n   - fault (BOOL, OUTPUT)\n\n3. 核心逻辑：\n   - e = setpoint - temperature\n   - de = (e - ePrev) / scanSeconds，首拍或历史清除时 de = 0\n   - x = clamp(e / 10.0, -1, 1)\n   - y = clamp(de / 2.0, -1, 1)\n   - 隶属度函数：μN(z)=max(-z,0)、μZ(z)=1-|z|、μP(z)=max(z,0)\n   - 九条规则和权重：\n     |      | N(y) | Z(y) | P(y) |\n     | N(x) | -30  | -20  | -10  |\n     | Z(x) | -10  |  0   |  10  |\n     | P(x) |  10  |  20  |  30  |\n   - correction = Σ(w·c)/Σw，Σw=0时correction=0\n   - power = clamp(bias + correction, 0, 100)\n\n4. 复位和安全逻辑：\n   - fault = NOT sensorValid OR scanSeconds <= 0.0 OR scanSeconds > 10.0\n   - fault、enable=FALSE或resetBtn上升沿时清除历史状态\n\n5. 状态变量需要在VAR中声明以跟踪ePrev和历史记录标志\n\n6. 边界条件处理：故障检测、启用状态、复位按钮上升沿都会触发历史清除和输出清零\n   - resetBtn的上升沿检测需要在同一扫描周期内完成边沿识别和状态更新\n   - 模糊逻辑在故障或未启用时停止执行，启用后首个有效扫描周期需要特殊处理\n   - scanSeconds的有效性检查确保分母不为零\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794377484,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 8737,
+      "completion_tokens": 1808,
+      "total_tokens": 10545,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.026492"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
