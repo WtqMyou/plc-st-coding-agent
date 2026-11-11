@@ -1,0 +1,74 @@
+{
+  "model": "deepseek-v4-pro-0813",
+  "protocol": "responses",
+  "usage": {
+    "input_tokens": 9314,
+    "output_tokens": 1434,
+    "total_tokens": 10748,
+    "input_tokens_details": {
+      "cached_tokens": 6144
+    },
+    "output_tokens_details": {
+      "reasoning_tokens": 1027
+    },
+    "cost": "¥0.054582"
+  },
+  "finish_reason": "completed",
+  "message": {
+    "content": "```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    enable : BOOL;\n    resetBtn : BOOL;\n    scanSeconds : LREAL;\n    steamFlow : LREAL;\n    fuelFlow : LREAL;\n    steamTemp : LREAL;\n    steamPressure : LREAL;\nEND_VAR\nVAR_OUTPUT\n    qualified : BOOL;\n    dataFault : BOOL;\n    qualifiedTon : LREAL;\n    fuelTon : LREAL;\n    revenue : LREAL;\n    cost : LREAL;\n    netProfit : LREAL;\nEND_VAR\nVAR\n    risingReset : BOOL;\n    prevResetBtn : BOOL := FALSE;\nEND_VAR\n\nqualified := (steamTemp >= 447.0) AND (steamTemp <= 453.0) AND (steamPressure >= 3750.0) AND (steamPressure <= 3850.0);\n\ndataFault := (scanSeconds <= 0.0) OR (scanSeconds > 10.0)\n             OR (steamFlow < 0.0) OR (steamFlow > 90.0)\n             OR (fuelFlow < 0.0) OR (fuelFlow > 6.0);\n\nrisingReset := resetBtn AND NOT prevResetBtn;\n\nIF risingReset THEN\n    qualifiedTon := 0.0;\n    fuelTon := 0.0;\nELSIF enable AND NOT dataFault THEN\n    fuelTon := fuelTon + fuelFlow * scanSeconds / 1000.0;\n    IF qualified THEN\n        qualifiedTon := qualifiedTon + steamFlow * scanSeconds / 1000.0;\n    END_IF;\nEND_IF;\n\nrevenue := qualifiedTon * 280.0;\ncost := fuelTon * 1500.0;\nnetProfit := revenue - cost;\n\nprevResetBtn := resetBtn;\n\nEND_FUNCTION_BLOCK\n```"
+  },
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794377041,
+    "id": "resp_021794377040142b97e702619832bacb4ebf6c3ac1ede67c3875e",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179437704171900000000000000000000ffffac1551b0acddf1",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need answer only one st code block. Need think carefully about semantics and edge updates. Need implement FB exactly interface. Need no explanations outside block. Need valid ST.\n\nWe need ensure properties. Functional block can have VAR static for prev reset. Need order: qualify, data fault. Compute pulse rising resetBtn = resetBtn AND NOT prevResetBtn. Then if rising -> qualifiedTon:=0; fuelTon:=0; do not accumulate this scan. Need dataFault output still true. qualified output based on current inputs even if fault? Requirement qualified is current steam qualified, likely yes regardless fault. Then if pulse then zero. Else if enable AND NOT dataFault: fuelTon += fuelFlow*scan/1000 always enabled valid; if qualified then qualifiedTon += steamFlow*scan/1000. Else no accumulate. Then revenue/cost/net each scan update. Then at end update prevResetBtn := resetBtn. Potential issue when rising pulse and same scan qualified etc, we do zero and no accumulate, yes output zero at cycle ends. If reset high held, no rising, and if enable valid accumulates subsequent scans (correct edge not level). prev reset updated.\n\nNeed ensure dataFault calc includes scan 0<= or >10 and flows outside. original supports exact 10 legal. scanSeconds <=0 or >10. steam flow <0 or >90, fuel <0 or >6. good.\n\nNon-negative outputs. Inputs could negative but fault no accumulation. qualified accumulation only if valid and steam flow in range. reset zero. fuel valid flow [0,6]. no negative. revenue/cost can be non-negative. net can negative.\n\nNeed consider order of revenue before state prev? Outputs only. revenue uses accumulators. It must update even when not accumulating. On reset pulse quant zero then revenue zero. good. We compute before prev update irrelevant because prev only reset.\n\nPotential hidden lint: VAR variables may include prevResetBtn. Name okay. Maybe need initialize? CODESYS VAR persists and initial value BOOL FALSE automatically. If strict maybe `prevResetBtn : BOOL := FALSE;`. Interface exact, internal fine. Do so.\n\nNeed output all names. Code:\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n    enable : BOOL;\n    resetBtn : BOOL;\n    scanSeconds : LREAL;\n    steamFlow : LREAL;\n    fuelFlow : LREAL;\n    steamTemp : LREAL;\n    steamPressure : LREAL;\nEND_VAR\nVAR_OUTPUT\n    qualified : BOOL;\n    dataFault : BOOL;\n    qualifiedTon : LREAL;\n    fuelTon : LREAL;\n    revenue : LREAL;\n    cost : LREAL;\n    netProfit : LREAL;\nEND_VAR\nVAR\n    risingReset : BOOL;\n    prevResetBtn : BOOL := FALSE;\nEND_VAR\n\nqualified := (steamTemp >= 447.0) AND (steamTemp <= 453.0) AND (steamPressure >= 3750.0) AND (steamPressure <= 3850.0);\n\ndataFault := (scanSeconds <= 0.0) OR (scanSeconds > 10.0) OR (steamFlow < 0.0) OR (steamFlow > 90.0) OR (fuelFlow < 0.0) OR (fuelFlow > 6.0);\n\nrisingReset := resetBtn AND NOT prevResetBtn;\n\nIF risingReset THEN\n    qualifiedTon := 0.0;\n    fuelTon := 0.0;\nELSIF enable AND NOT dataFault THEN\n    fuelTon := fuelTon + fuelFlow * scanSeconds / 1000.0;\n    IF qualified THEN\n        qualifiedTon := qualifiedTon + steamFlow * scanSeconds / 1000.0;\n    END_IF;\nEND_IF;\n\nrevenue := qualifiedTon * 280.0;\ncost := fuelTon * 1500.0;\nnetProfit := revenue - cost;\n\nprevResetBtn := resetBtn;\n\nEND_FUNCTION_BLOCK\n\nQuestion: In CODESYS, outputs can be read/written in body. Yes output variables writable. For IF no else, both accumulators preserved when risingReset false and not enabled/fault or not qualified. Fine.\n\nBut need maybe `qualified` output uses current steamTemperature even if reset etc. yes.\n\nOne nuance: Accumulators are VAR_OUTPUT but persist across cycles? In function block instance output variables are static, retain values. So reading previous output value and adding works. In CODESYS output variable retains last assignment. fine. Could store internal instead but not necessary. Need consider if initial values zero? Output variables zero initialized. yes.\n\nPotential problem with same clock: `prevResetBtn` updated at end; in next scan input resetBtn same value. good.\n\nNeed provide only code block. No preamble. final answer exactly. Ensure no text outside code block."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    enable : BOOL;\n    resetBtn : BOOL;\n    scanSeconds : LREAL;\n    steamFlow : LREAL;\n    fuelFlow : LREAL;\n    steamTemp : LREAL;\n    steamPressure : LREAL;\nEND_VAR\nVAR_OUTPUT\n    qualified : BOOL;\n    dataFault : BOOL;\n    qualifiedTon : LREAL;\n    fuelTon : LREAL;\n    revenue : LREAL;\n    cost : LREAL;\n    netProfit : LREAL;\nEND_VAR\nVAR\n    risingReset : BOOL;\n    prevResetBtn : BOOL := FALSE;\nEND_VAR\n\nqualified := (steamTemp >= 447.0) AND (steamTemp <= 453.0) AND (steamPressure >= 3750.0) AND (steamPressure <= 3850.0);\n\ndataFault := (scanSeconds <= 0.0) OR (scanSeconds > 10.0)\n             OR (steamFlow < 0.0) OR (steamFlow > 90.0)\n             OR (fuelFlow < 0.0) OR (fuelFlow > 6.0);\n\nrisingReset := resetBtn AND NOT prevResetBtn;\n\nIF risingReset THEN\n    qualifiedTon := 0.0;\n    fuelTon := 0.0;\nELSIF enable AND NOT dataFault THEN\n    fuelTon := fuelTon + fuelFlow * scanSeconds / 1000.0;\n    IF qualified THEN\n        qualifiedTon := qualifiedTon + steamFlow * scanSeconds / 1000.0;\n    END_IF;\nEND_IF;\n\nrevenue := qualifiedTon * 280.0;\ncost := fuelTon * 1500.0;\nnetProfit := revenue - cost;\n\nprevResetBtn := resetBtn;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179437705612400000000000000000000ffffac1551b09c8cb6",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 9314,
+      "output_tokens": 1434,
+      "total_tokens": 10748,
+      "input_tokens_details": {
+        "cached_tokens": 6144
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 1027
+      },
+      "cost": "¥0.054582"
+    }
+  }
+}
