@@ -1,0 +1,962 @@
+{
+  "pid": "self-medium-06",
+  "model": "deepseek-v4-pro-0813",
+  "provider": "custom",
+  "setting": "custom_deepseek-v4pro",
+  "max_iters": 2,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    enable : BOOL;\n    resetBtn : BOOL;\n    sensorValid : BOOL;\n    setpoint : REAL;\n    temperature : REAL;\n    scanSeconds : REAL;\n    bias : REAL;\nEND_VAR\nVAR_OUTPUT\n    power : REAL;\n    correction : REAL;\n    fault : BOOL;\nEND_VAR\nVAR\n    lastReset : BOOL;\n    histValid : BOOL;\n    ePrev : REAL;\n    e : REAL;\n    de : REAL;\n    x : REAL;\n    y : REAL;\n    uxN : REAL;\n    uxZ : REAL;\n    uxP : REAL;\n    uyN : REAL;\n    uyZ : REAL;\n    uyP : REAL;\n    wSum : REAL;\n    wcSum : REAL;\n    resetRising : BOOL;\n    forceZero : BOOL;\nEND_VAR\n\n    fault := (NOT sensorValid) OR (scanSeconds <= 0.0) OR (scanSeconds > 10.0);\n    resetRising := resetBtn AND (NOT lastReset);\n    forceZero := (NOT enable) OR fault OR resetRising;\n\n    IF forceZero THEN\n        power := 0.0;\n        correction := 0.0;\n        histValid := FALSE;\n        ePrev := 0.0;\n    ELSE\n        e := setpoint - temperature;\n        IF histValid THEN\n            de := (e - ePrev) / scanSeconds;\n        ELSE\n            de := 0.0;\n        END_IF\n\n        x := LIMIT(-1.0, e / 10.0, 1.0);\n        y := LIMIT(-1.0, de / 2.0, 1.0);\n\n        uxN := MAX(-x, 0.0);\n        uxZ := 1.0 - ABS(x);\n        uxP := MAX(x, 0.0);\n        uyN := MAX(-y, 0.0);\n        uyZ := 1.0 - ABS(y);\n        uyP := MAX(y, 0.0);\n\n        wSum := uxN * uyN + uxN * uyZ + uxN * uyP\n              + uxZ * uyN + uxZ * uyZ + uxZ * uyP\n              + uxP * uyN + uxP * uyZ + uxP * uyP;\n        wcSum := uxN * uyN * (-30.0)\n               + uxN * uyZ * (-20.0)\n               + uxN * uyP * (-10.0)\n               + uxZ * uyN * (-10.0)\n               + uxZ * uyZ * 0.0\n               + uxZ * uyP * 10.0\n               + uxP * uyN * 10.0\n               + uxP * uyZ * 20.0\n               + uxP * uyP * 30.0;\n\n        IF wSum > 0.0 THEN\n            correction := wcSum / wSum;\n        ELSE\n            correction := 0.0;\n        END_IF\n\n        power := LIMIT(0.0, bias + correction, 100.0);\n\n        ePrev := e;\n        histValid := TRUE;\n    END_IF\n\n    lastReset := resetBtn;\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 41,
+      "tests_total": 41,
+      "feedback": "自动测试：41/41。\nLTL 检查：truncated。",
+      "prompt_tokens": 2432,
+      "completion_tokens": 4207,
+      "latency_s": 101.17200000002049,
+      "provider_error": "",
+      "verification_status": "truncated",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 17.45299999997951,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-medium-06_b2b172fa10",
+          "source_sha256": "afdbf5795c051cfe159db7557a5c097c5ae434ba0c1ac1b85958e953f9e50192",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "afdbf5795c051cfe159db7557a5c097c5ae434ba0c1ac1b85958e953f9e50192",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 41,
+        "tests_passed": 41,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "q1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "correction": 20.0,
+              "power": 70.0
+            },
+            "actual": {
+              "fault": false,
+              "correction": 20.0,
+              "power": 70.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "correction": 6.0,
+              "power": 56.0
+            },
+            "actual": {
+              "correction": 6.0,
+              "power": 56.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "correction": -10.0,
+              "power": 40.0
+            },
+            "actual": {
+              "correction": -10.0,
+              "power": 40.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "correction": 9.0,
+              "power": 59.0
+            },
+            "actual": {
+              "correction": 9.0,
+              "power": 59.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "fault": true,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "actual": {
+              "fault": true,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "correction": 0.0,
+              "power": 50.0
+            },
+            "actual": {
+              "fault": false,
+              "correction": 0.0,
+              "power": 50.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "correction": 30.0,
+              "power": 100.0
+            },
+            "actual": {
+              "correction": 30.0,
+              "power": 100.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "correction": -30.0,
+              "power": 0.0
+            },
+            "actual": {
+              "correction": -30.0,
+              "power": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "fault": true,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "actual": {
+              "fault": true,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "fault": true,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "actual": {
+              "fault": true,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "actual": {
+              "fault": false,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "correction": -20.0,
+              "power": 10.0
+            },
+            "actual": {
+              "fault": false,
+              "correction": -20.0,
+              "power": 10.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "correction": -20.0,
+              "power": 0.0
+            },
+            "actual": {
+              "correction": -20.0,
+              "power": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "actual": {
+              "fault": false,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "correction": 20.0,
+              "power": 70.0
+            },
+            "actual": {
+              "correction": 20.0,
+              "power": 70.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "correction": 20.0,
+              "power": 70.0
+            },
+            "actual": {
+              "correction": 20.0,
+              "power": 70.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "actual": {
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "correction": 0.0,
+              "power": 50.0
+            },
+            "actual": {
+              "fault": false,
+              "correction": 0.0,
+              "power": 50.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q1",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "correction": 20,
+              "power": 70
+            },
+            "actual": {
+              "fault": false,
+              "correction": 20.0,
+              "power": 70.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q2",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "correction": 6,
+              "power": 56
+            },
+            "actual": {
+              "correction": 6.0,
+              "power": 56.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q3",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "correction": -10,
+              "power": 40
+            },
+            "actual": {
+              "correction": -10.0,
+              "power": 40.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q4",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "correction": 9,
+              "power": 59
+            },
+            "actual": {
+              "correction": 9.0,
+              "power": 59.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q5",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "fault": true,
+              "power": 0,
+              "correction": 0
+            },
+            "actual": {
+              "fault": true,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q6",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "correction": 0,
+              "power": 50
+            },
+            "actual": {
+              "fault": false,
+              "correction": 0.0,
+              "power": 50.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q7",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "correction": 30,
+              "power": 100
+            },
+            "actual": {
+              "correction": 30.0,
+              "power": 100.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q8",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "correction": -30,
+              "power": 0
+            },
+            "actual": {
+              "correction": -30.0,
+              "power": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q9",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "fault": true,
+              "power": 0,
+              "correction": 0
+            },
+            "actual": {
+              "fault": true,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q10",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "fault": true,
+              "power": 0,
+              "correction": 0
+            },
+            "actual": {
+              "fault": true,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q11",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "power": 0,
+              "correction": 0
+            },
+            "actual": {
+              "fault": false,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q12",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "correction": -20,
+              "power": 10
+            },
+            "actual": {
+              "fault": false,
+              "correction": -20.0,
+              "power": 10.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q13",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "correction": -20,
+              "power": 0
+            },
+            "actual": {
+              "correction": -20.0,
+              "power": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q14",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "power": 0,
+              "correction": 0
+            },
+            "actual": {
+              "fault": false,
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q15",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "correction": 20,
+              "power": 70
+            },
+            "actual": {
+              "correction": 20.0,
+              "power": 70.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q16",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "correction": 20,
+              "power": 70
+            },
+            "actual": {
+              "correction": 20.0,
+              "power": 70.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q17",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "power": 0,
+              "correction": 0
+            },
+            "actual": {
+              "power": 0.0,
+              "correction": 0.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q18",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "correction": 0,
+              "power": 50
+            },
+            "actual": {
+              "fault": false,
+              "correction": 0.0,
+              "power": 50.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q19",
+            "passed": true,
+            "mode": "sequence:peer:fractional-dt",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "correction": 0,
+              "power": 50
+            },
+            "actual": {
+              "fault": false,
+              "correction": 0.0,
+              "power": 50.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q20",
+            "passed": true,
+            "mode": "sequence:peer:fractional-dt",
+            "message": "",
+            "expected": {
+              "fault": false,
+              "correction": 12,
+              "power": 62
+            },
+            "actual": {
+              "fault": false,
+              "correction": 12.0,
+              "power": 62.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q21",
+            "passed": true,
+            "mode": "sequence:peer:rule-surface",
+            "message": "",
+            "expected": {
+              "power": 30,
+              "correction": -20,
+              "fault": false
+            },
+            "actual": {
+              "power": 30.0,
+              "correction": -20.0,
+              "fault": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q22",
+            "passed": true,
+            "mode": "sequence:peer:rule-surface",
+            "message": "",
+            "expected": {
+              "power": 40,
+              "correction": -10,
+              "fault": false
+            },
+            "actual": {
+              "power": 40.0,
+              "correction": -10.0,
+              "fault": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q23",
+            "passed": true,
+            "mode": "sequence:peer:rule-surface",
+            "message": "",
+            "expected": {
+              "power": 60,
+              "correction": 10,
+              "fault": false
+            },
+            "actual": {
+              "power": 60.0,
+              "correction": 10.0,
+              "fault": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 668,
+          "traces": 47333,
+          "specs_total": 12,
+          "specs_hold": 12,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 17.45299999997951,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-medium-06_b2b172fa10",
+            "source_sha256": "afdbf5795c051cfe159db7557a5c097c5ae434ba0c1ac1b85958e953f9e50192",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "classification": "evaluated",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "group_counts": {
+            "sequence": 18,
+            "sequence:peer:default": 18,
+            "sequence:peer:fractional-dt": 2,
+            "sequence:peer:rule-surface": 3
+          },
+          "group_policy": "fresh instance per sequence group; each single case fresh",
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "afdbf5795c051cfe159db7557a5c097c5ae434ba0c1ac1b85958e953f9e50192",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "r7_model_check": {
+            "program": "self-medium-06",
+            "states_explored": 668,
+            "traces_explored": 47333,
+            "max_depth": 2,
+            "requested_depth": 8,
+            "complete_depth": 1,
+            "initial_inputs_attempted": 2880,
+            "input_space_size": 2880,
+            "all_hold": false,
+            "error": "",
+            "truncated": true,
+            "fixed_input_domains": {},
+            "specs": [
+              {
+                "id": "S1",
+                "formula": "G((power >= 0.0) & (power <= 100.0))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S2",
+                "formula": "G((correction >= -30.0) & (correction <= 30.0))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S3",
+                "formula": "G((!enable | rising(resetBtn) | fault) -> (power = 0.0 & correction = 0.0))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S4",
+                "formula": "G(fault <-> (!sensorValid | scanSeconds <= 0.0 | scanSeconds > 10.0))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S5",
+                "formula": "G(!sensorValid -> fault)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S7",
+                "formula": "G(((prev(fault) | prev(!enable)) & enable & !fault & !rising(resetBtn) & setpoint - temperature >= 10.0) -> correction = 20.0)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S8",
+                "formula": "G(((prev(fault) | prev(!enable)) & enable & !fault & !rising(resetBtn) & setpoint = temperature) -> correction = 0.0)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S9",
+                "formula": "G((resetBtn & prev(resetBtn) & !fault & enable & (bias > 0.0) & setpoint - temperature >= 10.0) -> power > 0.0)",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "S10",
+                "formula": "G(((NOT enable OR fault OR (resetBtn AND NOT prev(resetBtn))) -> power = 0.0) AND (NOT (NOT enable OR fault OR (resetBtn AND NOT prev(resetBtn))) -> ABS(power - LIMIT(0.0, bias + correction, 100.0)) <= 0.000001))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S11",
+                "formula": "G((enable AND !fault AND !rising(resetBtn)) -> power = LIMIT(0.0, bias + correction, 100.0))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S12",
+                "formula": "G(((enable AND !fault AND !rising(resetBtn)) AND !(prev(enable AND !fault) AND !prev(rising(resetBtn)))) -> ABS(correction - (20.0 * LIMIT(-1.0, (setpoint - temperature) / 10.0, 1.0))) <= 0.000001 * MAX(1.0, ABS(20.0 * LIMIT(-1.0, (setpoint - temperature) / 10.0, 1.0))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              },
+              {
+                "id": "N10-S13",
+                "formula": "G(((enable AND !fault AND !rising(resetBtn)) AND (prev(enable AND !fault) AND !prev(rising(resetBtn)))) -> ABS(correction - ((20.0 * LIMIT(-1.0, (setpoint - temperature) / 10.0, 1.0) + 10.0 * LIMIT(-1.0, (((setpoint - temperature) - prev(setpoint - temperature)) / scanSeconds) / 2.0, 1.0)))) <= 0.000001 * MAX(1.0, ABS((20.0 * LIMIT(-1.0, (setpoint - temperature) / 10.0, 1.0) + 10.0 * LIMIT(-1.0, (((setpoint - temperature) - prev(setpoint - temperature)) / scanSeconds) / 2.0, 1.0)))))",
+                "status": "预算内未发现违反",
+                "holds": true,
+                "contradicting": false,
+                "bounded": true,
+                "inconclusive": false,
+                "counterexample_at": null,
+                "reason": "只有前若干个快照被检查过，不能当作'永远成立'的证明"
+              }
+            ]
+          },
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.10702683,
+      "actual_model": "deepseek-v4-pro-0813",
+      "solved": true,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1794377362.4743755,
+  "finished_at": 1794377463.6640875,
+  "error": "",
+  "stop_reason": "functional_pass_formal_truncated",
+  "run_signature": "",
+  "experiment_kind": "live",
+  "tests_total": 41,
+  "request_window_seconds": 451,
+  "prompt_version": "v2.5-task-specific-reset",
+  "solved": true,
+  "first_try": true,
+  "best_attempt": 0,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 6639,
+  "total_latency_s": 101.17200000002049,
+  "n_attempts": 1,
+  "job_done": true,
+  "study_plan_sha256": "5d34beeeeacd5265559418bf339d6cefa78c9bc504793ddbd387265486810ba8",
+  "complete_code": true
+}
