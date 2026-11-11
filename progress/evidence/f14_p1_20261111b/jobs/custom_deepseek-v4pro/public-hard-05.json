@@ -1,0 +1,158 @@
+{
+  "job_id": "custom_deepseek-v4pro/public-hard-05",
+  "pid": "public-hard-05",
+  "condition": "custom_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 54,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 144,
+            "code": "E_MISSING_END_POU",
+            "message": "PROGRAM MechanicalArmControl 缺少结束关键字"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 54,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "616ff1eeb057e833f1ecf7890a23b1f834855b1a21cc4aab11c5bf72636f18d6",
+          "task_json_sha256": "7eb305baaa585f6846468a7ef94bd70bddb6225346c1d325425f9b4fb3d0cdb1",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 144 行 [E_MISSING_END_POU] PROGRAM MechanicalArmControl 缺少结束关键字\n第 0 行 [E_NO_POU] 未找到可执行 POU\nLTL 检查：not_run。",
+      "idx": 0,
+      "code": "PROGRAM MechanicalArmControl\nVAR_INPUT\n    ManualMode: BOOL;\n    SingleStepMode: BOOL;\n    SingleCycleMode: BOOL;\n    ContinuousMode: BOOL;\n    EmergencyStop: BOOL;\n    Start: BOOL;\n    DownButton: BOOL;\n    UpButton: BOOL;\n    LeftButton: BOOL;\n    RightButton: BOOL;\n    GripButton: BOOL;\n    ReleaseButton: BOOL;\n    DownLimitSwitch: BOOL;\n    UpLimitSwitch: BOOL;\n    LeftLimitSwitch: BOOL;\n    RightLimitSwitch: BOOL;\n    GripLimitSwitch: BOOL;\n    ReleaseLimitSwitch: BOOL;\nEND_VAR\nVAR_OUTPUT\n    MoveDown: BOOL;\n    MoveUp: BOOL;\n    MoveLeft: BOOL;\n    MoveRight: BOOL;\n    ActivateGrip: BOOL;\n    ActivateRelease: BOOL;\nEND_VAR\nVAR\n    prevStart: BOOL := FALSE;\n    startRising: BOOL;\n    stepIndex: INT := 0;\n    executing: BOOL := FALSE;\nEND_VAR\n\n// Rising edge detection for Start button\nstartRising := Start AND NOT prevStart;\nprevStart := Start;\n\nIF NOT EmergencyStop THEN\n    // Emergency stop active: stop all actions and reset automatic state\n    executing := FALSE;\n    stepIndex := 0;\nELSE\n    // Normal operation\n    IF ManualMode THEN\n        // Manual mode: no automatic state; reset if switching from auto\n        executing := FALSE;\n        stepIndex := 0;\n    ELSIF SingleStepMode THEN\n        // Single step mode: one action per Start press\n        IF startRising AND NOT executing THEN\n            executing := TRUE;\n        END_IF;\n        IF executing THEN\n            CASE stepIndex OF\n                0: IF DownLimitSwitch THEN executing := FALSE; stepIndex := 1; END_IF\n                1: IF GripLimitSwitch THEN executing := FALSE; stepIndex := 2; END_IF\n                2: IF UpLimitSwitch THEN executing := FALSE; stepIndex := 3; END_IF\n                3: IF RightLimitSwitch THEN executing := FALSE; stepIndex := 4; END_IF\n                4: IF DownLimitSwitch THEN executing := FALSE; stepIndex := 5; END_IF\n                5: IF ReleaseLimitSwitch THEN executing := FALSE; stepIndex := 6; END_IF\n                6: IF UpLimitSwitch THEN executing := FALSE; stepIndex := 7; END_IF\n                7: IF LeftLimitSwitch THEN executing := FALSE; stepIndex := 0; END_IF\n            END_CASE;\n        END_IF;\n    ELSIF SingleCycleMode THEN\n        // Single cycle mode: full cycle once per Start press\n        IF startRising AND NOT executing THEN\n            executing := TRUE;\n            stepIndex := 0;\n        END_IF;\n        IF executing THEN\n            CASE stepIndex OF\n                0: IF DownLimitSwitch THEN stepIndex := 1; END_IF\n                1: IF GripLimitSwitch THEN stepIndex := 2; END_IF\n                2: IF UpLimitSwitch THEN stepIndex := 3; END_IF\n                3: IF RightLimitSwitch THEN stepIndex := 4; END_IF\n                4: IF DownLimitSwitch THEN stepIndex := 5; END_IF\n                5: IF ReleaseLimitSwitch THEN stepIndex := 6; END_IF\n                6: IF UpLimitSwitch THEN stepIndex := 7; END_IF\n                7: IF LeftLimitSwitch THEN\n                        executing := FALSE;\n                        stepIndex := 0;\n                    END_IF\n            END_CASE;\n        END_IF;\n    ELSIF ContinuousMode THEN\n        // Continuous mode: repeat cycles until stopped\n        IF startRising AND NOT executing THEN\n            executing := TRUE;\n            stepIndex := 0;\n        END_IF;\n        IF executing THEN\n            CASE stepIndex OF\n                0: IF DownLimitSwitch THEN stepIndex := 1; END_IF\n                1: IF GripLimitSwitch THEN stepIndex := 2; END_IF\n                2: IF UpLimitSwitch THEN stepIndex := 3; END_IF\n                3: IF RightLimitSwitch THEN stepIndex := 4; END_IF\n                4: IF DownLimitSwitch THEN stepIndex := 5; END_IF\n                5: IF ReleaseLimitSwitch THEN stepIndex := 6; END_IF\n                6: IF UpLimitSwitch THEN stepIndex := 7; END_IF\n                7: IF LeftLimitSwitch THEN stepIndex := 0; END_IF\n            END_CASE;\n        END_IF;\n    ELSE\n        // No valid mode selected\n        executing := FALSE;\n        stepIndex := 0;\n    END_IF;\nEND_IF;\n\n// Output assignment\nMoveDown := FALSE;\nMoveUp := FALSE;\nMoveLeft := FALSE;\nMoveRight := FALSE;\nActivateGrip := FALSE;\nActivateRelease := FALSE;\n\nIF EmergencyStop THEN\n    IF ManualMode THEN\n        MoveDown := DownButton AND NOT DownLimitSwitch;\n        MoveUp := UpButton AND NOT UpLimitSwitch;\n        MoveLeft := LeftButton AND NOT LeftLimitSwitch;\n        MoveRight := RightButton AND NOT RightLimitSwitch;\n        ActivateGrip := GripButton AND NOT GripLimitSwitch;\n        ActivateRelease := ReleaseButton AND NOT ReleaseLimitSwitch;\n    ELSIF SingleStepMode OR SingleCycleMode OR ContinuousMode THEN\n        IF executing THEN\n            CASE stepIndex OF\n                0: MoveDown := NOT DownLimitSwitch;\n                1: ActivateGrip := NOT GripLimitSwitch;\n                2: MoveUp := NOT UpLimitSwitch;\n                3: MoveRight := NOT RightLimitSwitch;\n                4: MoveDown := NOT DownLimitSwitch;\n                5: ActivateRelease := NOT ReleaseLimitSwitch;\n                6: MoveUp := NOT UpLimitSwitch;\n                7: MoveLeft := NOT LeftLimitSwitch;\n            END_CASE;\n        END_IF;\n    END_IF;\nEND_IF;",
+      "code_hash": "616ff1eeb057e833f1ecf7890a23b1f834855b1a21cc4aab11c5bf72636f18d6",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 1098,
+      "completion_tokens": 10560,
+      "cost_cny": 0.23305157999999998,
+      "latency_s": 134.328,
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 54,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_POU_KIND",
+            "line": 1,
+            "message": "POU 类型与题面不一致"
+          }
+        ],
+        "tests_total": 54,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "0b6edd673ef0eccfa19ecb7f74b31ea5556cb1cd2d40ada526df327c7588fe4a",
+          "task_json_sha256": "7eb305baaa585f6846468a7ef94bd70bddb6225346c1d325425f9b4fb3d0cdb1",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 1 行 [E_POU_KIND] POU 类型与题面不一致\nLTL 检查：not_run。",
+      "idx": 1,
+      "code": "PROGRAM MechanicalArmControl\nVAR_INPUT\n    ManualMode: BOOL;\n    SingleStepMode: BOOL;\n    SingleCycleMode: BOOL;\n    ContinuousMode: BOOL;\n    EmergencyStop: BOOL;\n    Start: BOOL;\n    DownButton: BOOL;\n    UpButton: BOOL;\n    LeftButton: BOOL;\n    RightButton: BOOL;\n    GripButton: BOOL;\n    ReleaseButton: BOOL;\n    DownLimitSwitch: BOOL;\n    UpLimitSwitch: BOOL;\n    LeftLimitSwitch: BOOL;\n    RightLimitSwitch: BOOL;\n    GripLimitSwitch: BOOL;\n    ReleaseLimitSwitch: BOOL;\nEND_VAR\nVAR_OUTPUT\n    MoveDown: BOOL;\n    MoveUp: BOOL;\n    MoveLeft: BOOL;\n    MoveRight: BOOL;\n    ActivateGrip: BOOL;\n    ActivateRelease: BOOL;\nEND_VAR\nVAR\n    prevStart: BOOL := FALSE;\n    startRising: BOOL;\n    stepIndex: INT := 0;\n    executing: BOOL := FALSE;\nEND_VAR\n\n// Rising edge detection for Start button\nstartRising := Start AND NOT prevStart;\nprevStart := Start;\n\nIF NOT EmergencyStop THEN\n    // Emergency stop active: stop all actions and reset automatic state\n    executing := FALSE;\n    stepIndex := 0;\nELSE\n    // Normal operation\n    IF ManualMode THEN\n        // Manual mode: no automatic state; reset if switching from auto\n        executing := FALSE;\n        stepIndex := 0;\n    ELSIF SingleStepMode THEN\n        // Single step mode: one action per Start press\n        IF startRising AND NOT executing THEN\n            executing := TRUE;\n        END_IF;\n        IF executing THEN\n            CASE stepIndex OF\n                0: IF DownLimitSwitch THEN executing := FALSE; stepIndex := 1; END_IF\n                1: IF GripLimitSwitch THEN executing := FALSE; stepIndex := 2; END_IF\n                2: IF UpLimitSwitch THEN executing := FALSE; stepIndex := 3; END_IF\n                3: IF RightLimitSwitch THEN executing := FALSE; stepIndex := 4; END_IF\n                4: IF DownLimitSwitch THEN executing := FALSE; stepIndex := 5; END_IF\n                5: IF ReleaseLimitSwitch THEN executing := FALSE; stepIndex := 6; END_IF\n                6: IF UpLimitSwitch THEN executing := FALSE; stepIndex := 7; END_IF\n                7: IF LeftLimitSwitch THEN executing := FALSE; stepIndex := 0; END_IF\n            END_CASE;\n        END_IF;\n    ELSIF SingleCycleMode THEN\n        // Single cycle mode: full cycle once per Start press\n        IF startRising AND NOT executing THEN\n            executing := TRUE;\n            stepIndex := 0;\n        END_IF;\n        IF executing THEN\n            CASE stepIndex OF\n                0: IF DownLimitSwitch THEN stepIndex := 1; END_IF\n                1: IF GripLimitSwitch THEN stepIndex := 2; END_IF\n                2: IF UpLimitSwitch THEN stepIndex := 3; END_IF\n                3: IF RightLimitSwitch THEN stepIndex := 4; END_IF\n                4: IF DownLimitSwitch THEN stepIndex := 5; END_IF\n                5: IF ReleaseLimitSwitch THEN stepIndex := 6; END_IF\n                6: IF UpLimitSwitch THEN stepIndex := 7; END_IF\n                7: IF LeftLimitSwitch THEN\n                        executing := FALSE;\n                        stepIndex := 0;\n                    END_IF\n            END_CASE;\n        END_IF;\n    ELSIF ContinuousMode THEN\n        // Continuous mode: repeat cycles until stopped\n        IF startRising AND NOT executing THEN\n            executing := TRUE;\n            stepIndex := 0;\n        END_IF;\n        IF executing THEN\n            CASE stepIndex OF\n                0: IF DownLimitSwitch THEN stepIndex := 1; END_IF\n                1: IF GripLimitSwitch THEN stepIndex := 2; END_IF\n                2: IF UpLimitSwitch THEN stepIndex := 3; END_IF\n                3: IF RightLimitSwitch THEN stepIndex := 4; END_IF\n                4: IF DownLimitSwitch THEN stepIndex := 5; END_IF\n                5: IF ReleaseLimitSwitch THEN stepIndex := 6; END_IF\n                6: IF UpLimitSwitch THEN stepIndex := 7; END_IF\n                7: IF LeftLimitSwitch THEN stepIndex := 0; END_IF\n            END_CASE;\n        END_IF;\n    ELSE\n        // No valid mode selected\n        executing := FALSE;\n        stepIndex := 0;\n    END_IF;\nEND_IF;\n\n// Output assignment\nMoveDown := FALSE;\nMoveUp := FALSE;\nMoveLeft := FALSE;\nMoveRight := FALSE;\nActivateGrip := FALSE;\nActivateRelease := FALSE;\n\nIF EmergencyStop THEN\n    IF ManualMode THEN\n        MoveDown := DownButton AND NOT DownLimitSwitch;\n        MoveUp := UpButton AND NOT UpLimitSwitch;\n        MoveLeft := LeftButton AND NOT LeftLimitSwitch;\n        MoveRight := RightButton AND NOT RightLimitSwitch;\n        ActivateGrip := GripButton AND NOT GripLimitSwitch;\n        ActivateRelease := ReleaseButton AND NOT ReleaseLimitSwitch;\n    ELSIF SingleStepMode OR SingleCycleMode OR ContinuousMode THEN\n        IF executing THEN\n            CASE stepIndex OF\n                0: MoveDown := NOT DownLimitSwitch;\n                1: ActivateGrip := NOT GripLimitSwitch;\n                2: MoveUp := NOT UpLimitSwitch;\n                3: MoveRight := NOT RightLimitSwitch;\n                4: MoveDown := NOT DownLimitSwitch;\n                5: ActivateRelease := NOT ReleaseLimitSwitch;\n                6: MoveUp := NOT UpLimitSwitch;\n                7: MoveLeft := NOT LeftLimitSwitch;\n            END_CASE;\n        END_IF;\n    END_IF;\nEND_IF;\n\nEND_PROGRAM",
+      "code_hash": "0b6edd673ef0eccfa19ecb7f74b31ea5556cb1cd2d40ada526df327c7588fe4a",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 2476,
+      "completion_tokens": 2172,
+      "cost_cny": 0.06393312,
+      "latency_s": 24.032,
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 54,
+  "study_plan_sha256": "37d0bbf483d634f65b4ebb0012a1fd7ae9032462fbc920a1dd5300ca31d0a7e2",
+  "started_at": "2026-11-12T01:23:28.774694+08:00",
+  "wall_seconds": 158.391,
+  "finished_at": "2026-11-12T01:26:07.139965+08:00",
+  "credential_batch": "primary"
+}
