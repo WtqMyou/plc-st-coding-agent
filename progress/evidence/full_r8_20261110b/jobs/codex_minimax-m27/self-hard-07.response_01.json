@@ -1,0 +1,100 @@
+{
+  "model": "minimax-m2.7",
+  "protocol": "chat",
+  "usage": {
+    "prompt_tokens": 9317,
+    "completion_tokens": 1949,
+    "total_tokens": 11266,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "text_tokens": 0,
+      "audio_tokens": 0,
+      "image_tokens": 0
+    },
+    "completion_tokens_details": {
+      "text_tokens": 0,
+      "audio_tokens": 0,
+      "image_tokens": 0,
+      "reasoning_tokens": 0
+    },
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "input_tokens_details": null,
+    "claude_cache_creation_5_m_tokens": 0,
+    "claude_cache_creation_1_h_tokens": 0,
+    "cost": "¥0.02839"
+  },
+  "finish_reason": "stop",
+  "message": {
+    "content": "\n```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    mode            : INT;          // 0=手动 1=自动 2=串级\n    resetBtn        : BOOL;         // 复位上升沿\n    scanSeconds     : REAL;         // 本次扫描周期(秒)\n    tempSP          : REAL;         // 温度设定值(℃)\n    tempPV          : REAL;         // 温度测量值(℃)\n    flowPV          : REAL;         // 流量测量值(t/h)\n    manualFlowSP    : REAL;         // 手动流量设定值(t/h)\n    manualValve     : REAL;         // 手动阀门开度(%)\nEND_VAR\nVAR_OUTPUT\n    flowSP          : REAL;         // 流量设定值(t/h, 限幅0..50)\n    valveCommand    : REAL;         // 阀门开度指令(%, 限幅0..100)\n    fault           : BOOL;         // 故障标志\n    normalMode      : BOOL;         // 正常运算拍\nEND_VAR\nVAR\n    prevResetBtn    : BOOL := FALSE;\n    prevMode        : INT := -1;    // -1表示首次\n    prevFlowSP      : REAL := 0.0;\n    prevValveCommand: REAL := 0.0;\n    prevNormalMode  : BOOL := FALSE;\n    accT            : REAL := 0.0;  // 外环积分累加器(t/h)\n    accF            : REAL := 0.0;  // 内环积分累加器(%)\n    isFirstScan     : BOOL := TRUE;\nEND_VAR\n\nVAR_TEMP\n    eT              : REAL;         // 温度偏差\n    eF              : REAL;         // 流量偏差\n    trialT          : REAL;         // 外环临时变量\n    trialF          : REAL;         // 内环临时变量\n    resetRising     : BOOL;         // 复位上升沿检测\n    modeChanged     : BOOL;         // 模式是否变化\n    isFaultCondition: BOOL;         // 故障条件\nEND_VAR\n\n// 计算偏差\neT := tempSP - tempPV;\neF := flowSP - flowPV;\n\n// 检测复位上升沿\nresetRising := resetBtn AND NOT prevResetBtn;\n\n// 检测模式变化(首次除外)\nmodeChanged := (prevMode <> -1) AND (mode <> prevMode);\n\n// 故障条件判断\nisFaultCondition := (mode < 0) OR (mode > 2) OR (scanSeconds <= 0.0) OR (scanSeconds > 10.0);\n\n// 更新故障标志\nfault := isFaultCondition;\n\n// 判断是否正常运算拍\n// 条件：非首次、非故障、非复位上升沿、非模式切换\nnormalMode := NOT isFirstScan AND NOT isFaultCondition AND NOT resetRising AND NOT modeChanged AND prevNormalMode;\n\n// 首次执行\nIF isFirstScan THEN\n    // 首拍按手动值预置输出\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    accT := 0.0;\n    accF := 0.0;\n    isFirstScan := FALSE;\n    \n// 复位上升沿(优先于故障)\nELSIF resetRising THEN\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    accT := 0.0;\n    accF := 0.0;\n    \n// 故障状态\nELSIF isFaultCondition THEN\n    // 故障时输出跟手动值，允许突变\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    // 预置积分器\n    accT := 0.0;\n    accF := 0.0;\n    \n// 模式切换拍\nELSIF modeChanged THEN\n    // 本拍不积分，保持输出\n    IF mode = 2 THEN\n        // 切换到串级：两输出均保持上一拍值\n        flowSP := prevFlowSP;\n        valveCommand := prevValveCommand;\n    ELSE\n        // 切换到自动或手动：流量跟手动，阀位保持\n        flowSP := manualFlowSP;\n        valveCommand := prevValveCommand;\n    END_IF\n    \n// 正常运算拍\nELSIF normalMode THEN\n    // 外环PI计算\n    trialT := accT + 0.2 * eT * scanSeconds;\n    flowSP := 1.0 * eT + trialT;\n    \n    // 外环限幅\n    IF flowSP > 50.0 THEN\n        flowSP := 50.0;\n    ELSIF flowSP < 0.0 THEN\n        flowSP := 0.0;\n    END_IF;\n    \n    // 抗积分饱和回算\n    accT := flowSP - 1.0 * eT;\n    \n    // 更新eF(因为flowSP已变)\n    eF := flowSP - flowPV;\n    \n    // 内环PI计算(mode=1或mode=2)\n    IF mode = 1 OR mode = 2 THEN\n        trialF := accF + 0.5 * eF * scanSeconds;\n        valveCommand := 2.0 * eF + trialF;\n        \n        // 内环限幅\n        IF valveCommand > 100.0 THEN\n            valveCommand := 100.0;\n        ELSIF valveCommand < 0.0 THEN\n            valveCommand := 0.0;\n        END_IF;\n        \n        // 抗积分饱和回算\n        accF := valveCommand - 2.0 * eF;\n    END_IF;\n    \n    // mode=0时手动控制\n    IF mode = 0 THEN\n        flowSP := manualFlowSP;\n        valveCommand := manualValve;\n    END_IF;\n    \n    // mode=1时流量设定跟随手动\n    IF mode = 1 THEN\n        flowSP := manualFlowSP;\n    END_IF;\n    \nELSE\n    // prevNormalMode=FALSE时保持输出不变(用于normalMode计算)\n    flowSP := prevFlowSP;\n    valveCommand := prevValveCommand;\nEND_IF;\n\n// 更新历史状态\nprevResetBtn := resetBtn;\nprevMode := mode;\nprevFlowSP := flowSP;\nprevValveCommand := valveCommand;\nprevNormalMode := normalMode;\n\nEND_FUNCTION_BLOCK\n```",
+    "role": "assistant",
+    "reasoning_content": "用户要求我实现一个串级PI温控回路的手/自动无扰切换功能块。让我仔细分析需求：\n\n1. **串级结构**：\n   - 外环：温度偏差 → 流量设定\n   - 内环：流量偏差 → 阀门开度\n\n2. **三种模式**：\n   - mode=0: 手动（flowSP=manualFlowSP, valveCommand=manualValve）\n   - mode=1: 自动（flowSP=manualFlowSP, 内环PI自动算阀门）\n   - mode=2: 串级（外环PI算流量设定，内环PI算阀门）\n\n3. **PI参数**：\n   - 外环：KpT=1.0, KiT=0.2\n   - 内环：KpF=2.0, KiF=0.5\n   - 积分项：accT (t/h), accF (%)\n\n4. **PI算法**：\n   - 外环：\n     - trial = accT + 0.2*eT*scanSeconds\n     - flowSP = 1.0*eT + trial\n     - 限幅 0..50\n     - accT = flowSP - 1.0*eT (回算抗积分饱和)\n   \n   - 内环：\n     - trial = accF + 0.5*eF*scanSeconds\n     - valveCommand = 2.0*eF + trial\n     - 限幅 0..100\n     - accF = valveCommand - 2.0*eF (回算抗积分饱和)\n   \n   - 其中 eT = tempSP - tempPV，eF = flowSP - flowPV\n\n5. **模式切换与初始化**：\n   - 首次执行、复位上升沿、故障或模式切换时 normalMode=FALSE，这些拍次不执行积分更新\n   - 切换到mode=2时保持flowSP和valveCommand不变，切换到mode=1或mode=0时flowSP跟随manualFlowSP而valveCommand维持前值\n   - 连续切换需逐拍识别处理\n\n6. **复位与故障处理**：\n   - resetBtn上升沿触发初始化，积分器预置、输出跟随手动值、当前拍不运算，按住不放不重复触发\n   - mode不在0/1/2范围、scanSeconds≤0或>10秒时置位fault标志，输出立即跟随手动值并预置积分器，允许阀位跳变\n\n7. **运算优先级**：\n   - 复位/故障优先于正常运算，同一拍出现复位上升沿时按复位规则处理，fault仍正常报告\n   - normalMode指示当前拍是否处于正常运算状态\n\n8. **形式化性质**：\n   - 需满足S1-S9和N10-S14的所有约束条件\n",
+    "reasoning_details": [
+      {
+        "type": "reasoning.text",
+        "id": "reasoning-text-1",
+        "format": "MiniMax-response-v1",
+        "index": 0,
+        "text": "用户要求我实现一个串级PI温控回路的手/自动无扰切换功能块。让我仔细分析需求：\n\n1. **串级结构**：\n   - 外环：温度偏差 → 流量设定\n   - 内环：流量偏差 → 阀门开度\n\n2. **三种模式**：\n   - mode=0: 手动（flowSP=manualFlowSP, valveCommand=manualValve）\n   - mode=1: 自动（flowSP=manualFlowSP, 内环PI自动算阀门）\n   - mode=2: 串级（外环PI算流量设定，内环PI算阀门）\n\n3. **PI参数**：\n   - 外环：KpT=1.0, KiT=0.2\n   - 内环：KpF=2.0, KiF=0.5\n   - 积分项：accT (t/h), accF (%)\n\n4. **PI算法**：\n   - 外环：\n     - trial = accT + 0.2*eT*scanSeconds\n     - flowSP = 1.0*eT + trial\n     - 限幅 0..50\n     - accT = flowSP - 1.0*eT (回算抗积分饱和)\n   \n   - 内环：\n     - trial = accF + 0.5*eF*scanSeconds\n     - valveCommand = 2.0*eF + trial\n     - 限幅 0..100\n     - accF = valveCommand - 2.0*eF (回算抗积分饱和)\n   \n   - 其中 eT = tempSP - tempPV，eF = flowSP - flowPV\n\n5. **模式切换与初始化**：\n   - 首次执行、复位上升沿、故障或模式切换时 normalMode=FALSE，这些拍次不执行积分更新\n   - 切换到mode=2时保持flowSP和valveCommand不变，切换到mode=1或mode=0时flowSP跟随manualFlowSP而valveCommand维持前值\n   - 连续切换需逐拍识别处理\n\n6. **复位与故障处理**：\n   - resetBtn上升沿触发初始化，积分器预置、输出跟随手动值、当前拍不运算，按住不放不重复触发\n   - mode不在0/1/2范围、scanSeconds≤0或>10秒时置位fault标志，输出立即跟随手动值并预置积分器，允许阀位跳变\n\n7. **运算优先级**：\n   - 复位/故障优先于正常运算，同一拍出现复位上升沿时按复位规则处理，fault仍正常报告\n   - normalMode指示当前拍是否处于正常运算状态\n\n8. **形式化性质**：\n   - 需满足S1-S9和N10-S14的所有约束条件\n"
+      }
+    ]
+  },
+  "raw_response": {
+    "id": "req-b6c1m1-1794369000655224030",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    mode            : INT;          // 0=手动 1=自动 2=串级\n    resetBtn        : BOOL;         // 复位上升沿\n    scanSeconds     : REAL;         // 本次扫描周期(秒)\n    tempSP          : REAL;         // 温度设定值(℃)\n    tempPV          : REAL;         // 温度测量值(℃)\n    flowPV          : REAL;         // 流量测量值(t/h)\n    manualFlowSP    : REAL;         // 手动流量设定值(t/h)\n    manualValve     : REAL;         // 手动阀门开度(%)\nEND_VAR\nVAR_OUTPUT\n    flowSP          : REAL;         // 流量设定值(t/h, 限幅0..50)\n    valveCommand    : REAL;         // 阀门开度指令(%, 限幅0..100)\n    fault           : BOOL;         // 故障标志\n    normalMode      : BOOL;         // 正常运算拍\nEND_VAR\nVAR\n    prevResetBtn    : BOOL := FALSE;\n    prevMode        : INT := -1;    // -1表示首次\n    prevFlowSP      : REAL := 0.0;\n    prevValveCommand: REAL := 0.0;\n    prevNormalMode  : BOOL := FALSE;\n    accT            : REAL := 0.0;  // 外环积分累加器(t/h)\n    accF            : REAL := 0.0;  // 内环积分累加器(%)\n    isFirstScan     : BOOL := TRUE;\nEND_VAR\n\nVAR_TEMP\n    eT              : REAL;         // 温度偏差\n    eF              : REAL;         // 流量偏差\n    trialT          : REAL;         // 外环临时变量\n    trialF          : REAL;         // 内环临时变量\n    resetRising     : BOOL;         // 复位上升沿检测\n    modeChanged     : BOOL;         // 模式是否变化\n    isFaultCondition: BOOL;         // 故障条件\nEND_VAR\n\n// 计算偏差\neT := tempSP - tempPV;\neF := flowSP - flowPV;\n\n// 检测复位上升沿\nresetRising := resetBtn AND NOT prevResetBtn;\n\n// 检测模式变化(首次除外)\nmodeChanged := (prevMode <> -1) AND (mode <> prevMode);\n\n// 故障条件判断\nisFaultCondition := (mode < 0) OR (mode > 2) OR (scanSeconds <= 0.0) OR (scanSeconds > 10.0);\n\n// 更新故障标志\nfault := isFaultCondition;\n\n// 判断是否正常运算拍\n// 条件：非首次、非故障、非复位上升沿、非模式切换\nnormalMode := NOT isFirstScan AND NOT isFaultCondition AND NOT resetRising AND NOT modeChanged AND prevNormalMode;\n\n// 首次执行\nIF isFirstScan THEN\n    // 首拍按手动值预置输出\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    accT := 0.0;\n    accF := 0.0;\n    isFirstScan := FALSE;\n    \n// 复位上升沿(优先于故障)\nELSIF resetRising THEN\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    accT := 0.0;\n    accF := 0.0;\n    \n// 故障状态\nELSIF isFaultCondition THEN\n    // 故障时输出跟手动值，允许突变\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    // 预置积分器\n    accT := 0.0;\n    accF := 0.0;\n    \n// 模式切换拍\nELSIF modeChanged THEN\n    // 本拍不积分，保持输出\n    IF mode = 2 THEN\n        // 切换到串级：两输出均保持上一拍值\n        flowSP := prevFlowSP;\n        valveCommand := prevValveCommand;\n    ELSE\n        // 切换到自动或手动：流量跟手动，阀位保持\n        flowSP := manualFlowSP;\n        valveCommand := prevValveCommand;\n    END_IF\n    \n// 正常运算拍\nELSIF normalMode THEN\n    // 外环PI计算\n    trialT := accT + 0.2 * eT * scanSeconds;\n    flowSP := 1.0 * eT + trialT;\n    \n    // 外环限幅\n    IF flowSP > 50.0 THEN\n        flowSP := 50.0;\n    ELSIF flowSP < 0.0 THEN\n        flowSP := 0.0;\n    END_IF;\n    \n    // 抗积分饱和回算\n    accT := flowSP - 1.0 * eT;\n    \n    // 更新eF(因为flowSP已变)\n    eF := flowSP - flowPV;\n    \n    // 内环PI计算(mode=1或mode=2)\n    IF mode = 1 OR mode = 2 THEN\n        trialF := accF + 0.5 * eF * scanSeconds;\n        valveCommand := 2.0 * eF + trialF;\n        \n        // 内环限幅\n        IF valveCommand > 100.0 THEN\n            valveCommand := 100.0;\n        ELSIF valveCommand < 0.0 THEN\n            valveCommand := 0.0;\n        END_IF;\n        \n        // 抗积分饱和回算\n        accF := valveCommand - 2.0 * eF;\n    END_IF;\n    \n    // mode=0时手动控制\n    IF mode = 0 THEN\n        flowSP := manualFlowSP;\n        valveCommand := manualValve;\n    END_IF;\n    \n    // mode=1时流量设定跟随手动\n    IF mode = 1 THEN\n        flowSP := manualFlowSP;\n    END_IF;\n    \nELSE\n    // prevNormalMode=FALSE时保持输出不变(用于normalMode计算)\n    flowSP := prevFlowSP;\n    valveCommand := prevValveCommand;\nEND_IF;\n\n// 更新历史状态\nprevResetBtn := resetBtn;\nprevMode := mode;\nprevFlowSP := flowSP;\nprevValveCommand := valveCommand;\nprevNormalMode := normalMode;\n\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "用户要求我实现一个串级PI温控回路的手/自动无扰切换功能块。让我仔细分析需求：\n\n1. **串级结构**：\n   - 外环：温度偏差 → 流量设定\n   - 内环：流量偏差 → 阀门开度\n\n2. **三种模式**：\n   - mode=0: 手动（flowSP=manualFlowSP, valveCommand=manualValve）\n   - mode=1: 自动（flowSP=manualFlowSP, 内环PI自动算阀门）\n   - mode=2: 串级（外环PI算流量设定，内环PI算阀门）\n\n3. **PI参数**：\n   - 外环：KpT=1.0, KiT=0.2\n   - 内环：KpF=2.0, KiF=0.5\n   - 积分项：accT (t/h), accF (%)\n\n4. **PI算法**：\n   - 外环：\n     - trial = accT + 0.2*eT*scanSeconds\n     - flowSP = 1.0*eT + trial\n     - 限幅 0..50\n     - accT = flowSP - 1.0*eT (回算抗积分饱和)\n   \n   - 内环：\n     - trial = accF + 0.5*eF*scanSeconds\n     - valveCommand = 2.0*eF + trial\n     - 限幅 0..100\n     - accF = valveCommand - 2.0*eF (回算抗积分饱和)\n   \n   - 其中 eT = tempSP - tempPV，eF = flowSP - flowPV\n\n5. **模式切换与初始化**：\n   - 首次执行、复位上升沿、故障或模式切换时 normalMode=FALSE，这些拍次不执行积分更新\n   - 切换到mode=2时保持flowSP和valveCommand不变，切换到mode=1或mode=0时flowSP跟随manualFlowSP而valveCommand维持前值\n   - 连续切换需逐拍识别处理\n\n6. **复位与故障处理**：\n   - resetBtn上升沿触发初始化，积分器预置、输出跟随手动值、当前拍不运算，按住不放不重复触发\n   - mode不在0/1/2范围、scanSeconds≤0或>10秒时置位fault标志，输出立即跟随手动值并预置积分器，允许阀位跳变\n\n7. **运算优先级**：\n   - 复位/故障优先于正常运算，同一拍出现复位上升沿时按复位规则处理，fault仍正常报告\n   - normalMode指示当前拍是否处于正常运算状态\n\n8. **形式化性质**：\n   - 需满足S1-S9和N10-S14的所有约束条件\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "用户要求我实现一个串级PI温控回路的手/自动无扰切换功能块。让我仔细分析需求：\n\n1. **串级结构**：\n   - 外环：温度偏差 → 流量设定\n   - 内环：流量偏差 → 阀门开度\n\n2. **三种模式**：\n   - mode=0: 手动（flowSP=manualFlowSP, valveCommand=manualValve）\n   - mode=1: 自动（flowSP=manualFlowSP, 内环PI自动算阀门）\n   - mode=2: 串级（外环PI算流量设定，内环PI算阀门）\n\n3. **PI参数**：\n   - 外环：KpT=1.0, KiT=0.2\n   - 内环：KpF=2.0, KiF=0.5\n   - 积分项：accT (t/h), accF (%)\n\n4. **PI算法**：\n   - 外环：\n     - trial = accT + 0.2*eT*scanSeconds\n     - flowSP = 1.0*eT + trial\n     - 限幅 0..50\n     - accT = flowSP - 1.0*eT (回算抗积分饱和)\n   \n   - 内环：\n     - trial = accF + 0.5*eF*scanSeconds\n     - valveCommand = 2.0*eF + trial\n     - 限幅 0..100\n     - accF = valveCommand - 2.0*eF (回算抗积分饱和)\n   \n   - 其中 eT = tempSP - tempPV，eF = flowSP - flowPV\n\n5. **模式切换与初始化**：\n   - 首次执行、复位上升沿、故障或模式切换时 normalMode=FALSE，这些拍次不执行积分更新\n   - 切换到mode=2时保持flowSP和valveCommand不变，切换到mode=1或mode=0时flowSP跟随manualFlowSP而valveCommand维持前值\n   - 连续切换需逐拍识别处理\n\n6. **复位与故障处理**：\n   - resetBtn上升沿触发初始化，积分器预置、输出跟随手动值、当前拍不运算，按住不放不重复触发\n   - mode不在0/1/2范围、scanSeconds≤0或>10秒时置位fault标志，输出立即跟随手动值并预置积分器，允许阀位跳变\n\n7. **运算优先级**：\n   - 复位/故障优先于正常运算，同一拍出现复位上升沿时按复位规则处理，fault仍正常报告\n   - normalMode指示当前拍是否处于正常运算状态\n\n8. **形式化性质**：\n   - 需满足S1-S9和N10-S14的所有约束条件\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794369002,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 9317,
+      "completion_tokens": 1949,
+      "total_tokens": 11266,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.02839"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}

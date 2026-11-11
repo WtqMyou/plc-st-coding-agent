@@ -1,0 +1,2943 @@
+{
+  "pid": "self-hard-07",
+  "model": "MiniMax-M2.7",
+  "provider": "codex-cli",
+  "setting": "codex_minimax-m27",
+  "max_iters": 2,
+  "attempts": [
+    {
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    mode            : INT;          // 0=手动 1=自动 2=串级\n    resetBtn        : BOOL;         // 复位上升沿\n    scanSeconds     : REAL;         // 本次扫描周期(秒)\n    tempSP          : REAL;         // 温度设定值(℃)\n    tempPV          : REAL;         // 温度测量值(℃)\n    flowPV          : REAL;         // 流量测量值(t/h)\n    manualFlowSP    : REAL;         // 手动流量设定值(t/h)\n    manualValve     : REAL;         // 手动阀门开度(%)\nEND_VAR\nVAR_OUTPUT\n    flowSP          : REAL;         // 流量设定值(t/h, 限幅0..50)\n    valveCommand    : REAL;         // 阀门开度指令(%, 限幅0..100)\n    fault           : BOOL;         // 故障标志\n    normalMode      : BOOL;         // 正常运算拍\nEND_VAR\nVAR\n    prevResetBtn    : BOOL := FALSE;\n    prevMode        : INT := -1;    // -1表示首次\n    prevFlowSP      : REAL := 0.0;\n    prevValveCommand: REAL := 0.0;\n    prevNormalMode  : BOOL := FALSE;\n    accT            : REAL := 0.0;  // 外环积分累加器(t/h)\n    accF            : REAL := 0.0;  // 内环积分累加器(%)\n    isFirstScan     : BOOL := TRUE;\nEND_VAR\n\nVAR_TEMP\n    eT              : REAL;         // 温度偏差\n    eF              : REAL;         // 流量偏差\n    trialT          : REAL;         // 外环临时变量\n    trialF          : REAL;         // 内环临时变量\n    resetRising     : BOOL;         // 复位上升沿检测\n    modeChanged     : BOOL;         // 模式是否变化\n    isFaultCondition: BOOL;         // 故障条件\nEND_VAR\n\n// 计算偏差\neT := tempSP - tempPV;\neF := flowSP - flowPV;\n\n// 检测复位上升沿\nresetRising := resetBtn AND NOT prevResetBtn;\n\n// 检测模式变化(首次除外)\nmodeChanged := (prevMode <> -1) AND (mode <> prevMode);\n\n// 故障条件判断\nisFaultCondition := (mode < 0) OR (mode > 2) OR (scanSeconds <= 0.0) OR (scanSeconds > 10.0);\n\n// 更新故障标志\nfault := isFaultCondition;\n\n// 判断是否正常运算拍\n// 条件：非首次、非故障、非复位上升沿、非模式切换\nnormalMode := NOT isFirstScan AND NOT isFaultCondition AND NOT resetRising AND NOT modeChanged AND prevNormalMode;\n\n// 首次执行\nIF isFirstScan THEN\n    // 首拍按手动值预置输出\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    accT := 0.0;\n    accF := 0.0;\n    isFirstScan := FALSE;\n    \n// 复位上升沿(优先于故障)\nELSIF resetRising THEN\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    accT := 0.0;\n    accF := 0.0;\n    \n// 故障状态\nELSIF isFaultCondition THEN\n    // 故障时输出跟手动值，允许突变\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    // 预置积分器\n    accT := 0.0;\n    accF := 0.0;\n    \n// 模式切换拍\nELSIF modeChanged THEN\n    // 本拍不积分，保持输出\n    IF mode = 2 THEN\n        // 切换到串级：两输出均保持上一拍值\n        flowSP := prevFlowSP;\n        valveCommand := prevValveCommand;\n    ELSE\n        // 切换到自动或手动：流量跟手动，阀位保持\n        flowSP := manualFlowSP;\n        valveCommand := prevValveCommand;\n    END_IF\n    \n// 正常运算拍\nELSIF normalMode THEN\n    // 外环PI计算\n    trialT := accT + 0.2 * eT * scanSeconds;\n    flowSP := 1.0 * eT + trialT;\n    \n    // 外环限幅\n    IF flowSP > 50.0 THEN\n        flowSP := 50.0;\n    ELSIF flowSP < 0.0 THEN\n        flowSP := 0.0;\n    END_IF;\n    \n    // 抗积分饱和回算\n    accT := flowSP - 1.0 * eT;\n    \n    // 更新eF(因为flowSP已变)\n    eF := flowSP - flowPV;\n    \n    // 内环PI计算(mode=1或mode=2)\n    IF mode = 1 OR mode = 2 THEN\n        trialF := accF + 0.5 * eF * scanSeconds;\n        valveCommand := 2.0 * eF + trialF;\n        \n        // 内环限幅\n        IF valveCommand > 100.0 THEN\n            valveCommand := 100.0;\n        ELSIF valveCommand < 0.0 THEN\n            valveCommand := 0.0;\n        END_IF;\n        \n        // 抗积分饱和回算\n        accF := valveCommand - 2.0 * eF;\n    END_IF;\n    \n    // mode=0时手动控制\n    IF mode = 0 THEN\n        flowSP := manualFlowSP;\n        valveCommand := manualValve;\n    END_IF;\n    \n    // mode=1时流量设定跟随手动\n    IF mode = 1 THEN\n        flowSP := manualFlowSP;\n    END_IF;\n    \nELSE\n    // prevNormalMode=FALSE时保持输出不变(用于normalMode计算)\n    flowSP := prevFlowSP;\n    valveCommand := prevValveCommand;\nEND_IF;\n\n// 更新历史状态\nprevResetBtn := resetBtn;\nprevMode := mode;\nprevFlowSP := flowSP;\nprevValveCommand := valveCommand;\nprevNormalMode := normalMode;\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 25,
+      "tests_total": 86,
+      "feedback": "自动测试：25/86。\n用例 q3，模式 sequence，行为不匹配，请检查 flowSP, valveCommand。\n用例 q4，模式 sequence，行为不匹配，请检查 flowSP, valveCommand。\n用例 q5，模式 sequence，行为不匹配，请检查 flowSP, valveCommand。\n用例 q6，模式 sequence，行为不匹配，请检查 flowSP, valveCommand。\n用例 q7，模式 sequence，行为不匹配，请检查 flowSP。\n用例 q8，模式 sequence，行为不匹配，请检查 flowSP。\nLTL 检查：not_run。",
+      "prompt_tokens": 9317,
+      "completion_tokens": 1949,
+      "latency_s": 49.89100000000326,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 15.921999999962281,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-07_354c4e597f",
+          "source_sha256": "06aef70d44f1ecb7bb62be68c6209ae04541c8f1e5e3e82b78c40687faa4a3eb",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "06aef70d44f1ecb7bb62be68c6209ae04541c8f1e5e3e82b78c40687faa4a3eb",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 86,
+        "tests_passed": 25,
+        "pass_rate": 0.2907,
+        "failure_summary": "q3: valveCommand 期望 35.0，实际 20.0",
+        "cases": [
+          {
+            "tc_id": "q1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q3",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 35.0，实际 20.0",
+            "expected": {
+              "flowSP": 5.0,
+              "valveCommand": 35.0
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0
+            },
+            "hint": "q3（手动正常运算：flowSP 跟 manualFlowSP=5、valveCommand 跟 manualValve=35）：valveCommand 期望 35.0，实际 20.0"
+          },
+          {
+            "tc_id": "q4",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 35.0，实际 20.0",
+            "expected": {
+              "flowSP": 5.0,
+              "valveCommand": 35.0
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0
+            },
+            "hint": "q4（切到自动：当拍预置 accF=35-2*(5-10)=45，输出仍保持 35）：valveCommand 期望 35.0，实际 20.0"
+          },
+          {
+            "tc_id": "q5",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 32.5，实际 20.0",
+            "expected": {
+              "flowSP": 5.0,
+              "valveCommand": 32.5
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0
+            },
+            "hint": "q5（自动正常运算：eF=5-10=-5，trial=45-2.5=42.5，valve=2*(-5)+42.5=32.5，accF=32.5+10=42.5）：valveCommand 期望 32.5，实际 20.0"
+          },
+          {
+            "tc_id": "q6",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 30.0，实际 20.0",
+            "expected": {
+              "flowSP": 5.0,
+              "valveCommand": 30.0
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0
+            },
+            "hint": "q6（自动第 2 拍：trial=42.5-2.5=40，valve=-10+40=30，accF=40）：valveCommand 期望 30.0，实际 20.0"
+          },
+          {
+            "tc_id": "q7",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.0，实际 5.0",
+            "expected": {
+              "flowSP": 10.0
+            },
+            "actual": {
+              "flowSP": 5.0
+            },
+            "hint": "q7（自动模式下manualFlowSP从5变10：流量偏差从-5变0，比例项变化；积分增量为0，阀位从上一拍30%变为40%，并非阀位不变。）：flowSP 期望 10.0，实际 5.0"
+          },
+          {
+            "tc_id": "q8",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.0，实际 5.0",
+            "expected": {
+              "flowSP": 10.0
+            },
+            "actual": {
+              "flowSP": 5.0
+            },
+            "hint": "q8（切到串级：当拍不运算，flowSP/valveCommand 均保持上一拍（10/40））：flowSP 期望 10.0，实际 5.0"
+          },
+          {
+            "tc_id": "q9",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.4，实际 5.0",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 5.0
+            },
+            "hint": "q9（串级正常运算：eT=2，外环 trial=8+0.4=8.4，flowSP=2+8.4=10.4；eF=0.4，内环 trial=40+0.2=40.2，valve=0.8+40.2=41）：flowSP 期望 10.4，实际 5.0"
+          },
+          {
+            "tc_id": "q10",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.8，实际 5.0",
+            "expected": {
+              "flowSP": 10.8
+            },
+            "actual": {
+              "flowSP": 5.0
+            },
+            "hint": "q10（串级第 2 拍：外环 accT=8.4 → trial 8.8 → flowSP 10.8；内环 valve 42.2）：flowSP 期望 10.8，实际 5.0"
+          },
+          {
+            "tc_id": "q11",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 42.2，实际 20.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 42.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "q11（串级切回自动：flowSP 跟 manualFlowSP=10，valveCommand 保持 42.2）：valveCommand 期望 42.2，实际 20.0"
+          },
+          {
+            "tc_id": "q12",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 42.2，实际 20.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 42.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "q12（自动正常运算：eF=0，valve 保持 42.2）：valveCommand 期望 42.2，实际 20.0"
+          },
+          {
+            "tc_id": "q13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q15",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.4，实际 10.0",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "q15（串级正常运算：内环输出 100.8 被上限 100 截断（accF 回算 99.2））：flowSP 期望 10.4，实际 10.0"
+          },
+          {
+            "tc_id": "q16",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.8，实际 10.0",
+            "expected": {
+              "flowSP": 10.8
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "q16（flowPV 升到 20：eF=-9.2，valve 从饱和 100 立刻回到 76.2（回算未积压））：flowSP 期望 10.8，实际 10.0"
+          },
+          {
+            "tc_id": "q17",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 11.2，实际 10.0",
+            "expected": {
+              "flowSP": 11.2
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "q17（flowPV=40：eF=-28.8，valve 22.6）：flowSP 期望 11.2，实际 10.0"
+          },
+          {
+            "tc_id": "q18",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 11.6，实际 10.0",
+            "expected": {
+              "flowSP": 11.6
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "q18（串级继续：valve 9.2）：flowSP 期望 11.6，实际 10.0"
+          },
+          {
+            "tc_id": "q19",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 9.2，实际 99.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 9.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0
+            },
+            "hint": "q19（串级→手动（连续切换第 1 拍）：flowSP 跟手操 10，valve 保持 9.2）：valveCommand 期望 9.2，实际 99.0"
+          },
+          {
+            "tc_id": "q20",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 9.2，实际 99.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 9.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0
+            },
+            "hint": "q20（手→自动（连续切换第 2 拍）：当拍仍不运算，输出保持）：valveCommand 期望 9.2，实际 99.0"
+          },
+          {
+            "tc_id": "q21",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 9.2，实际 99.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 9.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0
+            },
+            "hint": "q21（自动→串级（连续切换第 3 拍）：manualFlowSP=30 也不得被采用，flowSP 保持上一拍 10.0）：valveCommand 期望 9.2，实际 99.0"
+          },
+          {
+            "tc_id": "q22",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.4，实际 10.0",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "q22（串级正常运算：eF=-29.6，valve 算出 -4.8 被下限 0 截断）：flowSP 期望 10.4，实际 10.0"
+          },
+          {
+            "tc_id": "q23",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 50.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 50.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q24",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 50.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 50.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q25",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.4，实际 10.0",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "q25（松开复位后串级正常运算：valve 46）：flowSP 期望 10.4，实际 10.0"
+          },
+          {
+            "tc_id": "q26",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q27",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 14.0，实际 10.0",
+            "expected": {
+              "flowSP": 14.0
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "q27（复位按住 + dt=10.0（允许上限）：不重复复位，按串级运算，外环 8+0.2*2*10=12 → flowSP 14；内环 eF=-6 → valve 10-12=-2 截断 0）：flowSP 期望 14.0，实际 10.0"
+          },
+          {
+            "tc_id": "q28",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q29",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q30",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q31",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q32",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 15.0，实际 20.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 15.0
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "q32（自动正常运算：eF=-10，trial=40-5=35，valve=-20+35=15）：valveCommand 期望 15.0，实际 20.0"
+          },
+          {
+            "tc_id": "q33",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 10.0，实际 20.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 10.0
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "q33（自动第 2 拍：valve 10）：valveCommand 期望 10.0，实际 20.0"
+          },
+          {
+            "tc_id": "q34",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 55.0，实际 20.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 55.0
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "q34（flowPV=0：eF=10，trial=30+5=35，valve=20+35=55）：valveCommand 期望 55.0，实际 20.0"
+          },
+          {
+            "tc_id": "q35",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 60.0，实际 20.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 60.0
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "q35（自动第 2 拍：valve 60）：valveCommand 期望 60.0，实际 20.0"
+          },
+          {
+            "tc_id": "q36",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 60.0，实际 20.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 60.0
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "q36（切到串级：valve 保持 60，积分器按当前偏差重算）：valveCommand 期望 60.0，实际 20.0"
+          },
+          {
+            "tc_id": "q37",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 0.0，实际 10.0",
+            "expected": {
+              "flowSP": 0.0
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "q37（外环下限：eT=-70，trial=8-14=-6，flowSP=-76 截断 0（accT 回算 70））：flowSP 期望 0.0，实际 10.0"
+          },
+          {
+            "tc_id": "q38",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 0.0，实际 10.0",
+            "expected": {
+              "flowSP": 0.0
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "q38（继续：valve 10）：flowSP 期望 0.0，实际 10.0"
+          },
+          {
+            "tc_id": "q39",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 50.0，实际 10.0",
+            "expected": {
+              "flowSP": 50.0
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "q39（外环上限：eT=300，flowSP 430 截断 50；内环 eF=40 → valve 130 截断 100）：flowSP 期望 50.0，实际 10.0"
+          },
+          {
+            "tc_id": "q40",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 0.0，实际 10.0",
+            "expected": {
+              "flowSP": 0.0
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "q40（上下限解除：外环 8→accT=-20，flowSP 截断 0；内环 accF=20，valve 截断 0）：flowSP 期望 0.0，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q1",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 5,
+              "valveCommand": 20,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q2",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 5,
+              "valveCommand": 20,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q3",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 35，实际 20.0",
+            "expected": {
+              "flowSP": 5,
+              "valveCommand": 35
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0
+            },
+            "hint": "peer-q3（手动正常运算：flowSP 跟 manualFlowSP=5、valveCommand 跟 manualValve=35）：valveCommand 期望 35，实际 20.0"
+          },
+          {
+            "tc_id": "peer-q4",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 35，实际 20.0",
+            "expected": {
+              "flowSP": 5,
+              "valveCommand": 35
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0
+            },
+            "hint": "peer-q4（切到自动：当拍预置 accF=35-2*(5-10)=45，输出仍保持 35）：valveCommand 期望 35，实际 20.0"
+          },
+          {
+            "tc_id": "peer-q5",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 32.5，实际 20.0",
+            "expected": {
+              "flowSP": 5,
+              "valveCommand": 32.5
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0
+            },
+            "hint": "peer-q5（自动正常运算：eF=5-10=-5，trial=45-2.5=42.5，valve=2*(-5)+42.5=32.5，accF=32.5+10=42.5）：valveCommand 期望 32.5，实际 20.0"
+          },
+          {
+            "tc_id": "peer-q6",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 30，实际 20.0",
+            "expected": {
+              "flowSP": 5,
+              "valveCommand": 30
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0
+            },
+            "hint": "peer-q6（自动第 2 拍：trial=42.5-2.5=40，valve=-10+40=30，accF=40）：valveCommand 期望 30，实际 20.0"
+          },
+          {
+            "tc_id": "peer-q7",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10，实际 5.0",
+            "expected": {
+              "flowSP": 10
+            },
+            "actual": {
+              "flowSP": 5.0
+            },
+            "hint": "peer-q7（自动模式下 manualFlowSP 改成 10：flowSP 立即跟 10；流量偏差由 -5 变为 0，比例项变化，阀位 30%→40%）：flowSP 期望 10，实际 5.0"
+          },
+          {
+            "tc_id": "peer-q8",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10，实际 5.0",
+            "expected": {
+              "flowSP": 10
+            },
+            "actual": {
+              "flowSP": 5.0
+            },
+            "hint": "peer-q8（切到串级：当拍不运算，flowSP/valveCommand 均保持上一拍（10/40））：flowSP 期望 10，实际 5.0"
+          },
+          {
+            "tc_id": "peer-q9",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10.4，实际 5.0",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 5.0
+            },
+            "hint": "peer-q9（串级正常运算：eT=2，外环 trial=8+0.4=8.4，flowSP=2+8.4=10.4；eF=0.4，内环 trial=40+0.2=40.2，valve=0.8+40.2=41）：flowSP 期望 10.4，实际 5.0"
+          },
+          {
+            "tc_id": "peer-q10",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10.8，实际 5.0",
+            "expected": {
+              "flowSP": 10.8
+            },
+            "actual": {
+              "flowSP": 5.0
+            },
+            "hint": "peer-q10（串级第 2 拍：外环 accT=8.4 → trial 8.8 → flowSP 10.8；内环 valve 42.2）：flowSP 期望 10.8，实际 5.0"
+          },
+          {
+            "tc_id": "peer-q11",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 42.2，实际 20.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 42.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "peer-q11（串级切回自动：flowSP 跟 manualFlowSP=10，valveCommand 保持 42.2）：valveCommand 期望 42.2，实际 20.0"
+          },
+          {
+            "tc_id": "peer-q12",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 42.2，实际 20.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 42.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "peer-q12（自动正常运算：eF=0，valve 保持 42.2）：valveCommand 期望 42.2，实际 20.0"
+          },
+          {
+            "tc_id": "peer-q13",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 99,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q14",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 99,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q15",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10.4，实际 10.0",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q15（串级正常运算：内环输出 100.8 被上限 100 截断（accF 回算 99.2））：flowSP 期望 10.4，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q16",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10.8，实际 10.0",
+            "expected": {
+              "flowSP": 10.8
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q16（flowPV 升到 20：eF=-9.2，valve 从饱和 100 立刻回到 76.2（回算未积压））：flowSP 期望 10.8，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q17",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 11.2，实际 10.0",
+            "expected": {
+              "flowSP": 11.2
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q17（flowPV=40：eF=-28.8，valve 22.6）：flowSP 期望 11.2，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q18",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 11.6，实际 10.0",
+            "expected": {
+              "flowSP": 11.6
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q18（串级继续：valve 9.2）：flowSP 期望 11.6，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q19",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 9.2，实际 99.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 9.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0
+            },
+            "hint": "peer-q19（串级→手动（连续切换第 1 拍）：flowSP 跟手操 10，valve 保持 9.2）：valveCommand 期望 9.2，实际 99.0"
+          },
+          {
+            "tc_id": "peer-q20",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 9.2，实际 99.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 9.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0
+            },
+            "hint": "peer-q20（手→自动（连续切换第 2 拍）：当拍仍不运算，输出保持）：valveCommand 期望 9.2，实际 99.0"
+          },
+          {
+            "tc_id": "peer-q21",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 9.2，实际 99.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 9.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0
+            },
+            "hint": "peer-q21（自动→串级（连续切换第 3 拍）：manualFlowSP=30 也不得被采用，flowSP 保持上一拍 10.0）：valveCommand 期望 9.2，实际 99.0"
+          },
+          {
+            "tc_id": "peer-q22",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10.4，实际 10.0",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q22（串级正常运算：eF=-29.6，valve 算出 -4.8 被下限 0 截断）：flowSP 期望 10.4，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q23",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 50,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 50.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q24",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 50,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 50.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q25",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10.4，实际 10.0",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q25（松开复位后串级正常运算：valve 46）：flowSP 期望 10.4，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q26",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q27",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 14，实际 10.0",
+            "expected": {
+              "flowSP": 14
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q27（复位按住 + dt=10.0（允许上限）：不重复复位，按串级运算，外环 8+0.2*2*10=12 → flowSP 14；内环 eF=-6 → valve 10-12=-2 截断 0）：flowSP 期望 14，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q28",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q29",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q30",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q31",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q32",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 15，实际 20.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 15
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "peer-q32（自动正常运算：eF=-10，trial=40-5=35，valve=-20+35=15）：valveCommand 期望 15，实际 20.0"
+          },
+          {
+            "tc_id": "peer-q33",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 10，实际 20.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 10
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "peer-q33（自动第 2 拍：valve 10）：valveCommand 期望 10，实际 20.0"
+          },
+          {
+            "tc_id": "peer-q34",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 55，实际 20.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 55
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "peer-q34（flowPV=0：eF=10，trial=30+5=35，valve=20+35=55）：valveCommand 期望 55，实际 20.0"
+          },
+          {
+            "tc_id": "peer-q35",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 60，实际 20.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 60
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "peer-q35（自动第 2 拍：valve 60）：valveCommand 期望 60，实际 20.0"
+          },
+          {
+            "tc_id": "peer-q36",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 60，实际 20.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 60
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0
+            },
+            "hint": "peer-q36（切到串级：valve 保持 60，积分器按当前偏差重算）：valveCommand 期望 60，实际 20.0"
+          },
+          {
+            "tc_id": "peer-q37",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 0，实际 10.0",
+            "expected": {
+              "flowSP": 0
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q37（外环下限：eT=-70，trial=8-14=-6，flowSP=-76 截断 0（accT 回算 70））：flowSP 期望 0，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q38",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 0，实际 10.0",
+            "expected": {
+              "flowSP": 0
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q38（继续：valve 10）：flowSP 期望 0，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q39",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 50，实际 10.0",
+            "expected": {
+              "flowSP": 50
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q39（外环上限：eT=300，flowSP 430 截断 50；内环 eF=40 → valve 130 截断 100）：flowSP 期望 50，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q40",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 0，实际 10.0",
+            "expected": {
+              "flowSP": 0
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q40（上下限解除：外环 8→accT=-20，flowSP 截断 0；内环 accF=20，valve 截断 0）：flowSP 期望 0，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q41",
+            "passed": true,
+            "mode": "sequence:peer:fractional-dt",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q42",
+            "passed": false,
+            "mode": "sequence:peer:fractional-dt",
+            "message": "flowSP 期望 10.2，实际 10.0",
+            "expected": {
+              "flowSP": 10.2
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q42（第二拍稳定串级。外环积分增加 0.2，内环积分增加 0.05，两路输出分别为 10.2 和 20.45。）：flowSP 期望 10.2，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q43",
+            "passed": true,
+            "mode": "sequence:peer:pi-equations",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "normalMode": false,
+              "fault": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "normalMode": false,
+              "fault": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q44",
+            "passed": false,
+            "mode": "sequence:peer:pi-equations",
+            "message": "flowSP 期望 12.4，实际 10.0",
+            "expected": {
+              "flowSP": 12.4
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q44（外环正误差2；内环必须使用本拍新流量12.4，阀位26。）：flowSP 期望 12.4，实际 10.0"
+          },
+          {
+            "tc_id": "peer-q45",
+            "passed": true,
+            "mode": "sequence:peer:pi-preload",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q46",
+            "passed": false,
+            "mode": "sequence:peer:pi-preload",
+            "message": "flowSP 期望 10.4，实际 10.0",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 10.0
+            },
+            "hint": "peer-q46（上拍外环温差2、内环流差−10。回算符号同时受检：本拍流量10.4，阀位16。）：flowSP 期望 10.4，实际 10.0"
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.921999999962281,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-07_354c4e597f",
+            "source_sha256": "06aef70d44f1ecb7bb62be68c6209ae04541c8f1e5e3e82b78c40687faa4a3eb",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "classification": "evaluated",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "group_counts": {
+            "sequence": 40,
+            "sequence:peer:default": 40,
+            "sequence:peer:fractional-dt": 2,
+            "sequence:peer:pi-equations": 2,
+            "sequence:peer:pi-preload": 2
+          },
+          "group_policy": "fresh instance per sequence group; each single case fresh",
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "06aef70d44f1ecb7bb62be68c6209ae04541c8f1e5e3e82b78c40687faa4a3eb",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.028390467,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    },
+    {
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    mode            : INT;          // 0=手动 1=自动 2=串级\n    resetBtn        : BOOL;         // 复位上升沿\n    scanSeconds     : REAL;         // 本次扫描周期(秒)\n    tempSP          : REAL;         // 温度设定值(℃)\n    tempPV          : REAL;         // 温度测量值(℃)\n    flowPV          : REAL;         // 流量测量值(t/h)\n    manualFlowSP    : REAL;         // 手动流量设定值(t/h)\n    manualValve     : REAL;         // 手动阀门开度(%)\nEND_VAR\nVAR_OUTPUT\n    flowSP          : REAL;         // 流量设定值(t/h, 限幅0..50)\n    valveCommand    : REAL;         // 阀门开度指令(%, 限幅0..100)\n    fault           : BOOL;         // 故障标志\n    normalMode      : BOOL;         // 正常运算拍\nEND_VAR\nVAR\n    prevResetBtn        : BOOL := FALSE;\n    prevMode            : INT := 16;    // 16与0/1/2都不等，标记首次\n    prevFlowSP          : REAL := 0.0;\n    prevValveCommand    : REAL := 0.0;\n    accT                : REAL := 0.0;  // 外环积分累加器(t/h)\n    accF                : REAL := 0.0;  // 内环积分累加器(%)\n    isFirstScan         : BOOL := TRUE;\nEND_VAR\n\nVAR_TEMP\n    eT              : REAL;\n    eF              : REAL;\n    trialT          : REAL;\n    trialF          : REAL;\n    resetRising     : BOOL;\n    modeChanged     : BOOL;\n    isFaultCondition: BOOL;\nEND_VAR\n\neT := tempSP - tempPV;\n\nresetRising := resetBtn AND NOT prevResetBtn;\nmodeChanged := (prevMode <> 16) AND (mode <> prevMode);\nisFaultCondition := (mode < 0) OR (mode > 2) OR (scanSeconds <= 0.0) OR (scanSeconds > 10.0);\n\nfault := isFaultCondition;\nnormalMode := NOT isFirstScan AND NOT isFaultCondition AND NOT resetRising AND NOT modeChanged;\n\nIF isFirstScan THEN\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    accT := 0.0;\n    accF := 0.0;\n    isFirstScan := FALSE;\n    \nELSIF resetRising THEN\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    accT := 0.0;\n    accF := 0.0;\n    \nELSIF isFaultCondition THEN\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    accT := 0.0;\n    accF := 0.0;\n    \nELSIF modeChanged THEN\n    IF mode = 2 THEN\n        flowSP := prevFlowSP;\n        valveCommand := prevValveCommand;\n    ELSE\n        flowSP := manualFlowSP;\n        valveCommand := prevValveCommand;\n    END_IF\n    \nELSIF normalMode THEN\n    IF mode = 0 THEN\n        flowSP := manualFlowSP;\n        valveCommand := manualValve;\n    ELSE\n        trialT := accT + 0.2 * eT * scanSeconds;\n        flowSP := 1.0 * eT + trialT;\n        IF flowSP > 50.0 THEN\n            flowSP := 50.0;\n        ELSIF flowSP < 0.0 THEN\n            flowSP := 0.0;\n        END_IF;\n        accT := flowSP - 1.0 * eT;\n        \n        eF := flowSP - flowPV;\n        trialF := accF + 0.5 * eF * scanSeconds;\n        valveCommand := 2.0 * eF + trialF;\n        IF valveCommand > 100.0 THEN\n            valveCommand := 100.0;\n        ELSIF valveCommand < 0.0 THEN\n            valveCommand := 0.0;\n        END_IF;\n        accF := valveCommand - 2.0 * eF;\n        \n        IF mode = 0 THEN\n            flowSP := manualFlowSP;\n            valveCommand := manualValve;\n        END_IF;\n    END_IF;\n    \nELSE\n    flowSP := prevFlowSP;\n    valveCommand := prevValveCommand;\nEND_IF;\n\nprevResetBtn := resetBtn;\nprevMode := mode;\nprevFlowSP := flowSP;\nprevValveCommand := valveCommand;\n\nEND_FUNCTION_BLOCK",
+      "compiles": true,
+      "tests_passed": 33,
+      "tests_total": 86,
+      "feedback": "自动测试：33/86。\n用例 q5，模式 sequence，行为不匹配，请检查 flowSP。\n用例 q6，模式 sequence，行为不匹配，请检查 flowSP。\n用例 q7，模式 sequence，行为不匹配，请检查 flowSP。\n用例 q8，模式 sequence，行为不匹配，请检查 flowSP。\n用例 q9，模式 sequence，行为不匹配，请检查 flowSP。\n用例 q10，模式 sequence，行为不匹配，请检查 flowSP。\nLTL 检查：not_run。",
+      "prompt_tokens": 10833,
+      "completion_tokens": 8837,
+      "latency_s": 203.93800000002375,
+      "provider_error": "",
+      "verification_status": "not_run",
+      "platform_results": {
+        "codesys": {
+          "platform": "codesys",
+          "status": "passed",
+          "diagnostics": [
+            "The application is up to date",
+            "Build complete -- 0 errors, 0 warnings : Ready for download",
+            "Additional code checks ...",
+            "Additional code checks complete -- 0 errors"
+          ],
+          "returncode": 0,
+          "elapsed_s": 19.29700000002049,
+          "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-07_37566ce0b6",
+          "source_sha256": "88528d1a9443ade87238a6a370d85f0a4ac4d5666458189914cb8c2cd1d54f06",
+          "platform_identity": {
+            "platform": "codesys",
+            "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+            "size": 526592,
+            "mtime": 1790564746000000000,
+            "compile_inputs_sha256": {
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+              "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+              "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+            },
+            "target": null,
+            "profile": "CODESYS V3.5 SP22 Patch 4"
+          }
+        }
+      },
+      "code_hash": "88528d1a9443ade87238a6a370d85f0a4ac4d5666458189914cb8c2cd1d54f06",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 86,
+        "tests_passed": 33,
+        "pass_rate": 0.3837,
+        "failure_summary": "q5: flowSP 期望 5.0，实际 2.4",
+        "cases": [
+          {
+            "tc_id": "q1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 5.0,
+              "valveCommand": 35.0,
+              "fault": false,
+              "normalMode": true
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 35.0,
+              "fault": false,
+              "normalMode": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 5.0,
+              "valveCommand": 35.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 35.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q5",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 5.0，实际 2.4",
+            "expected": {
+              "flowSP": 5.0
+            },
+            "actual": {
+              "flowSP": 2.4
+            },
+            "hint": "q5（自动正常运算：eF=5-10=-5，trial=45-2.5=42.5，valve=2*(-5)+42.5=32.5，accF=32.5+10=42.5）：flowSP 期望 5.0，实际 2.4"
+          },
+          {
+            "tc_id": "q6",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 5.0，实际 2.8",
+            "expected": {
+              "flowSP": 5.0
+            },
+            "actual": {
+              "flowSP": 2.8
+            },
+            "hint": "q6（自动第 2 拍：trial=42.5-2.5=40，valve=-10+40=30，accF=40）：flowSP 期望 5.0，实际 2.8"
+          },
+          {
+            "tc_id": "q7",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.0，实际 3.1999999999999997",
+            "expected": {
+              "flowSP": 10.0
+            },
+            "actual": {
+              "flowSP": 3.1999999999999997
+            },
+            "hint": "q7（自动模式下manualFlowSP从5变10：流量偏差从-5变0，比例项变化；积分增量为0，阀位从上一拍30%变为40%，并非阀位不变。）：flowSP 期望 10.0，实际 3.1999999999999997"
+          },
+          {
+            "tc_id": "q8",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.0，实际 3.1999999999999997",
+            "expected": {
+              "flowSP": 10.0
+            },
+            "actual": {
+              "flowSP": 3.1999999999999997
+            },
+            "hint": "q8（切到串级：当拍不运算，flowSP/valveCommand 均保持上一拍（10/40））：flowSP 期望 10.0，实际 3.1999999999999997"
+          },
+          {
+            "tc_id": "q9",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.4，实际 3.5999999999999996",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 3.5999999999999996
+            },
+            "hint": "q9（串级正常运算：eT=2，外环 trial=8+0.4=8.4，flowSP=2+8.4=10.4；eF=0.4，内环 trial=40+0.2=40.2，valve=0.8+40.2=41）：flowSP 期望 10.4，实际 3.5999999999999996"
+          },
+          {
+            "tc_id": "q10",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.8，实际 3.9999999999999996",
+            "expected": {
+              "flowSP": 10.8
+            },
+            "actual": {
+              "flowSP": 3.9999999999999996
+            },
+            "hint": "q10（串级第 2 拍：外环 accT=8.4 → trial 8.8 → flowSP 10.8；内环 valve 42.2）：flowSP 期望 10.8，实际 3.9999999999999996"
+          },
+          {
+            "tc_id": "q11",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 42.2，实际 0.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 42.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 0.0
+            },
+            "hint": "q11（串级切回自动：flowSP 跟 manualFlowSP=10，valveCommand 保持 42.2）：valveCommand 期望 42.2，实际 0.0"
+          },
+          {
+            "tc_id": "q12",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.0，实际 4.3999999999999995",
+            "expected": {
+              "flowSP": 10.0
+            },
+            "actual": {
+              "flowSP": 4.3999999999999995
+            },
+            "hint": "q12（自动正常运算：eF=0，valve 保持 42.2）：flowSP 期望 10.0，实际 4.3999999999999995"
+          },
+          {
+            "tc_id": "q13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q15",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.4，实际 2.4",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 2.4
+            },
+            "hint": "q15（串级正常运算：内环输出 100.8 被上限 100 截断（accF 回算 99.2））：flowSP 期望 10.4，实际 2.4"
+          },
+          {
+            "tc_id": "q16",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.8，实际 2.8",
+            "expected": {
+              "flowSP": 10.8
+            },
+            "actual": {
+              "flowSP": 2.8
+            },
+            "hint": "q16（flowPV 升到 20：eF=-9.2，valve 从饱和 100 立刻回到 76.2（回算未积压））：flowSP 期望 10.8，实际 2.8"
+          },
+          {
+            "tc_id": "q17",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 11.2，实际 3.1999999999999997",
+            "expected": {
+              "flowSP": 11.2
+            },
+            "actual": {
+              "flowSP": 3.1999999999999997
+            },
+            "hint": "q17（flowPV=40：eF=-28.8，valve 22.6）：flowSP 期望 11.2，实际 3.1999999999999997"
+          },
+          {
+            "tc_id": "q18",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 11.6，实际 3.5999999999999996",
+            "expected": {
+              "flowSP": 11.6
+            },
+            "actual": {
+              "flowSP": 3.5999999999999996
+            },
+            "hint": "q18（串级继续：valve 9.2）：flowSP 期望 11.6，实际 3.5999999999999996"
+          },
+          {
+            "tc_id": "q19",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 9.2，实际 0.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 9.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 0.0
+            },
+            "hint": "q19（串级→手动（连续切换第 1 拍）：flowSP 跟手操 10，valve 保持 9.2）：valveCommand 期望 9.2，实际 0.0"
+          },
+          {
+            "tc_id": "q20",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 9.2，实际 0.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 9.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 0.0
+            },
+            "hint": "q20（手→自动（连续切换第 2 拍）：当拍仍不运算，输出保持）：valveCommand 期望 9.2，实际 0.0"
+          },
+          {
+            "tc_id": "q21",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 9.2，实际 0.0",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 9.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 0.0
+            },
+            "hint": "q21（自动→串级（连续切换第 3 拍）：manualFlowSP=30 也不得被采用，flowSP 保持上一拍 10.0）：valveCommand 期望 9.2，实际 0.0"
+          },
+          {
+            "tc_id": "q22",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.4，实际 3.9999999999999996",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 3.9999999999999996
+            },
+            "hint": "q22（串级正常运算：eF=-29.6，valve 算出 -4.8 被下限 0 截断）：flowSP 期望 10.4，实际 3.9999999999999996"
+          },
+          {
+            "tc_id": "q23",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 50.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 50.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q24",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 50.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 50.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q25",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.4，实际 2.4",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 2.4
+            },
+            "hint": "q25（松开复位后串级正常运算：valve 46）：flowSP 期望 10.4，实际 2.4"
+          },
+          {
+            "tc_id": "q26",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q27",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 14.0，实际 6.0",
+            "expected": {
+              "flowSP": 14.0
+            },
+            "actual": {
+              "flowSP": 6.0
+            },
+            "hint": "q27（复位按住 + dt=10.0（允许上限）：不重复复位，按串级运算，外环 8+0.2*2*10=12 → flowSP 14；内环 eF=-6 → valve 10-12=-2 截断 0）：flowSP 期望 14.0，实际 6.0"
+          },
+          {
+            "tc_id": "q28",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q29",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q30",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q31",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q32",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.0，实际 2.4",
+            "expected": {
+              "flowSP": 10.0
+            },
+            "actual": {
+              "flowSP": 2.4
+            },
+            "hint": "q32（自动正常运算：eF=-10，trial=40-5=35，valve=-20+35=15）：flowSP 期望 10.0，实际 2.4"
+          },
+          {
+            "tc_id": "q33",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.0，实际 2.8",
+            "expected": {
+              "flowSP": 10.0
+            },
+            "actual": {
+              "flowSP": 2.8
+            },
+            "hint": "q33（自动第 2 拍：valve 10）：flowSP 期望 10.0，实际 2.8"
+          },
+          {
+            "tc_id": "q34",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.0，实际 3.1999999999999997",
+            "expected": {
+              "flowSP": 10.0
+            },
+            "actual": {
+              "flowSP": 3.1999999999999997
+            },
+            "hint": "q34（flowPV=0：eF=10，trial=30+5=35，valve=20+35=55）：flowSP 期望 10.0，实际 3.1999999999999997"
+          },
+          {
+            "tc_id": "q35",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.0，实际 3.5999999999999996",
+            "expected": {
+              "flowSP": 10.0
+            },
+            "actual": {
+              "flowSP": 3.5999999999999996
+            },
+            "hint": "q35（自动第 2 拍：valve 60）：flowSP 期望 10.0，实际 3.5999999999999996"
+          },
+          {
+            "tc_id": "q36",
+            "passed": false,
+            "mode": "sequence",
+            "message": "flowSP 期望 10.0，实际 3.5999999999999996",
+            "expected": {
+              "flowSP": 10.0
+            },
+            "actual": {
+              "flowSP": 3.5999999999999996
+            },
+            "hint": "q36（切到串级：valve 保持 60，积分器按当前偏差重算）：flowSP 期望 10.0，实际 3.5999999999999996"
+          },
+          {
+            "tc_id": "q37",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 15.0，实际 12.799999999999997",
+            "expected": {
+              "flowSP": 0.0,
+              "valveCommand": 15.0
+            },
+            "actual": {
+              "flowSP": 0.0,
+              "valveCommand": 12.799999999999997
+            },
+            "hint": "q37（外环下限：eT=-70，trial=8-14=-6，flowSP=-76 截断 0（accT 回算 70））：valveCommand 期望 15.0，实际 12.799999999999997"
+          },
+          {
+            "tc_id": "q38",
+            "passed": false,
+            "mode": "sequence",
+            "message": "valveCommand 期望 10.0，实际 7.799999999999997",
+            "expected": {
+              "flowSP": 0.0,
+              "valveCommand": 10.0
+            },
+            "actual": {
+              "flowSP": 0.0,
+              "valveCommand": 7.799999999999997
+            },
+            "hint": "q38（继续：valve 10）：valveCommand 期望 10.0，实际 7.799999999999997"
+          },
+          {
+            "tc_id": "q39",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 50.0,
+              "valveCommand": 100.0,
+              "fault": false,
+              "normalMode": true
+            },
+            "actual": {
+              "flowSP": 50.0,
+              "valveCommand": 100.0,
+              "fault": false,
+              "normalMode": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q40",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "flowSP": 0.0,
+              "valveCommand": 0.0,
+              "fault": false,
+              "normalMode": true
+            },
+            "actual": {
+              "flowSP": 0.0,
+              "valveCommand": 0.0,
+              "fault": false,
+              "normalMode": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q1",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 5,
+              "valveCommand": 20,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q2",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 5,
+              "valveCommand": 20,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q3",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 5,
+              "valveCommand": 35,
+              "fault": false,
+              "normalMode": true
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 35.0,
+              "fault": false,
+              "normalMode": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q4",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 5,
+              "valveCommand": 35,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 5.0,
+              "valveCommand": 35.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q5",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 5，实际 2.4",
+            "expected": {
+              "flowSP": 5
+            },
+            "actual": {
+              "flowSP": 2.4
+            },
+            "hint": "peer-q5（自动正常运算：eF=5-10=-5，trial=45-2.5=42.5，valve=2*(-5)+42.5=32.5，accF=32.5+10=42.5）：flowSP 期望 5，实际 2.4"
+          },
+          {
+            "tc_id": "peer-q6",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 5，实际 2.8",
+            "expected": {
+              "flowSP": 5
+            },
+            "actual": {
+              "flowSP": 2.8
+            },
+            "hint": "peer-q6（自动第 2 拍：trial=42.5-2.5=40，valve=-10+40=30，accF=40）：flowSP 期望 5，实际 2.8"
+          },
+          {
+            "tc_id": "peer-q7",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10，实际 3.1999999999999997",
+            "expected": {
+              "flowSP": 10
+            },
+            "actual": {
+              "flowSP": 3.1999999999999997
+            },
+            "hint": "peer-q7（自动模式下 manualFlowSP 改成 10：flowSP 立即跟 10；流量偏差由 -5 变为 0，比例项变化，阀位 30%→40%）：flowSP 期望 10，实际 3.1999999999999997"
+          },
+          {
+            "tc_id": "peer-q8",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10，实际 3.1999999999999997",
+            "expected": {
+              "flowSP": 10
+            },
+            "actual": {
+              "flowSP": 3.1999999999999997
+            },
+            "hint": "peer-q8（切到串级：当拍不运算，flowSP/valveCommand 均保持上一拍（10/40））：flowSP 期望 10，实际 3.1999999999999997"
+          },
+          {
+            "tc_id": "peer-q9",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10.4，实际 3.5999999999999996",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 3.5999999999999996
+            },
+            "hint": "peer-q9（串级正常运算：eT=2，外环 trial=8+0.4=8.4，flowSP=2+8.4=10.4；eF=0.4，内环 trial=40+0.2=40.2，valve=0.8+40.2=41）：flowSP 期望 10.4，实际 3.5999999999999996"
+          },
+          {
+            "tc_id": "peer-q10",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10.8，实际 3.9999999999999996",
+            "expected": {
+              "flowSP": 10.8
+            },
+            "actual": {
+              "flowSP": 3.9999999999999996
+            },
+            "hint": "peer-q10（串级第 2 拍：外环 accT=8.4 → trial 8.8 → flowSP 10.8；内环 valve 42.2）：flowSP 期望 10.8，实际 3.9999999999999996"
+          },
+          {
+            "tc_id": "peer-q11",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 42.2，实际 0.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 42.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 0.0
+            },
+            "hint": "peer-q11（串级切回自动：flowSP 跟 manualFlowSP=10，valveCommand 保持 42.2）：valveCommand 期望 42.2，实际 0.0"
+          },
+          {
+            "tc_id": "peer-q12",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10，实际 4.3999999999999995",
+            "expected": {
+              "flowSP": 10
+            },
+            "actual": {
+              "flowSP": 4.3999999999999995
+            },
+            "hint": "peer-q12（自动正常运算：eF=0，valve 保持 42.2）：flowSP 期望 10，实际 4.3999999999999995"
+          },
+          {
+            "tc_id": "peer-q13",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 99,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q14",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 99,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 99.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q15",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10.4，实际 2.4",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 2.4
+            },
+            "hint": "peer-q15（串级正常运算：内环输出 100.8 被上限 100 截断（accF 回算 99.2））：flowSP 期望 10.4，实际 2.4"
+          },
+          {
+            "tc_id": "peer-q16",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10.8，实际 2.8",
+            "expected": {
+              "flowSP": 10.8
+            },
+            "actual": {
+              "flowSP": 2.8
+            },
+            "hint": "peer-q16（flowPV 升到 20：eF=-9.2，valve 从饱和 100 立刻回到 76.2（回算未积压））：flowSP 期望 10.8，实际 2.8"
+          },
+          {
+            "tc_id": "peer-q17",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 11.2，实际 3.1999999999999997",
+            "expected": {
+              "flowSP": 11.2
+            },
+            "actual": {
+              "flowSP": 3.1999999999999997
+            },
+            "hint": "peer-q17（flowPV=40：eF=-28.8，valve 22.6）：flowSP 期望 11.2，实际 3.1999999999999997"
+          },
+          {
+            "tc_id": "peer-q18",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 11.6，实际 3.5999999999999996",
+            "expected": {
+              "flowSP": 11.6
+            },
+            "actual": {
+              "flowSP": 3.5999999999999996
+            },
+            "hint": "peer-q18（串级继续：valve 9.2）：flowSP 期望 11.6，实际 3.5999999999999996"
+          },
+          {
+            "tc_id": "peer-q19",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 9.2，实际 0.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 9.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 0.0
+            },
+            "hint": "peer-q19（串级→手动（连续切换第 1 拍）：flowSP 跟手操 10，valve 保持 9.2）：valveCommand 期望 9.2，实际 0.0"
+          },
+          {
+            "tc_id": "peer-q20",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 9.2，实际 0.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 9.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 0.0
+            },
+            "hint": "peer-q20（手→自动（连续切换第 2 拍）：当拍仍不运算，输出保持）：valveCommand 期望 9.2，实际 0.0"
+          },
+          {
+            "tc_id": "peer-q21",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 9.2，实际 0.0",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 9.2
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 0.0
+            },
+            "hint": "peer-q21（自动→串级（连续切换第 3 拍）：manualFlowSP=30 也不得被采用，flowSP 保持上一拍 10.0）：valveCommand 期望 9.2，实际 0.0"
+          },
+          {
+            "tc_id": "peer-q22",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10.4，实际 3.9999999999999996",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 3.9999999999999996
+            },
+            "hint": "peer-q22（串级正常运算：eF=-29.6，valve 算出 -4.8 被下限 0 截断）：flowSP 期望 10.4，实际 3.9999999999999996"
+          },
+          {
+            "tc_id": "peer-q23",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 50,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 50.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q24",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 50,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 50.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q25",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10.4，实际 2.4",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 2.4
+            },
+            "hint": "peer-q25（松开复位后串级正常运算：valve 46）：flowSP 期望 10.4，实际 2.4"
+          },
+          {
+            "tc_id": "peer-q26",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q27",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 14，实际 6.0",
+            "expected": {
+              "flowSP": 14
+            },
+            "actual": {
+              "flowSP": 6.0
+            },
+            "hint": "peer-q27（复位按住 + dt=10.0（允许上限）：不重复复位，按串级运算，外环 8+0.2*2*10=12 → flowSP 14；内环 eF=-6 → valve 10-12=-2 截断 0）：flowSP 期望 14，实际 6.0"
+          },
+          {
+            "tc_id": "peer-q28",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q29",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q30",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": true,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": true,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q31",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q32",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10，实际 2.4",
+            "expected": {
+              "flowSP": 10
+            },
+            "actual": {
+              "flowSP": 2.4
+            },
+            "hint": "peer-q32（自动正常运算：eF=-10，trial=40-5=35，valve=-20+35=15）：flowSP 期望 10，实际 2.4"
+          },
+          {
+            "tc_id": "peer-q33",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10，实际 2.8",
+            "expected": {
+              "flowSP": 10
+            },
+            "actual": {
+              "flowSP": 2.8
+            },
+            "hint": "peer-q33（自动第 2 拍：valve 10）：flowSP 期望 10，实际 2.8"
+          },
+          {
+            "tc_id": "peer-q34",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10，实际 3.1999999999999997",
+            "expected": {
+              "flowSP": 10
+            },
+            "actual": {
+              "flowSP": 3.1999999999999997
+            },
+            "hint": "peer-q34（flowPV=0：eF=10，trial=30+5=35，valve=20+35=55）：flowSP 期望 10，实际 3.1999999999999997"
+          },
+          {
+            "tc_id": "peer-q35",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10，实际 3.5999999999999996",
+            "expected": {
+              "flowSP": 10
+            },
+            "actual": {
+              "flowSP": 3.5999999999999996
+            },
+            "hint": "peer-q35（自动第 2 拍：valve 60）：flowSP 期望 10，实际 3.5999999999999996"
+          },
+          {
+            "tc_id": "peer-q36",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "flowSP 期望 10，实际 3.5999999999999996",
+            "expected": {
+              "flowSP": 10
+            },
+            "actual": {
+              "flowSP": 3.5999999999999996
+            },
+            "hint": "peer-q36（切到串级：valve 保持 60，积分器按当前偏差重算）：flowSP 期望 10，实际 3.5999999999999996"
+          },
+          {
+            "tc_id": "peer-q37",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 15，实际 12.799999999999997",
+            "expected": {
+              "flowSP": 0,
+              "valveCommand": 15
+            },
+            "actual": {
+              "flowSP": 0.0,
+              "valveCommand": 12.799999999999997
+            },
+            "hint": "peer-q37（外环下限：eT=-70，trial=8-14=-6，flowSP=-76 截断 0（accT 回算 70））：valveCommand 期望 15，实际 12.799999999999997"
+          },
+          {
+            "tc_id": "peer-q38",
+            "passed": false,
+            "mode": "sequence:peer:default",
+            "message": "valveCommand 期望 10，实际 7.799999999999997",
+            "expected": {
+              "flowSP": 0,
+              "valveCommand": 10
+            },
+            "actual": {
+              "flowSP": 0.0,
+              "valveCommand": 7.799999999999997
+            },
+            "hint": "peer-q38（继续：valve 10）：valveCommand 期望 10，实际 7.799999999999997"
+          },
+          {
+            "tc_id": "peer-q39",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 50,
+              "valveCommand": 100,
+              "fault": false,
+              "normalMode": true
+            },
+            "actual": {
+              "flowSP": 50.0,
+              "valveCommand": 100.0,
+              "fault": false,
+              "normalMode": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q40",
+            "passed": true,
+            "mode": "sequence:peer:default",
+            "message": "",
+            "expected": {
+              "flowSP": 0,
+              "valveCommand": 0,
+              "fault": false,
+              "normalMode": true
+            },
+            "actual": {
+              "flowSP": 0.0,
+              "valveCommand": 0.0,
+              "fault": false,
+              "normalMode": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q41",
+            "passed": true,
+            "mode": "sequence:peer:fractional-dt",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q42",
+            "passed": false,
+            "mode": "sequence:peer:fractional-dt",
+            "message": "flowSP 期望 10.2，实际 2.2",
+            "expected": {
+              "flowSP": 10.2
+            },
+            "actual": {
+              "flowSP": 2.2
+            },
+            "hint": "peer-q42（第二拍稳定串级。外环积分增加 0.2，内环积分增加 0.05，两路输出分别为 10.2 和 20.45。）：flowSP 期望 10.2，实际 2.2"
+          },
+          {
+            "tc_id": "peer-q43",
+            "passed": true,
+            "mode": "sequence:peer:pi-equations",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "normalMode": false,
+              "fault": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "normalMode": false,
+              "fault": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q44",
+            "passed": false,
+            "mode": "sequence:peer:pi-equations",
+            "message": "flowSP 期望 12.4，实际 2.4",
+            "expected": {
+              "flowSP": 12.4
+            },
+            "actual": {
+              "flowSP": 2.4
+            },
+            "hint": "peer-q44（外环正误差2；内环必须使用本拍新流量12.4，阀位26。）：flowSP 期望 12.4，实际 2.4"
+          },
+          {
+            "tc_id": "peer-q45",
+            "passed": true,
+            "mode": "sequence:peer:pi-preload",
+            "message": "",
+            "expected": {
+              "flowSP": 10,
+              "valveCommand": 20,
+              "fault": false,
+              "normalMode": false
+            },
+            "actual": {
+              "flowSP": 10.0,
+              "valveCommand": 20.0,
+              "fault": false,
+              "normalMode": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q46",
+            "passed": false,
+            "mode": "sequence:peer:pi-preload",
+            "message": "flowSP 期望 10.4，实际 2.4",
+            "expected": {
+              "flowSP": 10.4
+            },
+            "actual": {
+              "flowSP": 2.4
+            },
+            "hint": "peer-q46（上拍外环温差2、内环流差−10。回算符号同时受检：本拍流量10.4，阀位16。）：flowSP 期望 10.4，实际 2.4"
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 19.29700000002049,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-07_37566ce0b6",
+            "source_sha256": "88528d1a9443ade87238a6a370d85f0a4ac4d5666458189914cb8c2cd1d54f06",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "classification": "evaluated",
+          "test_contract_valid": true,
+          "candidate_evaluated": true,
+          "group_counts": {
+            "sequence": 40,
+            "sequence:peer:default": 40,
+            "sequence:peer:fractional-dt": 2,
+            "sequence:peer:pi-equations": 2,
+            "sequence:peer:pi-preload": 2
+          },
+          "group_policy": "fresh instance per sequence group; each single case fresh",
+          "judge_version": "v1.3-judge-r7",
+          "data_version": "v1.3-review-r8",
+          "static_profile": "codesys",
+          "candidate_source_sha256": "88528d1a9443ade87238a6a370d85f0a4ac4d5666458189914cb8c2cd1d54f06",
+          "candidate_text_rewritten": false,
+          "conversion_scope": "representable integer/bit-string/BOOL values only",
+          "judge_sha256": "5832cda4067ee833ae731efb64f00262926f944fd518b93136456d3b6b1a41f2",
+          "cache_used": false,
+          "functional_data_version": "v1.3-review-r8",
+          "execution_model": "v1.3-judge-r5",
+          "formula_judge_sha256": "6ab32b2a406a941dbc10e5df861d7a857858df0c896e66490027838ab544b23b",
+          "spec_revision": "v1.3-review-r8",
+          "execution_judge": "v1.3-judge-r7"
+        }
+      },
+      "cost_cny": 0.07661427900000001,
+      "actual_model": "minimax-m2.7",
+      "solved": false,
+      "fully_verified": false
+    }
+  ],
+  "started_at": 1794368995.088611,
+  "finished_at": 1794369249.3678837,
+  "error": "",
+  "stop_reason": "max_candidates",
+  "run_signature": "",
+  "experiment_kind": "live",
+  "tests_total": 86,
+  "request_window_seconds": 451,
+  "prompt_version": "v2.5-task-specific-reset",
+  "solved": false,
+  "first_try": false,
+  "best_attempt": 1,
+  "fully_verified": false,
+  "compile_rate": 1.0,
+  "total_tokens": 30936,
+  "total_latency_s": 253.829000000027,
+  "n_attempts": 2,
+  "job_done": true,
+  "study_plan_sha256": "5d34beeeeacd5265559418bf339d6cefa78c9bc504793ddbd387265486810ba8",
+  "complete_code": true
+}
