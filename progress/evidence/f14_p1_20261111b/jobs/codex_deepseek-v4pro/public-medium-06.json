@@ -1,0 +1,209 @@
+{
+  "job_id": "codex_deepseek-v4pro/public-medium-06",
+  "pid": "public-medium-06",
+  "condition": "codex_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 23,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 84,
+            "code": "E_MISSING_END_POU",
+            "message": "FUNCTION_BLOCK FB_SlabThicknessFaultMonitor 缺少结束关键字"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 23,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "8af9ec85e10bbb3c889c77a6e96d3de7ce999ff7ff433c046b2cceb33b85dd8c",
+          "task_json_sha256": "e1bd558b4da33475b438a1ad69183c5c8ff317d2b656baf65ca182a31449b9b8",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 84 行 [E_MISSING_END_POU] FUNCTION_BLOCK FB_SlabThicknessFaultMonitor 缺少结束关键字\n第 0 行 [E_NO_POU] 未找到可执行 POU\nLTL 检查：not_run。",
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB_SlabThicknessFaultMonitor\nVAR_INPUT\n    THICKNESS_FAULT        : BOOL;\n    THICKNESS_SIGNAL_VALID : BOOL;\n    CUTTING_RUN            : BOOL;\n    FaultTimestamp         : DINT;\n    CycleTime              : TIME; (* Must be positive *)\nEND_VAR\nVAR_OUTPUT\n    THICKNESS_ALARM        : BOOL;\n    Slab_Fault_Counter     : UINT;\n    Slab_Runtime_Accumulator : LTIME;\n    Slab_Fault_History     : ARRAY[0..4] OF DINT; (* Read-only to callers *)\nEND_VAR\nVAR\n    Initialized    : BOOL;\n    ValidFault     : BOOL;\n    FaultRise      : R_TRIG;\n    HoldTimer      : TON;\n    HoldActive     : BOOL;\n    HistoryStore   : ARRAY[0..4] OF DINT;\n    i              : INT;\nEND_VAR\n\nValidFault := THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT;\n\n(* Power-up initialization *)\nIF NOT Initialized THEN\n    Slab_Fault_Counter := UINT#0;\n    Slab_Runtime_Accumulator := LTIME#0S;\n\n    FOR i := 0 TO 4 DO\n        HistoryStore[i] := DINT#0;\n    END_FOR;\n\n    HoldActive := FALSE;\n    HoldTimer(IN := FALSE, PT := T#500MS);\n    Initialized := TRUE;\nEND_IF;\n\nFaultRise(CLK := ValidFault);\n\nIF NOT THICKNESS_SIGNAL_VALID THEN\n    (* Signal invalid: alarm off, no holding, no fault records *)\n    THICKNESS_ALARM := FALSE;\n    HoldActive := FALSE;\n    HoldTimer(IN := FALSE, PT := T#500MS);\nELSE\n    IF FaultRise.Q THEN\n        (* New valid thickness fault occurrence *)\n        Slab_Fault_Counter := Slab_Fault_Counter + UINT#1;\n\n        FOR i := 4 TO 1 BY -1 DO\n            HistoryStore[i] := HistoryStore[i - 1];\n        END_FOR;\n        HistoryStore[0] := FaultTimestamp;\n\n        (* Retrigger the minimum alarm hold *)\n        HoldActive := FALSE;\n    END_IF;\n\n    HoldTimer(IN := HoldActive, PT := T#500MS);\n\n    IF HoldTimer.Q THEN\n        HoldActive := FALSE;\n    END_IF;\n\n    IF FaultRise.Q THEN\n        HoldActive := TRUE;\n    END_IF;\n\n    THICKNESS_ALARM := THICKNESS_FAULT OR HoldActive;\nEND_IF;\n\n(* Accumulate normal cutting runtime only under valid, fault-free running conditions *)\nIF THICKNESS_SIGNAL_VALID\n   AND CUTTING_RUN\n   AND NOT THICKNESS_FAULT\n   AND (CycleTime > T#0MS) THEN\n    Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + TIME_TO_LTIME(CycleTime);\nEND_IF;\n\n(* Expose history as a copy; internal storage remains protected from direct caller changes *)\nSlab_Fault_History := HistoryStore;",
+      "code_hash": "8af9ec85e10bbb3c889c77a6e96d3de7ce999ff7ff433c046b2cceb33b85dd8c",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 7607,
+      "completion_tokens": 15825,
+      "cost_cny": 0.39163302,
+      "latency_s": 221.781,
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 23,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 23,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "M06-01: 运行期错误（第49行）：Q 不是结构体字段",
+        "cases": [
+          {
+            "tc_id": "M06-01",
+            "passed": false,
+            "mode": "sequence",
+            "message": "运行期错误（第49行）：Q 不是结构体字段",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          },
+          {
+            "tc_id": "hold-500ms-1",
+            "passed": false,
+            "mode": "sequence",
+            "message": "运行期错误（第49行）：Q 不是结构体字段",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          },
+          {
+            "tc_id": "slab-elapsed-1",
+            "passed": false,
+            "mode": "sequence",
+            "message": "运行期错误（第49行）：Q 不是结构体字段",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          },
+          {
+            "tc_id": "elapsed-hold-0",
+            "passed": false,
+            "mode": "sequence",
+            "message": "运行期错误（第49行）：Q 不是结构体字段",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 16.25,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-06_de5a478695",
+            "source_sha256": "c96bd0b4b4313ecedea07da1e6ce33c0f79f2084cb6c48b242ff1b4876b410d7",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "c96bd0b4b4313ecedea07da1e6ce33c0f79f2084cb6c48b242ff1b4876b410d7",
+          "task_json_sha256": "e1bd558b4da33475b438a1ad69183c5c8ff317d2b656baf65ca182a31449b9b8",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "自动测试：0/23。\n用例 M06-01，模式 sequence，运行期错误，请检查 相关输出。\n用例 hold-500ms-1，模式 sequence，运行期错误，请检查 相关输出。\n用例 slab-elapsed-1，模式 sequence，运行期错误，请检查 相关输出。\n用例 elapsed-hold-0，模式 sequence，运行期错误，请检查 相关输出。\nLTL 检查：not_run。",
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB_SlabThicknessFaultMonitor\nVAR_INPUT\n    THICKNESS_FAULT        : BOOL;\n    THICKNESS_SIGNAL_VALID : BOOL;\n    CUTTING_RUN            : BOOL;\n    FaultTimestamp         : DINT;\n    CycleTime              : TIME; (* Must be positive *)\nEND_VAR\nVAR_OUTPUT\n    THICKNESS_ALARM        : BOOL;\n    Slab_Fault_Counter     : UINT;\n    Slab_Runtime_Accumulator : LTIME;\n    Slab_Fault_History     : ARRAY[0..4] OF DINT; (* Read-only to callers *)\nEND_VAR\nVAR\n    Initialized    : BOOL;\n    ValidFault     : BOOL;\n    FaultRise      : R_TRIG;\n    HoldTimer      : TON;\n    HoldActive     : BOOL;\n    HistoryStore   : ARRAY[0..4] OF DINT;\n    i              : INT;\nEND_VAR\n\nValidFault := THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT;\n\n(* Power-up initialization *)\nIF NOT Initialized THEN\n    Slab_Fault_Counter := UINT#0;\n    Slab_Runtime_Accumulator := LTIME#0S;\n\n    FOR i := 0 TO 4 DO\n        HistoryStore[i] := DINT#0;\n    END_FOR;\n\n    HoldActive := FALSE;\n    HoldTimer(IN := FALSE, PT := T#500MS);\n    Initialized := TRUE;\nEND_IF;\n\nFaultRise(CLK := ValidFault);\n\nIF NOT THICKNESS_SIGNAL_VALID THEN\n    (* Signal invalid: alarm off, no holding, no fault records *)\n    THICKNESS_ALARM := FALSE;\n    HoldActive := FALSE;\n    HoldTimer(IN := FALSE, PT := T#500MS);\nELSE\n    IF FaultRise.Q THEN\n        (* New valid thickness fault occurrence *)\n        Slab_Fault_Counter := Slab_Fault_Counter + UINT#1;\n\n        FOR i := 4 TO 1 BY -1 DO\n            HistoryStore[i] := HistoryStore[i - 1];\n        END_FOR;\n        HistoryStore[0] := FaultTimestamp;\n\n        (* Retrigger the minimum alarm hold *)\n        HoldActive := FALSE;\n    END_IF;\n\n    HoldTimer(IN := HoldActive, PT := T#500MS);\n\n    IF HoldTimer.Q THEN\n        HoldActive := FALSE;\n    END_IF;\n\n    IF FaultRise.Q THEN\n        HoldActive := TRUE;\n    END_IF;\n\n    THICKNESS_ALARM := THICKNESS_FAULT OR HoldActive;\nEND_IF;\n\n(* Accumulate normal cutting runtime only under valid, fault-free running conditions *)\nIF THICKNESS_SIGNAL_VALID\n   AND CUTTING_RUN\n   AND NOT THICKNESS_FAULT\n   AND (CycleTime > T#0MS) THEN\n    Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + TIME_TO_LTIME(CycleTime);\nEND_IF;\n\n(* Expose history as a copy; internal storage remains protected from direct caller changes *)\nSlab_Fault_History := HistoryStore;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "c96bd0b4b4313ecedea07da1e6ce33c0f79f2084cb6c48b242ff1b4876b410d7",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 8400,
+      "completion_tokens": 1510,
+      "cost_cny": 0.0919323,
+      "latency_s": 40.422,
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 23,
+  "study_plan_sha256": "37d0bbf483d634f65b4ebb0012a1fd7ae9032462fbc920a1dd5300ca31d0a7e2",
+  "started_at": "2026-11-12T02:41:03.259839+08:00",
+  "wall_seconds": 262.594,
+  "finished_at": "2026-11-12T02:45:25.834412+08:00",
+  "credential_batch": "primary"
+}
