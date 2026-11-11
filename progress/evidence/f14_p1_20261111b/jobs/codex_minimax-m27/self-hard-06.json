@@ -1,0 +1,1224 @@
+{
+  "job_id": "codex_minimax-m27/self-hard-06",
+  "pid": "self-hard-06",
+  "condition": "codex_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 51,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 71,
+            "code": "E_BAD_STMT",
+            "message": "无法解析的语句，遇到 'stickyBitActive'"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 51,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "01920d368209e322b15edee7c2aaf7a89fddd12eefd5d54e2a0dcf3b9b48893c",
+          "task_json_sha256": "399333bf4a04866f77ebb23747e27ae5a4cc29750d43c86b5233733a4b6ad1c7",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 71 行 [E_BAD_STMT] 无法解析的语句，遇到 'stickyBitActive'\n第 0 行 [E_NO_POU] 未找到可执行 POU\nLTL 检查：not_run。",
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    runRequest      : BOOL;          (* 运行请求 *)\n    pressure        : REAL;          (* 母管压力 kPa *)\n    pressureValid   : BOOL;          (* 压力变送器数据有效 *)\n    fuelFlow        : REAL;          (* 燃料流量 t/h *)\n    steamFlow       : REAL;          (* 蒸汽流量 t/h *)\n    outletCmd       : INT;           (* 减温减压阀开度命令 % *)\n    outletFeedback  : INT;           (* 减温减压阀开度反馈 % *)\n    resetBtn        : BOOL;          (* 复位按钮上升沿有效 *)\nEND_VAR\n\nVAR_OUTPUT\n    tripLatched     : BOOL;          (* 超压跳闸自保持 *)\n    fuelPermit      : BOOL;          (* 燃料许可 *)\n    currentCauseMask: WORD;          (* 本周期诊断线索位掩码 *)\n    latchedCauseMask: WORD;          (* 跳闸期间线索累积掩码 *)\n    diagnosticActive: BOOL;          (* 存在有效诊断线索 *)\nEND_VAR\n\nVAR\n    prevRunRequest  : BOOL;          (* 上周期 runRequest *)\n    prevResetBtn    : BOOL;          (* 上周期 resetBtn *)\n    stickyCounter   : INT;           (* 阀卡滞连续周期计数 *)\nEND_VAR\n\n(* 局部变量 *)\nVAR\n    risingReset     : BOOL;          (* 复位上升沿 *)\n    stickyCondMet   : BOOL;          (* 本拍卡滞输入条件 *)\n    stickyCondPrev1 : BOOL;          (* 上一拍卡滞输入条件 *)\n    stickyCondPrev2 : BOOL;          (* 上两拍卡滞输入条件 *)\nEND_VAR\n\n// -------------------------------------------\n// 1. 边沿检测\n// -------------------------------------------\nrisingReset := resetBtn AND NOT prevResetBtn;\n\n// -------------------------------------------\n// 2. 跳闸条件判断\n// -------------------------------------------\nIF runRequest AND (NOT pressureValid OR pressure >= 4500.0) THEN\n    tripLatched := TRUE;\nELSIF risingReset AND NOT runRequest AND pressureValid AND pressure <= 4200.0 THEN\n    tripLatched := FALSE;\nEND_IF\n\n// -------------------------------------------\n// 3. 燃料许可\n// -------------------------------------------\nfuelPermit := runRequest AND NOT tripLatched;\n\n// -------------------------------------------\n// 4. 卡滞连续判据（连续3拍）\n// -------------------------------------------\n(* 本拍卡滞输入条件：超压工况下阀命令>=50且反馈<=10 *)\nstickyCondMet := runRequest AND pressureValid AND (pressure >= 4500.0) \n                 AND (outletCmd >= 50) AND (outletFeedback <= 10);\n\n(* 连续性判断：需本拍及此前连续两拍均满足 *)\nIF stickyCondMet THEN\n    IF stickyCounter < 3 THEN\n        stickyCounter := stickyCounter + 1;\n    END_IF\nELSE\n    stickyCounter := 0;  (* 任一条件不满足立即清零 *)\nEND_IF\n\n(* 卡滞位成立条件：计数器已达3 *)\nVAR\n    stickyBitActive : BOOL;\nEND_VAR\nstickyBitActive := (stickyCounter >= 3);\n\n// -------------------------------------------\n// 5. 本拍线索掩码计算\n// -------------------------------------------\nIF NOT runRequest THEN\n    (* 无运行请求时线索为0 *)\n    currentCauseMask := 0;\nELSIF NOT pressureValid THEN\n    (* 变送器失效：bit0=1 *)\n    currentCauseMask := 1;\nELSE\n    (* 运行中且数据有效 *)\n    VAR\n        causeVal : INT;\n    END_VAR\n    causeVal := 0;\n    \n    (* bit1: 阀卡滞 *)\n    IF stickyBitActive THEN\n        causeVal := causeVal + 2;\n    END_IF\n    \n    (* bit2: 燃烧过剩 *)\n    IF (fuelFlow >= 4.0) AND (steamFlow <= 10.0) THEN\n        causeVal := causeVal + 4;\n    END_IF\n    \n    (* 超压但无其他线索：置bit3 *)\n    IF (pressure >= 4500.0) AND (causeVal = 0) THEN\n        causeVal := 8;\n    END_IF\n    \n    currentCauseMask := INT_TO_WORD(causeVal);\nEND_IF\n\n// -------------------------------------------\n// 6. 历史线索累积\n// -------------------------------------------\nIF tripLatched THEN\n    latchedCauseMask := latchedCauseMask OR currentCauseMask;\nELSE\n    latchedCauseMask := 0;  (* 未跳闸时清零 *)\nEND_IF\n\n// -------------------------------------------\n// 7. 诊断有效位\n// -------------------------------------------\ndiagnosticActive := (currentCauseMask <> 0);\n\n// -------------------------------------------\n// 8. 更新状态（供下周期边沿检测和连续性判断）\n// -------------------------------------------\nprevRunRequest := runRequest;\nprevResetBtn   := resetBtn;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "01920d368209e322b15edee7c2aaf7a89fddd12eefd5d54e2a0dcf3b9b48893c",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 9698,
+      "completion_tokens": 1734,
+      "cost_cny": 0.027595806,
+      "latency_s": 42.343,
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": true,
+      "tests_passed": 51,
+      "tests_total": 51,
+      "verification_status": "violated",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 51,
+        "tests_passed": 51,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "q1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": false,
+              "latchedCauseMask": 0,
+              "tripLatched": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": true,
+              "currentCauseMask": 0
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "fuelPermit": true,
+              "tripLatched": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "diagnosticActive": true,
+              "fuelPermit": false,
+              "latchedCauseMask": 8,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 12
+            },
+            "actual": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 12
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 14
+            },
+            "actual": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 14
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 14,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": false,
+              "latchedCauseMask": 14,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "tripLatched": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 4,
+              "latchedCauseMask": 4
+            },
+            "actual": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 4,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "currentCauseMask": 1,
+              "latchedCauseMask": 5,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": false,
+              "latchedCauseMask": 5,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "fuelPermit": false,
+              "latchedCauseMask": 5,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "diagnosticActive": false,
+              "latchedCauseMask": 5,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "latchedCauseMask": 5,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": false,
+              "latchedCauseMask": 0,
+              "tripLatched": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": true,
+              "currentCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": true,
+              "tripLatched": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "diagnosticActive": true,
+              "fuelPermit": false,
+              "latchedCauseMask": 8,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q20",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q21",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q22",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q23",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q24",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q25",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 10
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 10
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q26",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 10
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 10
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q27",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 10,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "diagnosticActive": false,
+              "latchedCauseMask": 10,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q28",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 10
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 10,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q29",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 10
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 10
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q30",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 11,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "currentCauseMask": 1,
+              "diagnosticActive": true,
+              "latchedCauseMask": 11,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q31",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q32",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 11,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": false,
+              "latchedCauseMask": 11,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q33",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q34",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q35",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 11
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q36",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 6,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q37",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q38",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 2,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q39",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 4,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q40",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 15
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "latchedCauseMask": 15
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q41",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": false,
+              "latchedCauseMask": 0,
+              "tripLatched": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q42",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 1,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "currentCauseMask": 1,
+              "diagnosticActive": true,
+              "fuelPermit": false,
+              "latchedCauseMask": 1,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q43",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": false,
+              "latchedCauseMask": 0,
+              "tripLatched": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q44",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 1,
+              "latchedCauseMask": 1,
+              "diagnosticActive": true
+            },
+            "actual": {
+              "currentCauseMask": 1,
+              "diagnosticActive": true,
+              "fuelPermit": false,
+              "latchedCauseMask": 1,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q45",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "fuelPermit": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 1,
+              "diagnosticActive": false
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": false,
+              "latchedCauseMask": 1,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q46",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "latchedCauseMask": 1
+            },
+            "actual": {
+              "latchedCauseMask": 1,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q47",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "tripLatched": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q48",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true,
+              "fuelPermit": false
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "diagnosticActive": true,
+              "fuelPermit": false,
+              "latchedCauseMask": 8,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q49",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": false,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": true
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": true,
+              "latchedCauseMask": 0,
+              "tripLatched": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q50",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 8,
+              "latchedCauseMask": 8,
+              "diagnosticActive": true,
+              "fuelPermit": false
+            },
+            "actual": {
+              "currentCauseMask": 8,
+              "diagnosticActive": true,
+              "fuelPermit": false,
+              "latchedCauseMask": 8,
+              "tripLatched": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-q51",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "tripLatched": true,
+              "currentCauseMask": 0,
+              "latchedCauseMask": 8,
+              "diagnosticActive": false,
+              "fuelPermit": false
+            },
+            "actual": {
+              "currentCauseMask": 0,
+              "diagnosticActive": false,
+              "fuelPermit": false,
+              "latchedCauseMask": 8,
+              "tripLatched": true
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 48,
+          "traces": 60000,
+          "specs_total": 20,
+          "specs_hold": 0,
+          "specs_violated": 2,
+          "specs_inconclusive": 18,
+          "violations": [
+            {
+              "id": "S6",
+              "formula": "G((runRequest & pressureValid & pressure < 4500.0) -> currentCauseMask = 0)",
+              "at": 1,
+              "explanation": "",
+              "trace": [
+                {
+                  "runrequest": true,
+                  "pressure": 4000.0,
+                  "pressurevalid": true,
+                  "fuelflow": 4.5,
+                  "steamflow": 5.0,
+                  "outletcmd": 0,
+                  "outletfeedback": 0,
+                  "resetbtn": false,
+                  "triplatched": false,
+                  "fuelpermit": true,
+                  "currentcausemask": 4,
+                  "latchedcausemask": 0,
+                  "diagnosticactive": true,
+                  "prevrunrequest": true,
+                  "prevresetbtn": false,
+                  "stickycounter": 0,
+                  "risingreset": false,
+                  "stickycondmet": false,
+                  "causeval": 4
+                }
+              ]
+            },
+            {
+              "id": "N10-S10",
+              "formula": "G((currentCauseMask = 0 OR currentCauseMask = 1 OR currentCauseMask = 2 OR currentCauseMask = 4 OR currentCauseMask = 6 OR currentCauseMask = 8) AND ((currentCauseMask = 4 OR currentCauseMask = 6) <-> (runRequest AND pressureValid AND pressure >= 4500.0 AND fuelFlow >= 4.0 AND steamFlow <= 10.0)) AND ((runRequest AND pressureValid AND pressure >= 4500.0) -> (currentCauseMask = 2 OR currentCauseMask = 4 OR currentCauseMask = 6 OR currentCauseMask = 8)))",
+              "at": 1,
+              "explanation": "",
+              "trace": [
+                {
+                  "runrequest": true,
+                  "pressure": 4000.0,
+                  "pressurevalid": true,
+                  "fuelflow": 4.5,
+                  "steamflow": 5.0,
+                  "outletcmd": 0,
+                  "outletfeedback": 0,
+                  "resetbtn": false,
+                  "triplatched": false,
+                  "fuelpermit": true,
+                  "currentcausemask": 4,
+                  "latchedcausemask": 0,
+                  "diagnosticactive": true,
+                  "prevrunrequest": true,
+                  "prevresetbtn": false,
+                  "stickycounter": 0,
+                  "risingreset": false,
+                  "stickycondmet": false,
+                  "causeval": 4
+                }
+              ]
+            }
+          ],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 16.17200000002049,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-06_9397956af0",
+            "source_sha256": "69680466c62880f9df85f6b37f44c2f135ea88174a55fe315d667427900cddaf",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "input_partition": {
+            "original_combinations": 64000,
+            "classes": {
+              "pressure": [
+                [
+                  4000.0,
+                  4200.0,
+                  4100.0
+                ],
+                [
+                  4600.0,
+                  4500.0
+                ],
+                [
+                  4201.0,
+                  4499.0,
+                  4400.0,
+                  4499.75,
+                  4200.25
+                ]
+              ],
+              "fuelflow": [
+                [
+                  1.0,
+                  2.0,
+                  0.0,
+                  3.9,
+                  3
+                ],
+                [
+                  4.5,
+                  4.0,
+                  5.0
+                ]
+              ],
+              "steamflow": [
+                [
+                  20.0,
+                  10.1
+                ],
+                [
+                  5.0,
+                  0.0,
+                  10.0
+                ]
+              ],
+              "outletcmd": [
+                [
+                  0
+                ],
+                [
+                  60,
+                  80,
+                  90,
+                  50
+                ]
+              ],
+              "outletfeedback": [
+                [
+                  0,
+                  10
+                ],
+                [
+                  60,
+                  30
+                ]
+              ]
+            },
+            "representative_combinations": 384
+          },
+          "search": {
+            "algorithm": "finite_window_product_bfs",
+            "stop_reason": "transition_limit",
+            "completed_depth": 2,
+            "current_depth": 3,
+            "elapsed_seconds": 25.030999999959022,
+            "edges_checked": 60000,
+            "frontier_states": 6269,
+            "product_states": 6424,
+            "states_explored": 48,
+            "input_space_size": 384
+          },
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "0feb4703a39622532ea4bdca511e03180b624fe58351b3946b82ca38a5ef4150",
+          "source_sha256": "69680466c62880f9df85f6b37f44c2f135ea88174a55fe315d667427900cddaf",
+          "problem_sha256": "92be5c882a88c0acb09ec73e2ae9358dea74109bf65e059f7ce65f16b350d19d",
+          "mc_timeout_seconds": 35,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {},
+          "cache_hit": false,
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "bounded",
+          "candidate_text_rewritten": false,
+          "task_json_sha256": "399333bf4a04866f77ebb23747e27ae5a4cc29750d43c86b5233733a4b6ad1c7",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "自动测试：51/51。\nLTL 检查：violated。\n规约 S6 被违反，位置 1，公式 G((runRequest & pressureValid & pressure < 4500.0) -> currentCauseMask = 0)。\n规约 N10-S10 被违反，位置 1，公式 G((currentCauseMask = 0 OR currentCauseMask = 1 OR currentCauseMask = 2 OR currentCauseMask = 4 OR currentCauseMask = 6 OR currentCauseMask = 8) AND ((currentCauseMask = 4 OR currentCauseMask = 6) <-> (runRequest AND pressureValid AND pressure >= 4500.0 AND fuelFlow >= 4.0 AND steamFlow <= 10.0)) AND ((runRequest AND pressureValid AND pressure >= 4500.0) -> (currentCauseMask = 2 OR currentCauseMask = 4 OR currentCauseMask = 6 OR currentCauseMask = 8)))。",
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    runRequest      : BOOL;          (* 运行请求 *)\n    pressure        : REAL;          (* 母管压力 kPa *)\n    pressureValid   : BOOL;          (* 压力变送器数据有效 *)\n    fuelFlow        : REAL;          (* 燃料流量 t/h *)\n    steamFlow       : REAL;          (* 蒸汽流量 t/h *)\n    outletCmd       : INT;           (* 减温减压阀开度命令 % *)\n    outletFeedback  : INT;           (* 减温减压阀开度反馈 % *)\n    resetBtn        : BOOL;          (* 复位按钮上升沿有效 *)\nEND_VAR\n\nVAR_OUTPUT\n    tripLatched     : BOOL;          (* 超压跳闸自保持 *)\n    fuelPermit      : BOOL;          (* 燃料许可 *)\n    currentCauseMask: WORD;          (* 本周期诊断线索位掩码 *)\n    latchedCauseMask: WORD;          (* 跳闸期间线索累积掩码 *)\n    diagnosticActive: BOOL;          (* 存在有效诊断线索 *)\nEND_VAR\n\nVAR\n    prevRunRequest  : BOOL;          (* 上周期 runRequest *)\n    prevResetBtn    : BOOL;          (* 上周期 resetBtn *)\n    stickyCounter   : INT;           (* 阀卡滞连续周期计数 *)\n    risingReset     : BOOL;          (* 复位上升沿 *)\n    stickyCondMet   : BOOL;          (* 本拍卡滞输入条件 *)\n    causeVal        : INT;           (* 本拍线索计算中间值 *)\nEND_VAR\n\n// -------------------------------------------\n// 1. 边沿检测\n// -------------------------------------------\nrisingReset := resetBtn AND NOT prevResetBtn;\n\n// -------------------------------------------\n// 2. 跳闸条件判断\n// -------------------------------------------\nIF runRequest AND (NOT pressureValid OR pressure >= 4500.0) THEN\n    tripLatched := TRUE;\nELSIF risingReset AND NOT runRequest AND pressureValid AND pressure <= 4200.0 THEN\n    tripLatched := FALSE;\nEND_IF\n\n// -------------------------------------------\n// 3. 燃料许可\n// -------------------------------------------\nfuelPermit := runRequest AND NOT tripLatched;\n\n// -------------------------------------------\n// 4. 卡滞连续判据（连续3拍）\n// -------------------------------------------\n(* 本拍卡滞输入条件：超压工况下阀命令>=50且反馈<=10 *)\nstickyCondMet := runRequest AND pressureValid AND (pressure >= 4500.0) \n                 AND (outletCmd >= 50) AND (outletFeedback <= 10);\n\n(* 连续性判断：需本拍及此前连续两拍均满足 *)\nIF stickyCondMet THEN\n    IF stickyCounter < 3 THEN\n        stickyCounter := stickyCounter + 1;\n    END_IF\nELSE\n    stickyCounter := 0;  (* 任一条件不满足立即清零 *)\nEND_IF\n\n// -------------------------------------------\n// 5. 本拍线索掩码计算\n// -------------------------------------------\nIF NOT runRequest THEN\n    (* 无运行请求时线索为0 *)\n    currentCauseMask := 0;\n    causeVal := 0;\nELSIF NOT pressureValid THEN\n    (* 变送器失效：bit0=1 *)\n    currentCauseMask := 1;\n    causeVal := 0;\nELSE\n    (* 运行中且数据有效 *)\n    causeVal := 0;\n    \n    (* bit1: 阀卡滞（连续3拍） *)\n    IF stickyCounter >= 3 THEN\n        causeVal := causeVal + 2;\n    END_IF\n    \n    (* bit2: 燃烧过剩 *)\n    IF (fuelFlow >= 4.0) AND (steamFlow <= 10.0) THEN\n        causeVal := causeVal + 4;\n    END_IF\n    \n    (* 超压但无其他线索：置bit3 *)\n    IF (pressure >= 4500.0) AND (causeVal = 0) THEN\n        causeVal := 8;\n    END_IF\n    \n    currentCauseMask := INT_TO_WORD(causeVal);\nEND_IF\n\n// -------------------------------------------\n// 6. 历史线索累积\n// -------------------------------------------\nIF tripLatched THEN\n    latchedCauseMask := latchedCauseMask OR currentCauseMask;\nELSE\n    latchedCauseMask := 0;  (* 未跳闸时清零 *)\nEND_IF\n\n// -------------------------------------------\n// 7. 诊断有效位\n// -------------------------------------------\ndiagnosticActive := (currentCauseMask <> 0);\n\n// -------------------------------------------\n// 8. 更新状态（供下周期边沿检测和连续性判断）\n// -------------------------------------------\nprevRunRequest := runRequest;\nprevResetBtn   := resetBtn;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "69680466c62880f9df85f6b37f44c2f135ea88174a55fe315d667427900cddaf",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 10819,
+      "completion_tokens": 1066,
+      "cost_cny": 0.025022697,
+      "latency_s": 66.625,
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 51,
+  "study_plan_sha256": "37d0bbf483d634f65b4ebb0012a1fd7ae9032462fbc920a1dd5300ca31d0a7e2",
+  "started_at": "2026-11-12T04:24:00.597199+08:00",
+  "wall_seconds": 109.172,
+  "finished_at": "2026-11-12T04:25:49.753560+08:00",
+  "credential_batch": "secondary"
+}
