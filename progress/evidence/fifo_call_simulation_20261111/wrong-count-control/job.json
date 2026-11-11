@@ -1,0 +1,27 @@
+{
+  "template": "E:\\PLC_Dev\\builds\\codesys_template.project",
+  "project": "E:\\PLC_Dev\\evidence\\incoming_reviews\\fifo_call_simulation_20261111_v3\\wrong-count-control\\validation.project",
+  "result": "E:\\PLC_Dev\\evidence\\incoming_reviews\\fifo_call_simulation_20261111_v3\\wrong-count-control\\result.json",
+  "nonce": "baeaac17013c4c2aab21f948a1b7587c",
+  "simulation_only": true,
+  "fb": {
+    "name": "FB",
+    "kind": "FUNCTION_BLOCK",
+    "types": [],
+    "declaration": "FUNCTION_BLOCK FB\n\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    item : DINT;\n    buffer : ARRAY[*] OF DINT;\nEND_VAR\nVAR\n    cap : DINT;\n    count : DINT;\n    head : DINT;\n    tail : DINT;\n    enPrev : BOOL;\n    dePrev : BOOL;\n    enEdge : BOOL;\n    deEdge : BOOL;\nEND_VAR\n\n",
+    "implementation": "cap := UPPER_BOUND(buffer, 1) - LOWER_BOUND(buffer, 1) + 1;\nIF count < 0 THEN\n    count := 0;\nEND_IF;\nIF head < 1 THEN\n    head := 1;\nEND_IF;\nenEdge := enqueue AND NOT enPrev;\nenPrev := enqueue;\ndeEdge := dequeue AND NOT dePrev;\ndePrev := dequeue;\nstatus := 16#0000;\n\nIF reset THEN\n    count := 0;\n    head := 1;\nELSIF enEdge THEN\n    IF (cap <= 0) OR (count >= cap) THEN\n        status := 16#8002;\n    ELSE\n        \n        IF count > cap - head THEN\n            tail := count - (cap - head);\n        ELSE\n            tail := head + count;\n        END_IF;\n        buffer[LOWER_BOUND(buffer, 1) + (tail - 1)] := item;\n        count := count + 1;\n    END_IF;\nELSIF deEdge THEN\n    IF count <= 0 THEN\n        status := 16#8001;\n    ELSE\n        item := buffer[LOWER_BOUND(buffer, 1) + (head - 1)];\n        IF head = cap THEN\n            head := 1;\n        ELSE\n            head := head + 1;\n        END_IF;\n        count := count - 1;\n    END_IF;\nEND_IF;\nelementCount := 0;"
+  },
+  "program": {
+    "name": "PLC_PRG",
+    "kind": "PROGRAM",
+    "types": [],
+    "declaration": "PROGRAM PLC_PRG\n\nVAR\n    q2 : FB;\n    q4 : FB;\n    item2 : DINT;\n    item4 : DINT;\n    storage2 : ARRAY[-2..-1] OF DINT;\n    storage4 : ARRAY[7..10] OF DINT;\n    step : INT;\n    en : BOOL;\n    de : BOOL;\n    rst : BOOL;\n    ok : BOOL;\n    failed : BOOL;\n    firstFailedStep : INT := -1;\n    testComplete : BOOL;\n    testPassed : BOOL;\nEND_VAR\n\n",
+    "implementation": "IF NOT testComplete THEN\n    en := FALSE;\n    de := FALSE;\n    rst := FALSE;\n    CASE step OF\n        0: rst := TRUE;\n        1: en := TRUE; item2 := 10; item4 := 10;\n        3: en := TRUE; item2 := 20; item4 := 20;\n        5: en := TRUE; item2 := 30; item4 := 30;\n        6: de := TRUE;\n        7: en := TRUE; item2 := 40; item4 := 40;\n        8: de := TRUE;\n        10: de := TRUE;\n        12: de := TRUE;\n    END_CASE;\n\n    q2(enqueue := en, dequeue := de, reset := rst, item := item2, buffer := storage2);\n    q4(enqueue := en, dequeue := de, reset := rst, item := item4, buffer := storage4);\n    ok := (q2.status = 16#0000) AND (q4.status = 16#0000);\n    CASE step OF\n        0: ok := ok AND (q2.elementCount = 0) AND (q4.elementCount = 0);\n        1, 2: ok := ok AND (q2.elementCount = 1) AND (q4.elementCount = 1);\n        3, 4: ok := ok AND (q2.elementCount = 2) AND (q4.elementCount = 2);\n        5: ok := (q2.status = 16#8002) AND (q4.status = 16#0000)\n                 AND (q2.elementCount = 2) AND (q4.elementCount = 3);\n        6: ok := ok AND (item2 = 10) AND (item4 = 10)\n                    AND (q2.elementCount = 1) AND (q4.elementCount = 2);\n        7: ok := ok AND (q2.elementCount = 2) AND (q4.elementCount = 3);\n        8, 9: ok := ok AND (item2 = 20) AND (item4 = 20)\n                       AND (q2.elementCount = 1) AND (q4.elementCount = 2);\n        10, 11: ok := ok AND (item2 = 40) AND (item4 = 30)\n                         AND (q2.elementCount = 0) AND (q4.elementCount = 1);\n        12: ok := (q2.status = 16#8001) AND (q4.status = 16#0000)\n                  AND (item2 = 40) AND (item4 = 40)\n                  AND (q2.elementCount = 0) AND (q4.elementCount = 0);\n        13: ok := ok AND (q2.elementCount = 0) AND (q4.elementCount = 0);\n    END_CASE;\n    IF NOT ok AND NOT failed THEN\n        failed := TRUE;\n        firstFailedStep := step;\n    END_IF;\n    IF step = 13 THEN\n        testComplete := TRUE;\n        testPassed := NOT failed;\n    ELSE\n        step := step + 1;\n    END_IF;\nEND_IF;"
+  },
+  "expected": {
+    "testComplete": "TRUE",
+    "testPassed": "FALSE",
+    "firstFailedStep": "1",
+    "step": "13"
+  }
+}
