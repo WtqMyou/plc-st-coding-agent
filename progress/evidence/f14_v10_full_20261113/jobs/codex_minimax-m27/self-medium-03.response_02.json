@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-bjyt3z-1794523676594039857",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```\nFUNCTION_BLOCK FB\nVAR_INPUT\n    openBtn    : BOOL;\n    closeBtn   : BOOL;\n    openLimit  : BOOL;\n    closeLimit : BOOL;\n    obstacle   : BOOL;\nEND_VAR\nVAR_OUTPUT\n    motorUp    : BOOL;\n    motorDown  : BOOL;\n    errorFlag  : BOOL;\nEND_VAR\nVAR\n    state         : EState := IDLE;\n    prev_openBtn  : BOOL := FALSE;\n    prev_closeBtn : BOOL := FALSE;\n    openRTrig     : R_TRIG;\n    closeRTrig    : R_TRIG;\n    dualRTrig     : R_TRIG;\nEND_VAR\n\n(*\nENGINEERING_CONTRACT\n===================\n| Output/State | Activation          | Retention          | Reset/Deactivation        | Scan Priority | Units      |\n|--------------|---------------------|--------------------|---------------------------|---------------|------------|\n| motorUp      | IDLE+rising(openBtn)| Running continues  | obstacle/closeLimit/FAULT | Same-scan     | BOOL       |\n| motorDown    | IDLE+rising(closeBtn)| Running continues | obstacle/openLimit/FAULT  | Same-scan     | BOOL       |\n| errorFlag    | Any state+obstacle  | Latched in FAULT   | No obstacle+dualBtn rising| Highest      | BOOL       |\n| state=FAULT  | Any state+obstacle  | Until dualBtn reset| No obstacle+dualBtn rising| Highest      | EState     |\n| state=IDLE   | Power-on/limit/reset| Until openBtn/closeBtn rising | -                  | Default     | EState     |\nPUB001: power-on IDLE\nPUB002: init FALSE\nPUB003: no obstacle IDLE start rules (openBtn edge, closeBtn=FALSE, not openLimit)\nPUB004: no obstacle close start rules (closeBtn edge, openBtn=FALSE, not closeLimit)\nPUB006: no dual-btn start\nPUB007: same-scan motor command on start\nPUB008: button release ignored during movement\nPUB009: direction buttons ignored during movement\nPUB010: limit stop same-scan\nPUB011: opposite limit does not affect\nPUB012: mutual exclusion always\nPUB013: obstacle immediate both-stop + FAULT\nPUB014: FAULT priority over limits/movement/reset\nPUB017: errorFlag latched\nPUB018: FAULT stop motors\nPUB019: reset requires no obstacle + dualBtn from not-both to both\nPUB020: cannot reset during obstacle\nPUB021: cannot auto-reset on obstacle clear\nPUB022: reset → IDLE\nPUB023: reset same-scan both motors stop\nPUB024: post-reset follow rule 1\n*)\nBEGIN\n    openRTrig(CLK := openBtn);\n    closeRTrig(CLK := closeBtn);\n    dualRTrig(CLK := openBtn AND closeBtn);\n\n    (* Priority 1: Obstacle → immediate stop + FAULT *)\n    IF obstacle THEN\n        motorUp   := FALSE;\n        motorDown := FALSE;\n        state     := FAULT;\n        errorFlag := TRUE;\n    ELSE\n        CASE state OF\n            IDLE:\n                motorUp   := FALSE;\n                motorDown := FALSE;\n\n                (* Start opening *)\n                IF openRTrig.Q AND NOT closeBtn AND NOT openLimit THEN\n                    motorUp := TRUE;\n                    state   := OPENING;\n                (* Start closing *)\n                ELSIF closeRTrig.Q AND NOT openBtn AND NOT closeLimit THEN\n                    motorDown := TRUE;\n                    state     := CLOSING;\n                END_IF;\n\n            OPENING:\n                motorUp   := TRUE;\n                motorDown := FALSE;\n                IF openLimit THEN\n                    motorUp := FALSE;\n                    state   := IDLE;\n                END_IF;\n\n            CLOSING:\n                motorUp   := FALSE;\n                motorDown := TRUE;\n                IF closeLimit THEN\n                    motorDown := FALSE;\n                    state     := IDLE;\n                END_IF;\n\n            FAULT:\n                motorUp   := FALSE;\n                motorDown := FALSE;\n                IF dualRTrig.Q THEN\n                    errorFlag := FALSE;\n                    state     := IDLE;\n                END_IF;\n        END_CASE;\n    END_IF;\n\n    prev_openBtn  := openBtn;\n    prev_closeBtn := closeBtn;\nEND_FUNCTION_BLOCK\n\nTYPE EState : (\n    IDLE    := 0,\n    OPENING := 1,\n    CLOSING := 2,\n    FAULT   := 3\n) END_TYPE;\n\n(* CONTRACT_RULES [] *)\n```",
+          "role": "assistant",
+          "reasoning_content": "The user wants me to fix the ST code. The errors are:\n1. `Type definition expected instead of 'END_TYPE'` - The TYPE definition for EState is at the bottom but needs to come before the FUNCTION_BLOCK\n2. `:=' or ';' expected instead of ''` - syntax error\n3. `END_TYPE' expected instead of ''` - syntax error\n4. `';' expected instead of 'openRTrig'` - syntax error on line 56\n\nThe main issue is that TYPE declarations must come before FUNCTION_BLOCK definitions in CODESYS. Let me fix this.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The user wants me to fix the ST code. The errors are:\n1. `Type definition expected instead of 'END_TYPE'` - The TYPE definition for EState is at the bottom but needs to come before the FUNCTION_BLOCK\n2. `:=' or ';' expected instead of ''` - syntax error\n3. `END_TYPE' expected instead of ''` - syntax error\n4. `';' expected instead of 'openRTrig'` - syntax error on line 56\n\nThe main issue is that TYPE declarations must come before FUNCTION_BLOCK definitions in CODESYS. Let me fix this.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794523679,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 11751,
+      "completion_tokens": 1073,
+      "total_tokens": 12824,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.026616"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
