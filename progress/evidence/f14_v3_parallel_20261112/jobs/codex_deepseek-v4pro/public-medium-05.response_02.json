@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794473595,
+    "id": "resp_02179447359390273b8dfe497f31d2aa905b6fe2ab6c681fb1b8f",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179447359527200000000000000000000ffffac1829943014a7",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need answer with ST code corrected. The prior output apparently omitted VAR_INPUT/OUTPUT declarations. Need provide single fenced st block, complete FUNCTION_BLOCK with exact interface. No commentary. Must preserve names/types. Need reason about behavior. Need fulfill task. CODESYS 3.5. Let's produce:\n\nFUNCTION_BLOCK AutomatedProductionLine\nVAR_INPUT\n Mode: BOOL;\n ForwardButton: BOOL;\n...\nEND_VAR\nVAR_OUTPUT\n MotorForward: BOOL;\n...\nEND_VAR\nVAR\n SequenceStep : INT := 0;\nEND_VAR\n\nLogic. Need ensure manual forward and reverse interlock if both pressed -> neither (forward := ForwardButton AND NOT ReverseButton; reverse := ReverseButton AND NOT ForwardButton). Auto. Product sequence. Important edge: In step 1, it starts motor forward when transition from A to B, and waits SensorB. Since product leaves A maybe SensorA false; no issue. MotorForward latched true until SensorB. Step2 motor stopped, ButtonB. Step3 motor forward until SensorC. Step4 motor stopped, ButtonC. Step5 CompletionLight := SensorC; if !SensorC reset step to 0. But subtle: when product reaches C, sensor C is true at start step4. Step5 only after ButtonC. CompletionLight only on while SensorC. If product removed before ButtonC? Requirement: after processing complete signal via ButtonC completion light on, indicating product complete. When product taken away i.e. SensorC no longer detects, light off. State machine currently waits ButtonC in step4 regardless SensorC. If product removed before ButtonC, still state4; then ButtonC could set step5, but SensorC false, light false, then reset. Fine. But maybe automatic mode should not reset sequence unexpectedly when sensors lost due transfer? We can simplify. Need exact behavior. Potential issue initial sensor states: SequenceStep starts 0; if SensorA and ButtonA true, move to B. Could be okay. But if SensorB and SensorA both might be true at boundaries while moving? nested state. No need edge.\n\nNeed ensure use ELSIF? no. CASE statement semicolons. Return not needed. They required Use FUNCTION_BLOCK not PROGRAM. Exact names.\n\nPotential CODESYS warnings? They previously complained due missing input/output declarations. Fix. Need maybe avoid reserved local identifiers s and r. SequenceStep okay. Good.\n\nLet's form final only fenced block."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nFUNCTION_BLOCK AutomatedProductionLine\nVAR_INPUT\n    Mode : BOOL;\n    ForwardButton : BOOL;\n    ReverseButton : BOOL;\n    SensorA : BOOL;\n    SensorB : BOOL;\n    SensorC : BOOL;\n    ButtonA : BOOL;\n    ButtonB : BOOL;\n    ButtonC : BOOL;\nEND_VAR\nVAR_OUTPUT\n    MotorForward : BOOL;\n    MotorReverse : BOOL;\n    CompletionLight : BOOL;\nEND_VAR\nVAR\n    SequenceStep : INT := 0;\nEND_VAR\n\nMotorForward := FALSE;\nMotorReverse := FALSE;\nCompletionLight := FALSE;\n\nIF NOT Mode THEN\n    MotorForward := ForwardButton AND NOT ReverseButton;\n    MotorReverse := ReverseButton AND NOT ForwardButton;\nELSE\n    MotorReverse := FALSE;\n\n    CASE SequenceStep OF\n        0:\n            IF SensorA AND ButtonA THEN\n                SequenceStep := 1;\n            END_IF;\n\n        1:\n            MotorForward := TRUE;\n            IF SensorB THEN\n                MotorForward := FALSE;\n                SequenceStep := 2;\n            END_IF;\n\n        2:\n            IF ButtonB THEN\n                SequenceStep := 3;\n            END_IF;\n\n        3:\n            MotorForward := TRUE;\n            IF SensorC THEN\n                MotorForward := FALSE;\n                SequenceStep := 4;\n            END_IF;\n\n        4:\n            IF ButtonC THEN\n                SequenceStep := 5;\n            END_IF;\n\n        5:\n            CompletionLight := SensorC;\n            IF NOT SensorC THEN\n                CompletionLight := FALSE;\n                SequenceStep := 0;\n            END_IF;\n    END_CASE;\nEND_IF;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179447360312000000000000000000000ffffac182994229654",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 8749,
+      "output_tokens": 879,
+      "total_tokens": 9628,
+      "input_tokens_details": {
+        "cached_tokens": 6144
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 513
+      },
+      "cost": "¥0.038726"
+    }
+  }
+}
