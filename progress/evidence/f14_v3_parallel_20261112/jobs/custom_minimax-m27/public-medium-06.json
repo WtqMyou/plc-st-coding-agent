@@ -1,0 +1,801 @@
+{
+  "job_id": "custom_minimax-m27/public-medium-06",
+  "pid": "public-medium-06",
+  "condition": "custom_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 23,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 28,
+            "code": "E_DURATION_LITERAL",
+            "message": "Invalid duration literal: LTIME#0"
+          }
+        ],
+        "tests_total": 23,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_DURATION_LITERAL] 第28行 Invalid duration literal: LTIME#0",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "';' expected instead of 'LTIME#0'",
+              "Expression expected instead of 'LTIME#0'",
+              "Compile complete -- 2 errors, 0 warnings",
+              "Build complete -- 2 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.98399999999674,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-06_a9334b887b",
+            "source_sha256": "f5c5be011b377d10408c74650e1d12106aba955f3b83355f2a0b96a285795961",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "f5c5be011b377d10408c74650e1d12106aba955f3b83355f2a0b96a285795961",
+          "task_json_sha256": "e1bd558b4da33475b438a1ad69183c5c8ff317d2b656baf65ca182a31449b9b8",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\n';' expected instead of 'LTIME#0'\nExpression expected instead of 'LTIME#0'\nCompile complete -- 2 errors, 0 warnings\nBuild complete -- 2 errors, 0 warnings : No download possible\nAdditional code checks ...\nAdditional code checks complete -- 0 errors\n静态检查或接口契约失败：\n第 28 行 [E_DURATION_LITERAL] Invalid duration literal: LTIME#0\nLTL 检查：not_run。",
+      "timing": {
+        "static_seconds": 0.157,
+        "native_queue_seconds": 48.625,
+        "native_compile_seconds": 15.984
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK SlabThicknessMonitor\nVAR_INPUT\n    THICKNESS_FAULT        : BOOL;\n    THICKNESS_SIGNAL_VALID : BOOL;\n    CUTTING_RUN            : BOOL;\n    FaultTimestamp         : DINT;\n    CycleTime              : TIME;\nEND_VAR\n\nVAR_OUTPUT\n    THICKNESS_ALARM          : BOOL;\n    Slab_Fault_Counter       : UINT;\n    Slab_Runtime_Accumulator : LTIME;\n    Slab_Fault_History       : ARRAY[0..4] OF DINT;\nEND_VAR\n\nVAR\n    AlarmHoldTimer    : TON;\n    PreviousFaultValid : BOOL;\n    FirstScan          : BOOL;\n    i                  : INT;\nEND_VAR\n\n// Power-up initialization\nIF FirstScan THEN\n    FirstScan := FALSE;\n    Slab_Fault_Counter := 0;\n    Slab_Runtime_Accumulator := LTIME#0;\n    FOR i := 0 TO 4 DO\n        Slab_Fault_History[i] := 0;\n    END_FOR;\nEND_IF;\n\n// Signal validity: clears alarm/hold state and blocks all processing\nIF NOT THICKNESS_SIGNAL_VALID THEN\n    THICKNESS_ALARM := FALSE;\n    AlarmHoldTimer(IN := FALSE);\n    PreviousFaultValid := FALSE;\nELSE\n    // Rising edge detection of valid fault signal\n    IF THICKNESS_FAULT AND NOT PreviousFaultValid THEN\n        Slab_Fault_Counter := Slab_Fault_Counter + 1;\n        FOR i := 4 TO 1 BY -1 DO\n            Slab_Fault_History[i] := Slab_Fault_History[i-1];\n        END_FOR;\n        Slab_Fault_History[0] := FaultTimestamp;\n    END_IF;\n    PreviousFaultValid := THICKNESS_FAULT;\n\n    // Runtime accumulation\n    IF CUTTING_RUN AND NOT THICKNESS_FAULT THEN\n        Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + CycleTime;\n    END_IF;\n\n    // Alarm activation and 500 ms hold logic\n    IF THICKNESS_FAULT THEN\n        THICKNESS_ALARM := TRUE;\n        AlarmHoldTimer(IN := FALSE);\n    ELSIF THICKNESS_ALARM AND NOT AlarmHoldTimer.Q THEN\n        AlarmHoldTimer(IN := TRUE, PT := T#500ms);\n    ELSIF NOT AlarmHoldTimer.Q THEN\n        THICKNESS_ALARM := FALSE;\n    END_IF;\nEND_IF;\nEND_FUNCTION_BLOCK",
+      "code_hash": "f5c5be011b377d10408c74650e1d12106aba955f3b83355f2a0b96a285795961",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 1157,
+      "completion_tokens": 3341,
+      "cost_cny": 0.024090339,
+      "latency_s": 127.968,
+      "generation_seconds": 127.968,
+      "end_to_end_seconds": 192.734,
+      "format_edits": [],
+      "raw_source_sha256": "f5c5be011b377d10408c74650e1d12106aba955f3b83355f2a0b96a285795961",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": true,
+      "tests_passed": 23,
+      "tests_total": 23,
+      "verification_status": "inconclusive",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 23,
+        "tests_passed": 23,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "M06-01",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 0,
+              "Slab_Runtime_Accumulator": 20000000,
+              "Slab_Fault_History": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 0,
+              "Slab_Fault_History": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 20000000,
+              "THICKNESS_ALARM": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-02",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Runtime_Accumulator": 20000000,
+              "Slab_Fault_History": [
+                100,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                100,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 20000000,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-03",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 1,
+              "Slab_Runtime_Accumulator": 20000000,
+              "Slab_Fault_History": [
+                100,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                100,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 20000000,
+              "THICKNESS_ALARM": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-04",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 2,
+              "Slab_Runtime_Accumulator": 20000000,
+              "Slab_Fault_History": [
+                200,
+                100,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 2,
+              "Slab_Fault_History": [
+                200,
+                100,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 20000000,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-05",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "Slab_Fault_Counter": 2,
+              "Slab_Runtime_Accumulator": 540000000,
+              "Slab_Fault_History": [
+                200,
+                100,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 2,
+              "Slab_Fault_History": [
+                200,
+                100,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 540000000
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-06",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 3,
+              "Slab_Runtime_Accumulator": 540000000,
+              "Slab_Fault_History": [
+                300,
+                200,
+                100,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 3,
+              "Slab_Fault_History": [
+                300,
+                200,
+                100,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 540000000,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-07",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 3,
+              "Slab_Runtime_Accumulator": 540000000,
+              "Slab_Fault_History": [
+                300,
+                200,
+                100,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 3,
+              "Slab_Fault_History": [
+                300,
+                200,
+                100,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 540000000,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-08",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 4,
+              "Slab_Runtime_Accumulator": 540000000,
+              "Slab_Fault_History": [
+                400,
+                300,
+                200,
+                100,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 4,
+              "Slab_Fault_History": [
+                400,
+                300,
+                200,
+                100,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 540000000,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-09",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 4,
+              "Slab_Runtime_Accumulator": 560000000,
+              "Slab_Fault_History": [
+                400,
+                300,
+                200,
+                100,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 4,
+              "Slab_Fault_History": [
+                400,
+                300,
+                200,
+                100,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 560000000,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 5,
+              "Slab_Runtime_Accumulator": 560000000,
+              "Slab_Fault_History": [
+                500,
+                400,
+                300,
+                200,
+                100
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 5,
+              "Slab_Fault_History": [
+                500,
+                400,
+                300,
+                200,
+                100
+              ],
+              "Slab_Runtime_Accumulator": 560000000,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 5,
+              "Slab_Runtime_Accumulator": 580000000,
+              "Slab_Fault_History": [
+                500,
+                400,
+                300,
+                200,
+                100
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 5,
+              "Slab_Fault_History": [
+                500,
+                400,
+                300,
+                200,
+                100
+              ],
+              "Slab_Runtime_Accumulator": 580000000,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 6,
+              "Slab_Runtime_Accumulator": 580000000,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 6,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ],
+              "Slab_Runtime_Accumulator": 580000000,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "hold-500ms-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "hold-500ms-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "hold-500ms-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "slab-elapsed-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "Slab_Runtime_Accumulator": 3000000,
+              "THICKNESS_ALARM": false
+            },
+            "actual": {
+              "Slab_Runtime_Accumulator": 3000000,
+              "THICKNESS_ALARM": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "slab-elapsed-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "Slab_Runtime_Accumulator": 120000000,
+              "THICKNESS_ALARM": false
+            },
+            "actual": {
+              "Slab_Runtime_Accumulator": 120000000,
+              "THICKNESS_ALARM": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "slab-elapsed-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "Slab_Runtime_Accumulator": 1000000000,
+              "THICKNESS_ALARM": false
+            },
+            "actual": {
+              "Slab_Runtime_Accumulator": 1000000000,
+              "THICKNESS_ALARM": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "elapsed-hold-0",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 0
+            },
+            "actual": {
+              "Slab_Fault_Counter": 0,
+              "THICKNESS_ALARM": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "elapsed-hold-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "elapsed-hold-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "elapsed-hold-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 2
+            },
+            "actual": {
+              "Slab_Fault_Counter": 2,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "elapsed-hold-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 2
+            },
+            "actual": {
+              "Slab_Fault_Counter": 2,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 8,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 8,
+          "violations": [],
+          "error": "Unsupported modeling: timed schedules are checked by concrete traces; the bounded search has no clock domain",
+          "truncated": false,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 17.031999999999243,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-06_4b616943d6",
+            "source_sha256": "ed9018bc107d492c640281634948595ba73d7fb7c8bfc8a8c4e4257c8618c0e8",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "5d102ee8ad0b8452903c71fd8a18bf357e8cefc2d631b1da47d8dbf33b3996b6",
+          "source_sha256": "ed9018bc107d492c640281634948595ba73d7fb7c8bfc8a8c4e4257c8618c0e8",
+          "problem_sha256": "c7601a61c0931a34ea03c4b2b7ccca02a13bd506373aa4a174ffb326a5a65e48",
+          "mc_timeout_seconds": 35,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {},
+          "cache_hit": false,
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "bounded",
+          "candidate_text_rewritten": false,
+          "task_json_sha256": "e1bd558b4da33475b438a1ad69183c5c8ff317d2b656baf65ca182a31449b9b8",
+          "functional_execution": "Python scan interpreter",
+          "classification": "unsupported_modeling"
+        }
+      },
+      "feedback": "自动测试：23/23。\nLTL 检查：inconclusive。",
+      "timing": {
+        "static_seconds": 0.172,
+        "native_queue_seconds": 54.828,
+        "native_compile_seconds": 17.032,
+        "functional_seconds": 0.171,
+        "formal_queue_seconds": 0.0,
+        "bounded_seconds": 0.313
+      },
+      "idx": 1,
+      "code": "FUNCTION_BLOCK SlabThicknessMonitor\nVAR_INPUT\n    THICKNESS_FAULT        : BOOL;\n    THICKNESS_SIGNAL_VALID : BOOL;\n    CUTTING_RUN            : BOOL;\n    FaultTimestamp         : DINT;\n    CycleTime              : TIME;\nEND_VAR\n\nVAR_OUTPUT\n    THICKNESS_ALARM          : BOOL;\n    Slab_Fault_Counter       : UINT;\n    Slab_Runtime_Accumulator : LTIME;\n    Slab_Fault_History       : ARRAY[0..4] OF DINT;\nEND_VAR\n\nVAR\n    AlarmHoldTimer     : TON;\n    PreviousFaultValid : BOOL;\n    FirstScan          : BOOL;\n    idx                : INT;\nEND_VAR\n\nIF FirstScan THEN\n    FirstScan := FALSE;\n    Slab_Fault_Counter := 0;\n    Slab_Runtime_Accumulator := LTIME#0ms;\n    FOR idx := 0 TO 4 DO\n        Slab_Fault_History[idx] := 0;\n    END_FOR;\nEND_IF;\n\nIF NOT THICKNESS_SIGNAL_VALID THEN\n    THICKNESS_ALARM := FALSE;\n    AlarmHoldTimer(IN := FALSE);\n    PreviousFaultValid := FALSE;\nELSE\n    IF THICKNESS_FAULT AND NOT PreviousFaultValid THEN\n        Slab_Fault_Counter := Slab_Fault_Counter + 1;\n        FOR idx := 4 TO 1 BY -1 DO\n            Slab_Fault_History[idx] := Slab_Fault_History[idx-1];\n        END_FOR;\n        Slab_Fault_History[0] := FaultTimestamp;\n    END_IF;\n    PreviousFaultValid := THICKNESS_FAULT;\n\n    IF CUTTING_RUN AND NOT THICKNESS_FAULT THEN\n        Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + TO_LTIME(CycleTime);\n    END_IF;\n\n    IF THICKNESS_FAULT THEN\n        THICKNESS_ALARM := TRUE;\n        AlarmHoldTimer(IN := FALSE);\n    ELSIF THICKNESS_ALARM AND NOT AlarmHoldTimer.Q THEN\n        AlarmHoldTimer(IN := TRUE, PT := T#500ms);\n    ELSIF NOT AlarmHoldTimer.Q THEN\n        THICKNESS_ALARM := FALSE;\n    END_IF;\nEND_IF;\nEND_FUNCTION_BLOCK",
+      "code_hash": "ed9018bc107d492c640281634948595ba73d7fb7c8bfc8a8c4e4257c8618c0e8",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 1825,
+      "completion_tokens": 595,
+      "cost_cny": 0.006976095,
+      "latency_s": 12.453,
+      "generation_seconds": 12.453,
+      "end_to_end_seconds": 84.969,
+      "format_edits": [],
+      "raw_source_sha256": "ed9018bc107d492c640281634948595ba73d7fb7c8bfc8a8c4e4257c8618c0e8",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "functional_pass_formal_inconclusive",
+  "tests_total": 23,
+  "study_plan_sha256": "f3ebc68a2f3117c82fdc289b32f83edc8f472bab3de26925dcfc8ed421a96ee0",
+  "started_at": "2026-11-12T16:52:55.776211+08:00",
+  "wall_seconds": 277.828,
+  "finished_at": "2026-11-12T16:57:33.511010+08:00"
+}
