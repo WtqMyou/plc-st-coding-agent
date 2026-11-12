@@ -1,0 +1,547 @@
+{
+  "job_id": "codex_minimax-m27/public-hard-04",
+  "pid": "public-hard-04",
+  "condition": "codex_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 42,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 '__GETUB'"
+          },
+          {
+            "level": "error",
+            "line": 42,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 '__GETLB'"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_UNKNOWN_FUNC] 第42行 调用了未知函数/功能块 '__GETUB'; [E_UNKNOWN_FUNC] 第42行 调用了未知函数/功能块 '__GETLB'",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "c17bdd0971aab5cc54f53fecce96e65010b1e89b9865d6cee730f6f68e4b113e",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 42 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 '__GETUB'\nLine 42 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 '__GETLB'",
+      "timing": {
+        "static_seconds": 0.25
+      },
+      "idx": 0,
+      "code": "(* CONTRACT_RULES [] *)\nFUNCTION_BLOCK FB_FIFOQueue\nVAR_INPUT\n    enqueue  : BOOL;\n    dequeue  : BOOL;\n    reset    : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT := 0;\n    status       : WORD := 16#0000;\nEND_VAR\nVAR_IN_OUT\n    item   : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    local_head    : DINT  := 0;\n    local_tail    : DINT  := 0;\n    local_capacity : DINT  := 0;\n    local_firstCycle : BOOL := TRUE;\n    local_enqueueTrig : R_TRIG;\n    local_dequeueTrig : R_TRIG;\nEND_VAR\n\n// ENGINEERING_CONTRACT\n// =============================================================================\n// Activation: R_TRIG on enqueue/dequeue detect rising edges only.\n// Retention:  local_head, local_tail, elementCount persist across scans.\n// Reset:      Any scan where reset=TRUE empties queue regardless of other inputs.\n// Same-scan:  Reset > Enqueue > Dequeue priority chain; only one operation per scan.\n// Boundaries: Capacity derived from buffer array bounds; elementCount [0..capacity].\n// Status:     16#0000 idle/success, 16#8001 empty-dequeue, 16#8002 full-enqueue.\n// =============================================================================\n\n// Rising-edge detection on command inputs\nlocal_enqueueTrig(CLK := enqueue);\nlocal_dequeueTrig(CLK := dequeue);\n\n// First invocation: initialize capacity from buffer array bounds\nIF local_firstCycle THEN\n    local_firstCycle := FALSE;\n    local_capacity := __GETUB(buffer, 0) - __GETLB(buffer, 0) + 1;\n    local_head := 0;\n    local_tail := 0;\n    elementCount := 0;\n    status := 16#0000;\n    RETURN;\nEND_IF;\n\n// Reset: priority over enqueue/dequeue\nIF reset THEN\n    local_head := 0;\n    local_tail := 0;\n    elementCount := 0;\n    status := 16#0000;\n    RETURN;\nEND_IF;\n\n// Enqueue request: rising edge + not full\nIF local_enqueueTrig.Q THEN\n    IF elementCount < local_capacity THEN\n        // Append item at tail position\n        buffer[local_tail] := item;\n        local_tail := (local_tail + 1) MOD local_capacity;\n        elementCount := elementCount + 1;\n        status := 16#0000;\n    ELSE\n        status := 16#8002; // Full rejection\n    END_IF;\n    RETURN;\nEND_IF;\n\n// Dequeue request: rising edge + not empty\nIF local_dequeueTrig.Q THEN\n    IF elementCount > 0 THEN\n        // Retrieve and remove front element\n        item := buffer[local_head];\n        local_head := (local_head + 1) MOD local_capacity;\n        elementCount := elementCount - 1;\n        status := 16#0000;\n    ELSE\n        status := 16#8001; // Empty rejection\n    END_IF;\n    RETURN;\nEND_IF;\n\n// Idle scan: no pending operation\nstatus := 16#0000;\nEND_FUNCTION_BLOCK",
+      "code_hash": "c17bdd0971aab5cc54f53fecce96e65010b1e89b9865d6cee730f6f68e4b113e",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 8726,
+      "completion_tokens": 3494,
+      "cost_cny": 0.037662618,
+      "latency_s": 63.375,
+      "generation_seconds": 63.375,
+      "end_to_end_seconds": 63.625,
+      "format_edits": [],
+      "raw_source_sha256": "c17bdd0971aab5cc54f53fecce96e65010b1e89b9865d6cee730f6f68e4b113e",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 2,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 31,
+        "tests_passed": 2,
+        "pass_rate": 0.0645,
+        "failure_summary": "h04-2: 运行期错误（第63行）：数组下标 0 越界 [1..4]",
+        "cases": [
+          {
+            "tc_id": "h04-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-2",
+            "passed": false,
+            "mode": "sequence",
+            "message": "运行期错误（第63行）：数组下标 0 越界 [1..4]",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-empty-dequeue",
+            "passed": false,
+            "mode": "sequence",
+            "message": "status 期望 32769，实际 0",
+            "expected": {
+              "status": 32769,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": "f14-empty-dequeue（容量2的新空队列拒绝出队。）：status 期望 32769，实际 0"
+          },
+          {
+            "tc_id": "f14-idle-after-empty",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-23",
+            "passed": false,
+            "mode": "sequence",
+            "message": "运行期错误（第63行）：数组下标 0 越界 [1..2]",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          },
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "8db44df72c570a23312461e78df8de97522872f8f2870a96cee1e448b2588d61",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 2/31; bounded status: not_run.\nComplete public input prefixes and observed executions (initial-state scope is explicit; no assertion values or test notes):\n[{\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"h04-1\", \"inputs\": {}, \"const_inputs\": {}, \"initial_interface_values\": {\"buffer\": [0, 0, 0, 0]}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"h04-2\", \"inputs\": {\"enqueue\": true}, \"const_inputs\": {\"item\": 10}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}], \"checkpoints\": [{\"case\": \"h04-2\", \"check_outputs\": [], \"observed_outputs\": {}}], \"relevant_public_clauses\": [{\"id\": \"PUB001\", \"text\": \"Write a function block FB implementing a First-In-First-Out (FIFO) circular queue. Derive the queue capacity and element type from the caller-supplied buffer.\"}, {\"id\": \"PUB002\", \"text\": \"1. Each rising edge of enqueue requests one enqueue operation. If the queue is not full, append the current item value to its tail.\"}]}, {\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"f14-empty-dequeue\", \"inputs\": {\"dequeue\": true}, \"const_inputs\": {}, \"initial_interface_values\": {\"buffer\": [0, 0]}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"f14-idle-after-empty\", \"inputs\": {}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"h04-23\", \"inputs\": {\"enqueue\": true}, \"const_inputs\": {\"item\": 5}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}], \"checkpoints\": [{\"case\": \"f14-empty-dequeue\", \"check_outputs\": [\"status\"], \"observed_outputs\": {\"elementCount\": 0, \"status\": 0}}, {\"case\": \"h04-23\", \"check_outputs\": [], \"observed_outputs\": {}}], \"relevant_public_clauses\": [{\"id\": \"PUB006\", \"text\": \"5. Reject a dequeue request on an empty queue or an enqueue request on a full queue. Leave the queue and item unchanged and report the reason through status.\"}, {\"id\": \"PUB003\", \"text\": \"2. Each rising edge of dequeue requests one dequeue operation. If the queue is not empty, remove its front element and write that value back to item. The caller must not request enqueue and dequeue in the same invocation.\"}]}]",
+      "timing": {
+        "static_seconds": 0.156,
+        "functional_seconds": 0.234
+      },
+      "idx": 1,
+      "code": "(* CONTRACT_RULES [] *)\nFUNCTION_BLOCK FB_FIFOQueue\nVAR_INPUT\n    enqueue  : BOOL;\n    dequeue  : BOOL;\n    reset    : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT := 0;\n    status       : WORD := 16#0000;\nEND_VAR\nVAR_IN_OUT\n    item   : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    local_head         : DINT  := 0;\n    local_tail         : DINT  := 0;\n    local_capacity     : DINT  := 0;\n    local_firstCycle   : BOOL  := TRUE;\n    local_enqueueTrig  : R_TRIG;\n    local_dequeueTrig  : R_TRIG;\nEND_VAR\n\n// ENGINEERING_CONTRACT\n// =============================================================================\n// Activation: R_TRIG on enqueue/dequeue detect rising edges only.\n// Retention:  local_head, local_tail, elementCount persist across scans.\n// Reset:      Any scan where reset=TRUE empties queue regardless of other inputs.\n// Same-scan:  Reset > Enqueue > Dequeue priority chain; only one operation per scan.\n// Boundaries: Capacity derived from buffer array bounds; elementCount [0..capacity].\n// Status:     16#0000 idle/success, 16#8001 empty-dequeue, 16#8002 full-enqueue.\n// =============================================================================\n\n// Rising-edge detection on command inputs\nlocal_enqueueTrig(CLK := enqueue);\nlocal_dequeueTrig(CLK := dequeue);\n\n// First invocation: initialize capacity from buffer array bounds\nIF local_firstCycle THEN\n    local_firstCycle := FALSE;\n    local_capacity := TO_DINT(UPPER_BOUND(buffer, 1) - LOWER_BOUND(buffer, 1) + 1);\n    local_head := 0;\n    local_tail := 0;\n    elementCount := 0;\n    status := 16#0000;\n    RETURN;\nEND_IF;\n\n// Reset: priority over enqueue/dequeue\nIF reset THEN\n    local_head := 0;\n    local_tail := 0;\n    elementCount := 0;\n    status := 16#0000;\n    RETURN;\nEND_IF;\n\n// Enqueue request: rising edge + not full\nIF local_enqueueTrig.Q THEN\n    IF elementCount < local_capacity THEN\n        // Append item at tail position\n        buffer[local_tail] := item;\n        local_tail := (local_tail + 1) MOD local_capacity;\n        elementCount := elementCount + 1;\n        status := 16#0000;\n    ELSE\n        status := 16#8002; // Full rejection\n    END_IF;\n    RETURN;\nEND_IF;\n\n// Dequeue request: rising edge + not empty\nIF local_dequeueTrig.Q THEN\n    IF elementCount > 0 THEN\n        // Retrieve and remove front element\n        item := buffer[local_head];\n        local_head := (local_head + 1) MOD local_capacity;\n        elementCount := elementCount - 1;\n        status := 16#0000;\n    ELSE\n        status := 16#8001; // Empty rejection\n    END_IF;\n    RETURN;\nEND_IF;\n\n// Idle scan: no pending operation\nstatus := 16#0000;\nEND_FUNCTION_BLOCK",
+      "code_hash": "8db44df72c570a23312461e78df8de97522872f8f2870a96cee1e448b2588d61",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 9750,
+      "completion_tokens": 820,
+      "cost_cny": 0.02161677,
+      "latency_s": 17.625,
+      "generation_seconds": 17.625,
+      "end_to_end_seconds": 47.609,
+      "format_edits": [],
+      "raw_source_sha256": "8db44df72c570a23312461e78df8de97522872f8f2870a96cee1e448b2588d61",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 2,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 31,
+        "tests_passed": 2,
+        "pass_rate": 0.0645,
+        "failure_summary": "h04-2: 运行期错误（第69行）：数组下标 0 越界 [1..4]",
+        "cases": [
+          {
+            "tc_id": "h04-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-2",
+            "passed": false,
+            "mode": "sequence",
+            "message": "运行期错误（第69行）：数组下标 0 越界 [1..4]",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-empty-dequeue",
+            "passed": false,
+            "mode": "sequence",
+            "message": "status 期望 32769，实际 0",
+            "expected": {
+              "status": 32769,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": "f14-empty-dequeue（容量2的新空队列拒绝出队。）：status 期望 32769，实际 0"
+          },
+          {
+            "tc_id": "f14-idle-after-empty",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-23",
+            "passed": false,
+            "mode": "sequence",
+            "message": "运行期错误（第69行）：数组下标 0 越界 [1..2]",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          },
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "5a8582000edcb5bdde055af12e62656934ac68e58c6a95acbb48b39ed0ed832a",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 2/31; bounded status: not_run.\nComplete public input prefixes and observed executions (initial-state scope is explicit; no assertion values or test notes):\n[{\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"h04-1\", \"inputs\": {}, \"const_inputs\": {}, \"initial_interface_values\": {\"buffer\": [0, 0, 0, 0]}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"h04-2\", \"inputs\": {\"enqueue\": true}, \"const_inputs\": {\"item\": 10}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}], \"checkpoints\": [{\"case\": \"h04-2\", \"check_outputs\": [], \"observed_outputs\": {}}], \"relevant_public_clauses\": [{\"id\": \"PUB001\", \"text\": \"Write a function block FB implementing a First-In-First-Out (FIFO) circular queue. Derive the queue capacity and element type from the caller-supplied buffer.\"}, {\"id\": \"PUB002\", \"text\": \"1. Each rising edge of enqueue requests one enqueue operation. If the queue is not full, append the current item value to its tail.\"}]}, {\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"f14-empty-dequeue\", \"inputs\": {\"dequeue\": true}, \"const_inputs\": {}, \"initial_interface_values\": {\"buffer\": [0, 0]}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"f14-idle-after-empty\", \"inputs\": {}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"h04-23\", \"inputs\": {\"enqueue\": true}, \"const_inputs\": {\"item\": 5}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}], \"checkpoints\": [{\"case\": \"f14-empty-dequeue\", \"check_outputs\": [\"status\"], \"observed_outputs\": {\"elementCount\": 0, \"status\": 0}}, {\"case\": \"h04-23\", \"check_outputs\": [], \"observed_outputs\": {}}], \"relevant_public_clauses\": [{\"id\": \"PUB006\", \"text\": \"5. Reject a dequeue request on an empty queue or an enqueue request on a full queue. Leave the queue and item unchanged and report the reason through status.\"}, {\"id\": \"PUB003\", \"text\": \"2. Each rising edge of dequeue requests one dequeue operation. If the queue is not empty, remove its front element and write that value back to item. The caller must not request enqueue and dequeue in the same invocation.\"}]}]",
+      "timing": {
+        "static_seconds": 0.156,
+        "functional_seconds": 0.172
+      },
+      "idx": 2,
+      "code": "(* CONTRACT_RULES [] *)\nFUNCTION_BLOCK FB_FIFOQueue\nVAR_INPUT\n    enqueue  : BOOL;\n    dequeue  : BOOL;\n    reset    : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT := 0;\n    status       : WORD := 16#0000;\nEND_VAR\nVAR_IN_OUT\n    item   : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    local_head        : DINT  := 0;\n    local_tail        : DINT  := 0;\n    local_capacity    : DINT  := 0;\n    local_firstCycle  : BOOL  := TRUE;\n    local_enqueueTrig : R_TRIG;\n    local_dequeueTrig : R_TRIG;\nEND_VAR\n\n// ENGINEERING_CONTRACT\n// =============================================================================\n// PUB001: Capacity derived from buffer array length; element type from array.\n// PUB002: Enqueue on rising edge, append if not full; tail advances circularly.\n// PUB003: Dequeue on rising edge, retrieve front if not empty; head advances.\n// PUB004: Reset clears queue; takes priority; buffer values need not be cleared.\n// PUB005: elementCount [0..capacity] reports valid elements; zero = empty.\n// PUB006: Status 16#0000 idle/success, 16#8001 empty-dequeue, 16#8002 full-enqueue.\n// PUB007: Caller must not enqueue and dequeue same scan; no interlock enforced.\n// PUB008: Queue empty on first invocation; firstCycle init on first call.\n// PUB009-PUB011: Status codes as defined.\n// Activation: R_TRIG on enqueue/dequeue; state persists across scans.\n// Retention: head, tail, elementCount held; reset clears them.\n// Reset priority: reset > enqueue > dequeue > idle; one operation per scan.\n// Boundaries: Capacity from LOWER/UPPER_BOUND; indices MOD capacity.\n// =============================================================================\n\n// Rising-edge detection\nlocal_enqueueTrig(CLK := enqueue);\nlocal_dequeueTrig(CLK := dequeue);\n\n// First invocation: derive capacity from buffer array bounds\nIF local_firstCycle THEN\n    local_firstCycle := FALSE;\n    local_capacity := TO_DINT(UPPER_BOUND(buffer, 1) - LOWER_BOUND(buffer, 1) + 1);\n    local_head := 0;\n    local_tail := 0;\n    elementCount := 0;\n    status := 16#0000;\n    RETURN;\nEND_IF;\n\n// Reset: highest priority\nIF reset THEN\n    local_head := 0;\n    local_tail := 0;\n    elementCount := 0;\n    status := 16#0000;\n    RETURN;\nEND_IF;\n\n// Enqueue request\nIF local_enqueueTrig.Q THEN\n    IF elementCount < local_capacity THEN\n        buffer[local_tail] := item;\n        local_tail := (local_tail + 1) MOD local_capacity;\n        elementCount := elementCount + 1;\n        status := 16#0000;\n    ELSE\n        status := 16#8002;\n    END_IF;\n    RETURN;\nEND_IF;\n\n// Dequeue request\nIF local_dequeueTrig.Q THEN\n    IF elementCount > 0 THEN\n        item := buffer[local_head];\n        local_head := (local_head + 1) MOD local_capacity;\n        elementCount := elementCount - 1;\n        status := 16#0000;\n    ELSE\n        status := 16#8001;\n    END_IF;\n    RETURN;\nEND_IF;\n\n// Idle scan\nstatus := 16#0000;\nEND_FUNCTION_BLOCK",
+      "code_hash": "5a8582000edcb5bdde055af12e62656934ac68e58c6a95acbb48b39ed0ed832a",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 10437,
+      "completion_tokens": 8904,
+      "cost_cny": 0.076401927,
+      "latency_s": 176.407,
+      "generation_seconds": 176.407,
+      "end_to_end_seconds": 179.11,
+      "format_edits": [],
+      "raw_source_sha256": "5a8582000edcb5bdde055af12e62656934ac68e58c6a95acbb48b39ed0ed832a",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 2,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 31,
+        "tests_passed": 2,
+        "pass_rate": 0.0645,
+        "failure_summary": "h04-2: 运行期错误（第61行）：数组下标 0 越界 [1..4]",
+        "cases": [
+          {
+            "tc_id": "h04-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-2",
+            "passed": false,
+            "mode": "sequence",
+            "message": "运行期错误（第61行）：数组下标 0 越界 [1..4]",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-empty-dequeue",
+            "passed": false,
+            "mode": "sequence",
+            "message": "status 期望 32769，实际 0",
+            "expected": {
+              "status": 32769,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": "f14-empty-dequeue（容量2的新空队列拒绝出队。）：status 期望 32769，实际 0"
+          },
+          {
+            "tc_id": "f14-idle-after-empty",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-23",
+            "passed": false,
+            "mode": "sequence",
+            "message": "运行期错误（第61行）：数组下标 0 越界 [1..2]",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          },
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "d5c5d3aa995d07432cddf2c772aadfdf281cd4c7e172f82f087309adfb3334dd",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 2/31; bounded status: not_run.\nComplete public input prefixes and observed executions (initial-state scope is explicit; no assertion values or test notes):\n[{\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"h04-1\", \"inputs\": {}, \"const_inputs\": {}, \"initial_interface_values\": {\"buffer\": [0, 0, 0, 0]}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"h04-2\", \"inputs\": {\"enqueue\": true}, \"const_inputs\": {\"item\": 10}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}], \"checkpoints\": [{\"case\": \"h04-2\", \"check_outputs\": [], \"observed_outputs\": {}}], \"relevant_public_clauses\": [{\"id\": \"PUB001\", \"text\": \"Write a function block FB implementing a First-In-First-Out (FIFO) circular queue. Derive the queue capacity and element type from the caller-supplied buffer.\"}, {\"id\": \"PUB002\", \"text\": \"1. Each rising edge of enqueue requests one enqueue operation. If the queue is not full, append the current item value to its tail.\"}]}, {\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"f14-empty-dequeue\", \"inputs\": {\"dequeue\": true}, \"const_inputs\": {}, \"initial_interface_values\": {\"buffer\": [0, 0]}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"f14-idle-after-empty\", \"inputs\": {}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"h04-23\", \"inputs\": {\"enqueue\": true}, \"const_inputs\": {\"item\": 5}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}], \"checkpoints\": [{\"case\": \"f14-empty-dequeue\", \"check_outputs\": [\"status\"], \"observed_outputs\": {\"elementCount\": 0, \"status\": 0}}, {\"case\": \"h04-23\", \"check_outputs\": [], \"observed_outputs\": {}}], \"relevant_public_clauses\": [{\"id\": \"PUB006\", \"text\": \"5. Reject a dequeue request on an empty queue or an enqueue request on a full queue. Leave the queue and item unchanged and report the reason through status.\"}, {\"id\": \"PUB003\", \"text\": \"2. Each rising edge of dequeue requests one dequeue operation. If the queue is not empty, remove its front element and write that value back to item. The caller must not request enqueue and dequeue in the same invocation.\"}]}]",
+      "timing": {
+        "static_seconds": 0.188,
+        "functional_seconds": 0.218
+      },
+      "idx": 3,
+      "code": "(* CONTRACT_RULES [] *)\nFUNCTION_BLOCK FB_FIFOQueue\nVAR_INPUT\n    enqueue  : BOOL;\n    dequeue  : BOOL;\n    reset    : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT := 0;\n    status       : WORD := 16#0000;\nEND_VAR\nVAR_IN_OUT\n    item   : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    local_head         : DINT  := 0;\n    local_tail         : DINT  := 0;\n    local_capacity     : DINT  := 0;\n    local_firstCycle   : BOOL  := TRUE;\n    local_enqueueTrig  : R_TRIG;\n    local_dequeueTrig  : R_TRIG;\nEND_VAR\n\n// ENGINEERING_CONTRACT\n// =============================================================================\n// Activation: R_TRIG on enqueue/dequeue detect rising edges only.\n// Retention:  local_head, local_tail, elementCount persist across scans.\n// Reset:      Any scan where reset=TRUE empties queue regardless of other inputs.\n// Same-scan:  Reset > Enqueue > Dequeue priority chain; only one operation per scan.\n// Boundaries: Capacity derived from buffer array bounds; elementCount [0..capacity].\n// Status:     16#0000 idle/success, 16#8001 empty-dequeue, 16#8002 full-enqueue.\n// =============================================================================\n\nlocal_enqueueTrig(CLK := enqueue);\nlocal_dequeueTrig(CLK := dequeue);\n\nIF local_firstCycle THEN\n    local_firstCycle := FALSE;\n    local_capacity := TO_DINT(UPPER_BOUND(buffer, 1)) - TO_DINT(LOWER_BOUND(buffer, 1)) + 1;\n    IF local_capacity <= 0 THEN\n        local_capacity := 1;\n    END_IF;\n    local_head := 0;\n    local_tail := 0;\n    elementCount := 0;\n    status := 16#0000;\n    RETURN;\nEND_IF;\n\nIF reset THEN\n    local_head := 0;\n    local_tail := 0;\n    elementCount := 0;\n    status := 16#0000;\n    RETURN;\nEND_IF;\n\nIF local_enqueueTrig.Q THEN\n    IF elementCount < local_capacity THEN\n        buffer[local_tail] := item;\n        local_tail := (local_tail + 1) MOD local_capacity;\n        elementCount := elementCount + 1;\n        status := 16#0000;\n    ELSE\n        status := 16#8002;\n    END_IF;\n    RETURN;\nEND_IF;\n\nIF local_dequeueTrig.Q THEN\n    IF elementCount > 0 THEN\n        item := buffer[local_head];\n        local_head := (local_head + 1) MOD local_capacity;\n        elementCount := elementCount - 1;\n        status := 16#0000;\n    ELSE\n        status := 16#8001;\n    END_IF;\n    RETURN;\nEND_IF;\n\nstatus := 16#0000;\nEND_FUNCTION_BLOCK",
+      "code_hash": "d5c5d3aa995d07432cddf2c772aadfdf281cd4c7e172f82f087309adfb3334dd",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 10457,
+      "completion_tokens": 8716,
+      "cost_cny": 0.075187539,
+      "latency_s": 180.5,
+      "generation_seconds": 180.5,
+      "end_to_end_seconds": 180.906,
+      "format_edits": [],
+      "raw_source_sha256": "d5c5d3aa995d07432cddf2c772aadfdf281cd4c7e172f82f087309adfb3334dd",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "maximum_four_candidates",
+  "tests_total": 31,
+  "study_plan_sha256": "ceee87bda23fdec86f82c35ccba0ed7fb16e190de62d91cf12c3a3776cd1a77c",
+  "started_at": "2026-11-13T05:35:51.448511+08:00",
+  "wall_seconds": 471.625,
+  "finished_at": "2026-11-13T05:43:42.972821+08:00"
+}
