@@ -232,6 +232,15 @@ x:=LWORD#16#8000000000000001;high:=x.63;low:=x.0;x.0:=FALSE;y:=BYTE#255;y.7:=FAL
         self.assertEqual(result['verification_status'],'inconclusive')
         self.assertEqual(result['result']['evidence_metadata']['classification'],'unsupported_modeling')
         self.assertFalse(s.repairable(s.classify(result)))
+    def test_missing_user_cap_approval_blocks_live_before_ledger_change(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);cfg=copy.deepcopy(s.config());cfg['campaign_root']=folder
+            s.atomic_json(root/'study_state.json',dict(state='prepared'))
+            (root/'study_plan.json').write_text('{}')
+            before=Path(cfg['budget_ledger_path']).read_bytes()
+            with patch.object(s,'verify',return_value={}),patch.object(s.old.old.support,'no_other_runner'):
+                with self.assertRaises(AssertionError):s.live(cfg)
+            self.assertEqual(Path(cfg['budget_ledger_path']).read_bytes(),before)
 
 class V2FeedbackRoutes(ControllerTests):
     # Reuse the controller test harness without repeating every inherited test.
@@ -253,5 +262,3 @@ class V2FeedbackRoutes(ControllerTests):
                     self.assertIn(category+' feedback',json.dumps(self.sent[-1]))
 
 if __name__=='__main__':unittest.main()
-
-

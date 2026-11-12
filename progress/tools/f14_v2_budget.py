@@ -13,11 +13,11 @@ ReviewPause=base.ReviewPause
 
 class KeySwitch(ProviderError):pass
 
-def authorize(path,before_bytes,plan_sha,at):
+def authorize(path,before_bytes,plan_sha,at,permission_sha=''):
     path=Path(path);before=json.loads(before_bytes)
     approval=dict(kind=KIND,total_cap_cny=210,review_pause_cny=None,primary_switch_checkpoint_cny=75,
         initial_spent_cny=BASELINE,initial_event_count=HISTORY,previous_limit_cny=190,
-        original_ledger_sha256=base.hashlib.sha256(before_bytes).hexdigest(),study_plan_sha256=plan_sha,
+        original_ledger_sha256=base.hashlib.sha256(before_bytes).hexdigest(),study_plan_sha256=plan_sha,user_permission_sha256=permission_sha,
         authorization='User approved revised independent 35-task four-arm study, cumulative 210 cap, secondary credential, no 80 pause',authorized_at=at)
     with ledger_lock(path):
         state=json.loads(path.read_text(encoding='utf-8'))

@@ -244,7 +244,7 @@ def generate_job(cfg,root,plan,job,budget,pending,*,factory=MeteredProvider,eval
             provider=transport
             if job['framework']=='codex':
                 gateway=stack.enter_context(ResponsesGateway(provider=transport,model=transport.model))
-                provider=InitialTextCodexProvider(gateway,model=transport.model,work_root=root/'cli_private',timeout=451)
+                provider=InitialTextCodexProvider(gateway,model=transport.model,work_root=root/'cli_private',timeout=65 if transport.offline else 451)
             for idx in range(2):
                 if deadline-time.monotonic()<451:record.update(job_done=True,stop_reason='insufficient_request_window');break
                 capture(transport,budget,job,idx,pending,folder,root)
@@ -327,14 +327,17 @@ def prepare(cfg):
     before=Path(cfg['budget_ledger_path']).read_bytes();state=json.loads(before)
     assert (state['spent_cny'],len(state['events']),state['limit_cny'],bool(state.get('halted')))==(BASELINE,HISTORY,190,False)
     plan=build_plan(cfg,state)
-    proc=subprocess.run([sys.executable,'-B','-X','utf8','-m','unittest','discover','-s','progress/tests','-p','test_f14_v2.py','-q'],cwd=REPO,capture_output=True,text=True,encoding='utf-8',timeout=180)
-    assert proc.returncode==0,proc.stderr[-2200:]
+    logpath=root/('free_tests_'+str(time.time_ns())+'.log')
+    with logpath.open('xb') as log:
+        proc=subprocess.run([sys.executable,'-B','-X','utf8','-m','unittest','discover','-s','progress/tests','-p','test_f14_v2.py','-v'],cwd=REPO,stdout=log,stderr=log,timeout=300)
+    test_log=logpath.read_text(encoding='utf-8')
+    assert proc.returncode==0,test_log[-2200:]
     assert Path(cfg['budget_ledger_path']).read_bytes()==before
     assert not (root/'ledger_before_study.json').exists();(root/'ledger_before_study.json').write_bytes(before)
-    (root/'free_tests.log').write_text(proc.stdout+'\n'+proc.stderr,encoding='utf-8')
+    (root/'free_tests.log').write_text(test_log,encoding='utf-8')
     atomic_json(root/'study_plan.json',plan)
     routes=load(root/'offline_routes.json')
-    atomic_json(root/'validation.json',dict(passed=True,tests=proc.stderr,initial_fake_routes=140,repair_fake_routes=routes['repair_fake_routes'],
+    atomic_json(root/'validation.json',dict(passed=True,tests=test_log,initial_fake_routes=140,repair_fake_routes=routes['repair_fake_routes'],
         native_original_passed=32,reference_patches_passed=2,native_fifo_supported=False,reference_functional_cases=946,
         external_requests=0,ledger_unchanged=True))
     atomic_json(root/'prepared.json',dict(plan_sha256=sha(root/'study_plan.json'),validation_sha256=sha(root/'validation.json')))
@@ -345,19 +348,21 @@ def live(cfg,resume=False):
     from f14_v2_report import report
     root=Path(cfg['campaign_root']);plan=verify(cfg);old.old.support.no_other_runner(cfg)
     state=load(root/'study_state.json')
-    assert cfg.get('user_approved_total_cap_cny')==TOTAL,'Do not change ledger or send paid requests without matching explicit cap authorization'
+    permission=load(root/'user_budget_approval.json')
+    assert permission.get('approved_total_cap_cny')==TOTAL and permission.get('study_plan_sha256')==sha(root/'study_plan.json'),'Do not change ledger or send paid requests without matching explicit cap authorization'
     assert state['state'] in (('stopped','running') if resume else ('prepared',))
     head=old.ensure_pushed();binding=credentials.load_credentials(cfg);catalog=credentials.catalog(cfg,'secondary')
     before=(root/'ledger_before_study.json').read_bytes();assert hashlib.sha256(before).hexdigest()==plan['initial_ledger_sha256']
     if not resume:
-        approval=authorize(cfg['budget_ledger_path'],before,sha(root/'study_plan.json'),stamp())
+        approval=authorize(cfg['budget_ledger_path'],before,sha(root/'study_plan.json'),stamp(),sha(root/'user_budget_approval.json'))
         atomic_json(root/'budget_authorization.json',approval)
         atomic_json(root/'run_environment.json',dict(published_preparation_commit=head,started_at=stamp(),catalog=catalog,
-            maximum_requests=280,automatic_retries=0,model_parameters=cfg['models']))
+            maximum_requests=280,automatic_retries=0,model_parameters=cfg['models'],user_permission_sha256=sha(root/'user_budget_approval.json')))
         atomic_json(root/'current_credential_batch.json',dict(slot='secondary',key_sha256=binding['secondary']))
         atomic_json(root/'credential_batches/secondary.json',dict(slot='secondary',key_sha256=binding['secondary'],catalog=catalog,at=stamp()))
         checkpoint(cfg,root)
     else:assert sha(cfg['budget_ledger_path'])==load(root/'ledger_checkpoint.json')['sha256'],'Ledger changed since checkpoint'
+    assert sha(root/'user_budget_approval.json')==load(root/'run_environment.json')['user_permission_sha256']
     assert load(root/'current_credential_batch.json')['key_sha256']==binding['secondary'],'Credential changed: independent batch required'
     budget=StudyBudget(cfg['budget_ledger_path'],sha(root/'study_plan.json'));history(cfg,root,plan);pending=remaining(root,plan)
     final='stopped';awake=False
