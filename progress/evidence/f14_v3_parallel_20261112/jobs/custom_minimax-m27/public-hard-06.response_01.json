@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-0a80l0-1794472619952079378",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\nFUNCTION_BLOCK ProductionControl\nVAR_INPUT\n    Mode            : BOOL;\n    ForwardButton   : BOOL;\n    ReverseButton   : BOOL;\n    SensorFeed      : BOOL;\n    SensorWash      : BOOL;\n    SensorWeight    : BOOL;\n    SensorFiring    : BOOL;\n    SensorOutput    : BOOL;\n    washComplete    : BOOL;\n    weightComplete  : BOOL;\n    weight          : REAL;\n    firingComplete  : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    MotorForward    : BOOL;\n    MotorReverse    : BOOL;\n    kick             : BOOL;\n    CompletionLight  : BOOL;\n    firingTemp       : REAL;\nEND_VAR\n\nVAR\n    State           : INT;\n    prevSensorFeed  : BOOL;\n    prevSensorWash  : BOOL;\n    prevSensorWeight: BOOL;\n    prevSensorFiring: BOOL;\n    prevSensorOutput: BOOL;\nEND_VAR\n\nTYPE ProductionState : INT (\n    IDLE            := 0,\n    MOVING_TO_WASH  := 1,\n    AT_WASH         := 2,\n    MOVING_TO_WEIGH := 3,\n    AT_WEIGH        := 4,\n    QUALITY_CHECK   := 5,\n    KICKING         := 6,\n    CALCULATING_TEMP:= 7,\n    MOVING_TO_FIRING:= 8,\n    AT_FIRING       := 9,\n    MOVING_TO_OUTPUT:= 10,\n    AT_OUTPUT       := 11\n);\nEND_TYPE\n\n// Edge detection helpers\nprevSensorFeed  := SensorFeed;\nprevSensorWash  := SensorWash;\nprevSensorWeight:= SensorWeight;\nprevSensorFiring:= SensorFiring;\nprevSensorOutput:= SensorOutput;\n\n// Default outputs\nMotorForward    := FALSE;\nMotorReverse    := FALSE;\nkick             := FALSE;\nCompletionLight  := FALSE;\nfiringTemp       := 0.0;\n\nIF Mode = FALSE THEN\n    // Manual Mode\n    IF ForwardButton AND NOT ReverseButton THEN\n        MotorForward := TRUE;\n        MotorReverse := FALSE;\n    ELSIF ReverseButton AND NOT ForwardButton THEN\n        MotorForward := FALSE;\n        MotorReverse := TRUE;\n    ELSE\n        MotorForward := FALSE;\n        MotorReverse := FALSE;\n    END_IF;\n    State := IDLE;\nELSE\n    // Automatic Mode\n    CASE State OF\n        IDLE:\n            IF SensorFeed AND NOT prevSensorFeed THEN\n                State := MOVING_TO_WASH;\n                MotorForward := TRUE;\n            END_IF;\n\n        MOVING_TO_WASH:\n            IF SensorWash AND NOT prevSensorWash THEN\n                State := AT_WASH;\n                MotorForward := FALSE;\n            END_IF;\n\n        AT_WASH:\n            IF washComplete THEN\n                State := MOVING_TO_WEIGH;\n                MotorForward := TRUE;\n            END_IF;\n\n        MOVING_TO_WEIGH:\n            IF SensorWeight AND NOT prevSensorWeight THEN\n                State := AT_WEIGH;\n                MotorForward := FALSE;\n            END_IF;\n\n        AT_WEIGH:\n            IF weightComplete THEN\n                State := QUALITY_CHECK;\n            END_IF;\n\n        QUALITY_CHECK:\n            IF weight < 100.0 OR weight > 200.0 THEN\n                State := KICKING;\n            ELSE\n                State := CALCULATING_TEMP;\n            END_IF;\n\n        KICKING:\n            kick := TRUE;\n            State := IDLE;\n\n        CALCULATING_TEMP:\n            firingTemp := 500.0 + ((weight - 100.0) / 100.0) * 50.0;\n            State := MOVING_TO_FIRING;\n            MotorForward := TRUE;\n\n        MOVING_TO_FIRING:\n            IF SensorFiring AND NOT prevSensorFiring THEN\n                State := AT_FIRING;\n                MotorForward := FALSE;\n            END_IF;\n\n        AT_FIRING:\n            IF firingComplete THEN\n                State := MOVING_TO_OUTPUT;\n                MotorForward := TRUE;\n            END_IF;\n\n        MOVING_TO_OUTPUT:\n            IF SensorOutput AND NOT prevSensorOutput THEN\n                State := AT_OUTPUT;\n                MotorForward := FALSE;\n            END_IF;\n\n        AT_OUTPUT:\n            CompletionLight := SensorOutput;\n            IF NOT SensorOutput THEN\n                State := IDLE;\n                firingTemp := 0.0;\n            END_IF;\n    END_CASE;\nEND_IF;\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "Let me analyze this production line control problem:\n\n1. There are 5 stations: material loading, cleaning, weighing, firing, finished product\n2. Motor moves products between stations (forward) or backwards (reverse)\n3. Mode switch: 0=manual, 1=automatic\n4. Manual mode: ForwardButton and ReverseButton control motor with interlocking\n5. Automatic mode: Products flow through stations based on sensors\n\nStates in automatic mode:\n- IDLE: Waiting for material at feed station\n- MOVING_TO_WASH: Material detected at feed, moving to cleaning\n- AT_WASH: Material at cleaning, waiting for washComplete\n- MOVING_TO_WEIGH: Moving to weighing\n- AT_WEIGH: Material at weighing, waiting for weightComplete\n- QUALITY_CHECK: Checking weight qualification\n- KICKING: Unqualified material rejected\n- CALCULATING_TEMP: Calculate firing temp based on weight\n- MOVING_TO_FIRING: Moving to firing station\n- AT_FIRING: Material at firing, waiting for firingComplete\n- MOVING_TO_OUTPUT: Moving to finished product station\n- AT_OUTPUT: Product at output, CompletionLight ON\n\nThe sequence is:\n1. SensorFeed detects material → MotorForward (MOVING_TO_WASH)\n2. SensorWash detects material → MotorStop, wait washComplete → MotorForward (MOVING_TO_WEIGH)\n3. SensorWeight detects material → MotorStop, wait weightComplete → check weight\n   - If weight < 100 or > 200: kick = TRUE\n   - If 100 <= weight <= 200: calculate firingTemp, MotorForward (MOVING_TO_FIRING)\n4. SensorFiring detects material → MotorStop, wait firingComplete → MotorForward (MOVING_TO_OUTPUT)\n5. SensorOutput detects product → MotorStop, CompletionLight = TRUE\n\nWhen the product is removed (SensorOutput goes FALSE), CompletionLight = FALSE\n\n\nNow I need to implement this in Structured Text. The state machine will cycle through each stage, with sensor detections triggering transitions and completion signals allowing progression to the next station. The kick mechanism handles quality rejections, while the firing temperature calculation ensures proper processing based on weight specifications. The motor controls move products forward through each stage, with completion lights indicating when items reach the output station.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "Let me analyze this production line control problem:\n\n1. There are 5 stations: material loading, cleaning, weighing, firing, finished product\n2. Motor moves products between stations (forward) or backwards (reverse)\n3. Mode switch: 0=manual, 1=automatic\n4. Manual mode: ForwardButton and ReverseButton control motor with interlocking\n5. Automatic mode: Products flow through stations based on sensors\n\nStates in automatic mode:\n- IDLE: Waiting for material at feed station\n- MOVING_TO_WASH: Material detected at feed, moving to cleaning\n- AT_WASH: Material at cleaning, waiting for washComplete\n- MOVING_TO_WEIGH: Moving to weighing\n- AT_WEIGH: Material at weighing, waiting for weightComplete\n- QUALITY_CHECK: Checking weight qualification\n- KICKING: Unqualified material rejected\n- CALCULATING_TEMP: Calculate firing temp based on weight\n- MOVING_TO_FIRING: Moving to firing station\n- AT_FIRING: Material at firing, waiting for firingComplete\n- MOVING_TO_OUTPUT: Moving to finished product station\n- AT_OUTPUT: Product at output, CompletionLight ON\n\nThe sequence is:\n1. SensorFeed detects material → MotorForward (MOVING_TO_WASH)\n2. SensorWash detects material → MotorStop, wait washComplete → MotorForward (MOVING_TO_WEIGH)\n3. SensorWeight detects material → MotorStop, wait weightComplete → check weight\n   - If weight < 100 or > 200: kick = TRUE\n   - If 100 <= weight <= 200: calculate firingTemp, MotorForward (MOVING_TO_FIRING)\n4. SensorFiring detects material → MotorStop, wait firingComplete → MotorForward (MOVING_TO_OUTPUT)\n5. SensorOutput detects product → MotorStop, CompletionLight = TRUE\n\nWhen the product is removed (SensorOutput goes FALSE), CompletionLight = FALSE\n\n\nNow I need to implement this in Structured Text. The state machine will cycle through each stage, with sensor detections triggering transitions and completion signals allowing progression to the next station. The kick mechanism handles quality rejections, while the firing temperature calculation ensures proper processing based on weight specifications. The motor controls move products forward through each stage, with completion lights indicating when items reach the output station.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794472621,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 1684,
+      "completion_tokens": 1380,
+      "total_tokens": 3064,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.011952"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
