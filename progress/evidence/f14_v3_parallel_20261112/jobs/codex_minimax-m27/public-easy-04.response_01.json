@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-4wgmoi-1794471783000654845",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```structured-text\nFUNCTION_BLOCK JamPumpControl\nVAR_INPUT\n    VISCOSITY_OK     : BOOL;\n    PASTE_E_STOP_NC  : BOOL;\n    DebounceTime     : TIME;\n    CycleTime        : TIME;\nEND_VAR\n\nVAR_OUTPUT\n    VFD_RUN          : BOOL := FALSE;\n    PUMP_MAINT_DUE   : BOOL := FALSE;\n    PUMP_RUNTIME_ACC : LTIME := LTIME#0s;\nEND_VAR\n\nVAR\n    ViscosityValid        : BOOL := FALSE;\n    ViscosityDebounceTmr  : LTIME := LTIME#0s;\nEND_VAR\n\n// Viscosity debouncing\nIF VISCOSITY_OK THEN\n    IF NOT ViscosityValid THEN\n        ViscosityDebounceTmr := ViscosityDebounceTmr + LTIME(CycleTime);\n        IF ViscosityDebounceTmr >= LTIME(DebounceTime) THEN\n            ViscosityValid := TRUE;\n            ViscosityDebounceTmr := LTIME#0s;\n        END_IF;\n    END_IF;\nELSE\n    ViscosityValid := FALSE;\n    ViscosityDebounceTmr := LTIME#0s;\nEND_IF;\n\n// Safety permissive: E-stop AND valid viscosity\nIF PASTE_E_STOP_NC AND ViscosityValid THEN\n    VFD_RUN := TRUE;\nELSE\n    VFD_RUN := FALSE;\nEND_IF;\n\n// Runtime accumulation while running\nIF VFD_RUN THEN\n    PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + LTIME(CycleTime);\nEND_IF;\n\n// Maintenance due at 500 hours\nPUMP_MAINT_DUE := (PUMP_RUNTIME_ACC >= LTIME#500h);\n\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "The user wants me to create an IEC 61131-3 Structured Text FUNCTION_BLOCK for a jam pump control system. Let me analyze the requirements:\n\n1. **Viscosity debouncing**: Accept VISCOSITY_OK only after it has been TRUE for DebounceTime. Invalidate immediately when FALSE.\n2. **Safety permissive**: VFD_RUN can be TRUE only when PASTE_E_STOP_NC is TRUE AND viscosity condition is valid. Emergency stop disables output and clears debounce timing.\n3. **Runtime accumulation**: Accumulate PUMP_RUNTIME_ACC using CycleTime only while VFD_RUN is TRUE. Preserve time when stopped.\n4. **Maintenance indication**: Set PUMP_MAINT_DUE when accumulated runtime reaches 500 hours. Does not affect operation.\n5. **Initialization**: At power-up, initialize VFD_RUN to OFF, PUMP_RUNTIME_ACC to zero, PUMP_MAINT_DUE to FALSE.\n\nLet me implement this:\n\n```structured-text\nFUNCTION_BLOCK JamPumpControl\nVAR_INPUT\n    VISCOSITY_OK : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceTime : TIME;\n    CycleTime : TIME;\nEND_VAR\n\nVAR_OUTPUT\n    VFD_RUN : BOOL := FALSE;\n    PUMP_MAINT_DUE : BOOL := FALSE;\n    PUMP_RUNTIME_ACC : LTIME := LTIME#0s;\nEND_VAR\n\nVAR\n    ViscosityValid : BOOL := FALSE;\n    ViscosityDebounceTimer : LTIME := LTIME#0s;\nEND_VAR\n\n// Debounce logic for viscosity\nIF VISCOSITY_OK THEN\n    IF NOT ViscosityValid THEN\n        // Start or continue debounce timer\n        ViscosityDebounceTimer := ViscosityDebounceTimer + LTIME(CycleTime);\n        IF ViscosityDebounceTimer >= LTIME(DebounceTime) THEN\n            ViscosityValid := TRUE;\n            ViscosityDebounceTimer := LTIME#0s;\n        END_IF;\n    END_IF;\nELSE\n    // Immediately invalidate when VISCOSITY_OK goes FALSE\n    ViscosityValid := FALSE;\n    ViscosityDebounceTimer := LTIME#0s;\nEND_IF;\n\n// Safety permissive logic\nIF PASTE_E_STOP_NC AND ViscosityValid THEN\n    VFD_RUN := TRUE;\nELSE\n    VFD_RUN := FALSE;\nEND_IF;\n\n// Accumulate runtime while VFD_RUN is active\nIF VFD_RUN THEN\n    PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + LTIME(CycleTime);\nEND_IF;\n\n// Maintenance due indicator at 500 hours\nIF PUMP_RUNTIME_ACC >= LTIME#500h THEN\n    PUMP_MAINT_DUE := TRUE;\nEND_IF;\n\nThe debounce timer increments whenever viscosity readings are valid but not yet confirmed, and resets once the threshold is met. The VFD command only activates when both the emergency stop is clear and viscosity has stabilized. Runtime gets counted only during active pumping cycles, and the maintenance flag triggers at 500 hours of accumulated operation.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The user wants me to create an IEC 61131-3 Structured Text FUNCTION_BLOCK for a jam pump control system. Let me analyze the requirements:\n\n1. **Viscosity debouncing**: Accept VISCOSITY_OK only after it has been TRUE for DebounceTime. Invalidate immediately when FALSE.\n2. **Safety permissive**: VFD_RUN can be TRUE only when PASTE_E_STOP_NC is TRUE AND viscosity condition is valid. Emergency stop disables output and clears debounce timing.\n3. **Runtime accumulation**: Accumulate PUMP_RUNTIME_ACC using CycleTime only while VFD_RUN is TRUE. Preserve time when stopped.\n4. **Maintenance indication**: Set PUMP_MAINT_DUE when accumulated runtime reaches 500 hours. Does not affect operation.\n5. **Initialization**: At power-up, initialize VFD_RUN to OFF, PUMP_RUNTIME_ACC to zero, PUMP_MAINT_DUE to FALSE.\n\nLet me implement this:\n\n```structured-text\nFUNCTION_BLOCK JamPumpControl\nVAR_INPUT\n    VISCOSITY_OK : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceTime : TIME;\n    CycleTime : TIME;\nEND_VAR\n\nVAR_OUTPUT\n    VFD_RUN : BOOL := FALSE;\n    PUMP_MAINT_DUE : BOOL := FALSE;\n    PUMP_RUNTIME_ACC : LTIME := LTIME#0s;\nEND_VAR\n\nVAR\n    ViscosityValid : BOOL := FALSE;\n    ViscosityDebounceTimer : LTIME := LTIME#0s;\nEND_VAR\n\n// Debounce logic for viscosity\nIF VISCOSITY_OK THEN\n    IF NOT ViscosityValid THEN\n        // Start or continue debounce timer\n        ViscosityDebounceTimer := ViscosityDebounceTimer + LTIME(CycleTime);\n        IF ViscosityDebounceTimer >= LTIME(DebounceTime) THEN\n            ViscosityValid := TRUE;\n            ViscosityDebounceTimer := LTIME#0s;\n        END_IF;\n    END_IF;\nELSE\n    // Immediately invalidate when VISCOSITY_OK goes FALSE\n    ViscosityValid := FALSE;\n    ViscosityDebounceTimer := LTIME#0s;\nEND_IF;\n\n// Safety permissive logic\nIF PASTE_E_STOP_NC AND ViscosityValid THEN\n    VFD_RUN := TRUE;\nELSE\n    VFD_RUN := FALSE;\nEND_IF;\n\n// Accumulate runtime while VFD_RUN is active\nIF VFD_RUN THEN\n    PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + LTIME(CycleTime);\nEND_IF;\n\n// Maintenance due indicator at 500 hours\nIF PUMP_RUNTIME_ACC >= LTIME#500h THEN\n    PUMP_MAINT_DUE := TRUE;\nEND_IF;\n\nThe debounce timer increments whenever viscosity readings are valid but not yet confirmed, and resets once the threshold is met. The VFD command only activates when both the emergency stop is clear and viscosity has stabilized. Runtime gets counted only during active pumping cycles, and the maintenance flag triggers at 500 hours of accumulated operation.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794471784,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 7346,
+      "completion_tokens": 984,
+      "total_tokens": 8330,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.018716"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
