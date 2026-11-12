@@ -1,0 +1,37 @@
+{
+  "template": "E:/PLC_Dev/builds/codesys_template.project",
+  "project": "E:\\PLC_Dev\\evidence\\incoming_reviews\\f14_v7_return_native_20261112_v2\\original_return\\control.project",
+  "result": "E:\\PLC_Dev\\evidence\\incoming_reviews\\f14_v7_return_native_20261112_v2\\original_return\\result.json",
+  "nonce": "0fa6e0f40a344b64b6577ef056d98b0f",
+  "simulation_only": true,
+  "fb": {
+    "name": "FB",
+    "kind": "FUNCTION_BLOCK",
+    "types": [],
+    "declaration": "FUNCTION_BLOCK FB\n\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger : BOOL;\n    value : LREAL;\n    windowSize : INT;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    average : LREAL;\n    windowSizeReached : BOOL;\n    error : BOOL;\n    status : WORD;\nEND_VAR\nVAR\n    tmp_trig : R_TRIG;\n    local_data : ARRAY[0..99] OF LREAL;\n    local_count : INT := 0;\n    local_start : INT := 0;\n    local_sum_all : LREAL := 0.0;\n    local_avg_sum : LREAL;\n    local_effective : INT;\n    tmp_i : INT;\n    tmp_idx : INT;\nEND_VAR\n\n\n\n\n\n",
+    "implementation": "tmp_trig(CLK := trigger);\n\nIF reset THEN\n    local_count := 0;\n    local_start := 0;\n    local_sum_all := 0.0;\n    average := 0.0;\n    windowSizeReached := FALSE;\nEND_IF;\n\nIF (windowSize < 1) OR (windowSize > 100) THEN\n    error := TRUE;\n    status := WORD#16#8200;\n    windowSizeReached := FALSE;\n    RETURN;\nELSE\n    error := FALSE;\n    status := WORD#16#0000;\nEND_IF;\n\nIF reset THEN\n    RETURN;\nEND_IF;\n\nIF cyclicExecution THEN\n    IF local_count < 100 THEN\n        local_data[local_count] := value;\n        local_count := local_count + 1;\n        local_sum_all := local_sum_all + value;\n    ELSE\n        local_sum_all := local_sum_all - local_data[local_start] + value;\n        local_data[local_start] := value;\n        local_start := (local_start + 1) MOD 100;\n    END_IF;\nELSIF tmp_trig.Q THEN\n    IF local_count < 100 THEN\n        local_data[local_count] := value;\n        local_count := local_count + 1;\n        local_sum_all := local_sum_all + value;\n    ELSE\n        local_sum_all := local_sum_all - local_data[local_start] + value;\n        local_data[local_start] := value;\n        local_start := (local_start + 1) MOD 100;\n    END_IF;\nEND_IF;\n\nlocal_avg_sum := local_sum_all;\n\nIF local_count > windowSize THEN\n    FOR tmp_i := 0 TO (local_count - windowSize - 1) DO\n        tmp_idx := (local_start + tmp_i) MOD 100;\n        local_avg_sum := local_avg_sum - local_data[tmp_idx];\n    END_FOR;\nEND_IF;\n\nlocal_effective := local_count;\nIF local_effective > windowSize THEN\n    local_effective := windowSize;\nEND_IF;\n\nIF local_effective > 0 THEN\n    average := local_avg_sum / INT_TO_LREAL(local_effective);\nELSE\n    average := 0.0;\nEND_IF;\n\nwindowSizeReached := local_count >= windowSize;"
+  },
+  "program": {
+    "name": "PLC_PRG",
+    "kind": "PROGRAM",
+    "types": [],
+    "declaration": "PROGRAM PLC_PRG\n\nVAR probe:FB;step:INT;testComplete:BOOL;testPassed:BOOL:=TRUE;firstFailedStep:INT:=-1;tmp_expected:LREAL;END_VAR\n",
+    "implementation": "IF NOT testComplete THEN\nCASE step OF\n0:probe(cyclicExecution:=TRUE,trigger:=FALSE,value:=LREAL#7.0,windowSize:=2,reset:=TRUE);tmp_expected:=0.0;\n1:probe(cyclicExecution:=TRUE,trigger:=FALSE,value:=LREAL#9.0,windowSize:=2,reset:=FALSE);tmp_expected:=9.0;\n2:probe(cyclicExecution:=TRUE,trigger:=FALSE,value:=LREAL#13.0,windowSize:=2,reset:=TRUE);tmp_expected:=0.0;\n3:probe(cyclicExecution:=TRUE,trigger:=FALSE,value:=LREAL#5.0,windowSize:=2,reset:=FALSE);tmp_expected:=5.0;\nEND_CASE;\nIF (probe.average<>tmp_expected) OR probe.windowSizeReached OR probe.error OR (probe.status<>WORD#0) THEN\n IF testPassed THEN firstFailedStep:=step;END_IF;\n testPassed:=FALSE;\nEND_IF;\nIF step=3 THEN testComplete:=TRUE;ELSE step:=step+1;END_IF;\nEND_IF;"
+  },
+  "watch_names": [
+    "testComplete",
+    "testPassed",
+    "firstFailedStep",
+    "step",
+    "probe.average",
+    "probe.windowSizeReached",
+    "probe.error",
+    "probe.status"
+  ],
+  "expected": {
+    "testComplete": "TRUE",
+    "testPassed": "TRUE",
+    "firstFailedStep": "-1",
+    "step": "3"
+  }
+}

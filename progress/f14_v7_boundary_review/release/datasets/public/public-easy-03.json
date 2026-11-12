@@ -1,0 +1,298 @@
+{
+  "pid": "public-easy-03",
+  "source": "public",
+  "difficulty": "easy",
+  "title": "Alarm Handling",
+  "requirements": "In industrial automation systems, monitoring the status of equipment is crucial. When equipment parameters exceed the normal range, the system needs to issue an alarm. To avoid frequent triggering of alarms due to minor fluctuations in parameters, an alarm management system with hysteresis function needs to be implemented.\nWhen Value is greater than hiLevel, trigger high alarm hiAlarm.\nWhen Value is less than hiLevel-hystWindow, exit high alarm hiAlarm.\nWhen Value is less than loLevel, trigger low alarm loAlarm.\nWhen Value is greater than loLevel+hystWindow, exit low alarm loAlarm.\nIf loLevel is greater than or equal to hiLevel, output error error=true, status=16#8001, and exit the program\nIf the hysteresis window value hystWindow is greater than or equal to the deviation range between hiLevel and loLevel, output error error=true, status=16#8002",
+  "variables": [
+    {
+      "name": "Value",
+      "data_type": "REAL",
+      "description": "Input value",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "hiLevel",
+      "data_type": "REAL",
+      "description": "High limit alarm value",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "loLevel",
+      "data_type": "REAL",
+      "description": "Low limit alarm value",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "hystWindow",
+      "data_type": "REAL",
+      "description": "Hysteresis window",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "hiAlarm",
+      "data_type": "BOOL",
+      "description": "High limit alarm",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "loAlarm",
+      "data_type": "BOOL",
+      "description": "Low limit alarm",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "error",
+      "data_type": "BOOL",
+      "description": "FALSE: No error occurred;<br>TRUE: Error occurred during execution of FB",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "status",
+      "data_type": "WORD",
+      "description": "Status code",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "loLevel 不低于 hiLevel 时必须在同一拍报 error 且 status=16#8001（R5）",
+      "ltl": "G(loLevel >= hiLevel -> error AND status = 32769)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "上下限正常但回差不小于量程时，必须在同一拍报 error 且 status=16#8002（R6）",
+      "ltl": "G((loLevel < hiLevel) AND (hystWindow >= (hiLevel - loLevel)) -> error AND status = 32770)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "无错误时 Value 高于高限必须置高限报警（R1）",
+      "ltl": "G(NOT error AND Value > hiLevel -> hiAlarm)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "无错误时 Value 低于 hiLevel-hystWindow 必须复位高限报警（R2）",
+      "ltl": "G(NOT error AND Value < (hiLevel - hystWindow) -> NOT hiAlarm)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "无错误时 Value 低于低限必须置低限报警（R3）",
+      "ltl": "G(NOT error AND Value < loLevel -> loAlarm)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S6",
+      "text": "无错误时 Value 高于 loLevel+hystWindow 必须复位低限报警（R4）",
+      "ltl": "G(NOT error AND Value > (loLevel + hystWindow) -> NOT loAlarm)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S7",
+      "text": "回差宽度非负且小于正常区间宽度、上下限顺序正确时，错误位清除且状态码为零。",
+      "ltl": "G((hystWindow >= 0.0 AND loLevel < hiLevel AND hystWindow < hiLevel - loLevel) -> (NOT error AND status = 0))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S8",
+      "text": "高报警在闭合回差带内保持原状态。",
+      "ltl": "G((NOT error AND Value <= hiLevel AND Value >= hiLevel - hystWindow) -> (hiAlarm <-> prev(hiAlarm)))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S9",
+      "text": "低报警在闭合回差带内保持原状态。",
+      "ltl": "G((NOT error AND Value >= loLevel AND Value <= loLevel + hystWindow) -> (loAlarm <-> prev(loAlarm)))",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "tc-01",
+      "inputs": {
+        "Value": 70.5,
+        "hiLevel": 70.0,
+        "loLevel": 20.0,
+        "hystWindow": 5.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "hiAlarm": true,
+        "loAlarm": false,
+        "error": false
+      },
+      "note": "初始态：Value 略高于高限 -> 置高限报警，低限不报警，无错（R1）",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "tc-02",
+      "inputs": {
+        "Value": 65.0,
+        "hiLevel": 70.0,
+        "loLevel": 20.0,
+        "hystWindow": 5.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "hiAlarm": true,
+        "loAlarm": false,
+        "error": false
+      },
+      "note": "承接上一条：Value 正好等于 hiLevel-hystWindow，未低于退出阈值 -> 高限报警保持（R2 边界值）",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "tc-03",
+      "inputs": {
+        "Value": 64.9,
+        "hiLevel": 70.0,
+        "loLevel": 20.0,
+        "hystWindow": 5.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "hiAlarm": false,
+        "loAlarm": false,
+        "error": false
+      },
+      "note": "承接上一条：Value 低于 hiLevel-hystWindow -> 退出高限报警（R2）",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "tc-04",
+      "inputs": {
+        "Value": 19.9,
+        "hiLevel": 70.0,
+        "loLevel": 20.0,
+        "hystWindow": 5.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "hiAlarm": false,
+        "loAlarm": true,
+        "error": false
+      },
+      "note": "承接上一条：Value 低于低限 -> 置低限报警（R3）",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "tc-05",
+      "inputs": {
+        "Value": 25.0,
+        "hiLevel": 70.0,
+        "loLevel": 20.0,
+        "hystWindow": 5.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "hiAlarm": false,
+        "loAlarm": true,
+        "error": false
+      },
+      "note": "承接上一条：Value 正好等于 loLevel+hystWindow，未高于退出阈值 -> 低限报警保持（R4 边界值）",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "tc-06",
+      "inputs": {
+        "Value": 25.1,
+        "hiLevel": 70.0,
+        "loLevel": 20.0,
+        "hystWindow": 5.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "hiAlarm": false,
+        "loAlarm": false,
+        "error": false
+      },
+      "note": "承接上一条：Value 高于 loLevel+hystWindow -> 退出低限报警（R4）",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "tc-07",
+      "inputs": {
+        "Value": 60.0,
+        "hiLevel": 70.0,
+        "loLevel": 75.0,
+        "hystWindow": 4.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "error": true,
+        "status": 32769
+      },
+      "note": "承接上一条：loLevel >= hiLevel -> error=TRUE、status=16#8001（R5，负例：参数非法）",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    },
+    {
+      "tc_id": "tc-08",
+      "inputs": {
+        "Value": 60.0,
+        "hiLevel": 70.0,
+        "loLevel": 20.0,
+        "hystWindow": 50.0
+      },
+      "const_inputs": {},
+      "expected": {
+        "error": true,
+        "status": 32770
+      },
+      "note": "承接上一条：hystWindow >= hiLevel-loLevel -> error=TRUE、status=16#8002（R6，负例：回差过宽）",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": false
+    }
+  ],
+  "provenance": {
+    "source_record": "sources/index.json#public-easy-03",
+    "release_contract": "STBench-F1.4"
+  },
+  "language": "en",
+  "raw_text": "# Alarm Handling\n\n- **Difficulty:** Easy (easy)\n\n## Requirements\n\nIn industrial automation systems, monitoring the status of equipment is crucial. When equipment parameters exceed the normal range, the system needs to issue an alarm. To avoid frequent triggering of alarms due to minor fluctuations in parameters, an alarm management system with hysteresis function needs to be implemented.\nWhen Value is greater than hiLevel, trigger high alarm hiAlarm.\nWhen Value is less than hiLevel-hystWindow, exit high alarm hiAlarm.\nWhen Value is less than loLevel, trigger low alarm loAlarm.\nWhen Value is greater than loLevel+hystWindow, exit low alarm loAlarm.\nIf loLevel is greater than or equal to hiLevel, output error error=true, status=16#8001, and exit the program\nIf the hysteresis window value hystWindow is greater than or equal to the deviation range between hiLevel and loLevel, output error error=true, status=16#8002\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `Value` | `REAL` | Input value |\n| Input | `hiLevel` | `REAL` | High limit alarm value |\n| Input | `loLevel` | `REAL` | Low limit alarm value |\n| Input | `hystWindow` | `REAL` | Hysteresis window |\n| Output | `hiAlarm` | `BOOL` | High limit alarm |\n| Output | `loAlarm` | `BOOL` | Low limit alarm |\n| Output | `error` | `BOOL` | FALSE: No error occurred;<br>TRUE: Error occurred during execution of FB |\n| Output | `status` | `WORD` | Status code |",
+  "case_mode": "sequence"
+}
