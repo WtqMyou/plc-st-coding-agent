@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-u15r4u-1794473719886316379",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```iec\nFUNCTION_BLOCK HVAC_Controller\nVAR_INPUT\n    OCCUPANCY_DETECTED      : BOOL;\n    ENERGY_SAVING_MODE      : BOOL;\n    HVAC_MODE_SELECTOR      : INT;\nEND_VAR\n\nVAR_OUTPUT\n    SUPPLY_FAN_RUN          : BOOL;\n    TEMP_SETPOINT_ADJUST    : INT;\nEND_VAR\n\nVAR\n    OccupancyTimer          : TON;\n    OccupancyStartTime      : LTIME;\n    FanDelayActive          : BOOL := FALSE;\n    FanDelayElapsed         : BOOL := FALSE;\n    PreviousOccupancy       : BOOL := FALSE;\nEND_VAR\n\n// Fan control logic\nIF NOT OCCUPANCY_DETECTED OR (HVAC_MODE_SELECTOR = 3) THEN\n    // Reset delay when occupancy lost or Night mode selected\n    FanDelayActive := FALSE;\n    FanDelayElapsed := FALSE;\n    SUPPLY_FAN_RUN := FALSE;\n    OccupancyTimer(IN := FALSE);\nELSIF OCCUPANCY_DETECTED AND (HVAC_MODE_SELECTOR <> 3) THEN\n    // Start delay when occupancy detected and not in Night mode\n    IF NOT FanDelayActive THEN\n        FanDelayActive := TRUE;\n        OccupancyTimer(IN := FALSE);\n    END_IF\n    OccupancyTimer(IN := TRUE, PT := T#30S);\n    FanDelayElapsed := OccupancyTimer.Q;\n    SUPPLY_FAN_RUN := FanDelayElapsed;\nELSE\n    // Default to off\n    SUPPLY_FAN_RUN := FALSE;\nEND_IF;\n\n// Temperature setpoint calculation\nCASE HVAC_MODE_SELECTOR OF\n    0: // Auto mode\n        IF OCCUPANCY_DETECTED THEN\n            TEMP_SETPOINT_ADJUST := 0;\n        ELSE\n            IF ENERGY_SAVING_MODE THEN\n                TEMP_SETPOINT_ADJUST := 3;\n            ELSE\n                TEMP_SETPOINT_ADJUST := 2;\n            END_IF;\n        END_IF;\n\n    1: // Comfort mode\n        IF OCCUPANCY_DETECTED THEN\n            TEMP_SETPOINT_ADJUST := 0;\n        ELSE\n            TEMP_SETPOINT_ADJUST := 1;\n        END_IF;\n\n    2: // Economy mode\n        IF OCCUPANCY_DETECTED THEN\n            TEMP_SETPOINT_ADJUST := 0;\n        ELSE\n            TEMP_SETPOINT_ADJUST := 4;\n        END_IF;\n\n    3: // Night mode\n        TEMP_SETPOINT_ADJUST := 4;\n\nELSE\n    TEMP_SETPOINT_ADJUST := 0;\nEND_CASE;\n\n// Clamp to ±4°C\nIF TEMP_SETPOINT_ADJUST > 4 THEN\n    TEMP_SETPOINT_ADJUST := 4;\nELSIF TEMP_SETPOINT_ADJUST < -4 THEN\n    TEMP_SETPOINT_ADJUST := -4;\nEND_IF;\n\nPreviousOccupancy := OCCUPANCY_DETECTED;\n\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "The user wants me to write a CODESYS 3.5 Structured Text FUNCTION_BLOCK for an Office HVAC Multi-mode Energy-Saving Control system. Let me analyze the requirements:\n\n1. HVAC_MODE_SELECTOR values: 0 (Auto), 1 (Comfort), 2 (Economy), 3 (Night)\n2. 30-second delay for SUPPLY_FAN_RUN:\n   - Starts when occupancy detected AND Night mode NOT selected\n   - Becomes TRUE after 30 seconds of continuous conditions\n   - Immediately stops and resets if occupancy lost OR Night mode selected\n   - Wait full 30 seconds again when conditions recover\n\n3. Temperature adjustments:\n   - Auto mode (0):\n     - Occupied: 0°C\n     - Unoccupied: +3°C (energy-saving) or +2°C (standard)\n   - Comfort mode (1):\n     - Occupied: 0°C\n     - Unoccupied: +1°C\n   - Economy mode (2):\n     - Occupied: 0°C\n     - Unoccupied: +4°C\n   - Night mode (3):\n     - Occupied or unoccupied: +4°C (energy-saving selection doesn't affect Night mode)\n\n4. TEMP_SETPOINT_ADJUST must be within ±4°C\n5. Initialize outputs to OFF and zero at power-up\n6. Start delay only controls the BOOL fan enable\n\nLet me write the FUNCTION_BLOCK:\n\n```iec\nFUNCTION_BLOCK HVAC_Controller\nVAR_INPUT\n    OCCUPANCY_DETECTED : BOOL;\n    ENERGY_SAVING_MODE : BOOL;\n    HVAC_MODE_SELECTOR : INT;\nEND_VAR\n\nVAR_OUTPUT\n    SUPPLY_FAN_RUN : BOOL;\n    TEMP_SETPOINT_ADJUST : INT;\nEND_VAR\n\nVAR\n    occupancy_timer : TON;\n    fan_start_pending : BOOL := FALSE;\n    previous_occupancy : BOOL := FALSE;\nEND_VAR\n\n// Logic implementation\n\n\n```\n\nThe fan starts a 30-second delay when occupancy is detected and night mode isn't active. When the timer completes, the fan enable activates. If occupancy disappears or night mode activates, the timer resets and the fan stops immediately.\n\nThe setpoint adjustment varies by operating mode: Auto mode applies energy-saving logic based on occupancy, Comfort and Economy modes use fixed adjustments of +1°C and +4°C respectively when unoccupied, and Night mode always applies +4°C. All adjustments are clamped to a ±4°C range.\n\n```\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The user wants me to write a CODESYS 3.5 Structured Text FUNCTION_BLOCK for an Office HVAC Multi-mode Energy-Saving Control system. Let me analyze the requirements:\n\n1. HVAC_MODE_SELECTOR values: 0 (Auto), 1 (Comfort), 2 (Economy), 3 (Night)\n2. 30-second delay for SUPPLY_FAN_RUN:\n   - Starts when occupancy detected AND Night mode NOT selected\n   - Becomes TRUE after 30 seconds of continuous conditions\n   - Immediately stops and resets if occupancy lost OR Night mode selected\n   - Wait full 30 seconds again when conditions recover\n\n3. Temperature adjustments:\n   - Auto mode (0):\n     - Occupied: 0°C\n     - Unoccupied: +3°C (energy-saving) or +2°C (standard)\n   - Comfort mode (1):\n     - Occupied: 0°C\n     - Unoccupied: +1°C\n   - Economy mode (2):\n     - Occupied: 0°C\n     - Unoccupied: +4°C\n   - Night mode (3):\n     - Occupied or unoccupied: +4°C (energy-saving selection doesn't affect Night mode)\n\n4. TEMP_SETPOINT_ADJUST must be within ±4°C\n5. Initialize outputs to OFF and zero at power-up\n6. Start delay only controls the BOOL fan enable\n\nLet me write the FUNCTION_BLOCK:\n\n```iec\nFUNCTION_BLOCK HVAC_Controller\nVAR_INPUT\n    OCCUPANCY_DETECTED : BOOL;\n    ENERGY_SAVING_MODE : BOOL;\n    HVAC_MODE_SELECTOR : INT;\nEND_VAR\n\nVAR_OUTPUT\n    SUPPLY_FAN_RUN : BOOL;\n    TEMP_SETPOINT_ADJUST : INT;\nEND_VAR\n\nVAR\n    occupancy_timer : TON;\n    fan_start_pending : BOOL := FALSE;\n    previous_occupancy : BOOL := FALSE;\nEND_VAR\n\n// Logic implementation\n\n\n```\n\nThe fan starts a 30-second delay when occupancy is detected and night mode isn't active. When the timer completes, the fan enable activates. If occupancy disappears or night mode activates, the timer resets and the fan stops immediately.\n\nThe setpoint adjustment varies by operating mode: Auto mode applies energy-saving logic based on occupancy, Comfort and Economy modes use fixed adjustments of +1°C and +4°C respectively when unoccupied, and Night mode always applies +4°C. All adjustments are clamped to a ±4°C range.\n\n```\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794473720,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 7335,
+      "completion_tokens": 1103,
+      "total_tokens": 8438,
+      "prompt_tokens_details": {
+        "cached_tokens": 3588,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.014726"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
