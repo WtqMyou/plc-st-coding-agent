@@ -1,0 +1,1 @@
+alarmAcked := (NOT flowLow AND alarmActive AND NOT prev_flowLow) OR (alarmActive AND prev_flowLow AND prev_alarmAcked) OR (prev_flowLow AND alarmActive AND prev_alarmAcked);
