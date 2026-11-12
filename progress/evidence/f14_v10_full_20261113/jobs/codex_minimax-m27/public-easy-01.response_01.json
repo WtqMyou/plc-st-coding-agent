@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-1g4knc-1794505333420281921",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\n(* ENGINEERING_CONTRACT *)\n(*\nState  | Activation                    | Retention               | Reset/Deactivation              | Same-scan Priority | Units/Boundaries\n-------|-------------------------------|-------------------------|----------------------------------|--------------------|------------------\nIDLE   | bottleSensor = TRUE           | All outputs = FALSE     | None (waiting for bottle)        | -                  | edge-triggered on bottle arrival\nCLEAN  | State=IDLE & bottleSensor     | Pump_Motor = TRUE       | cleaningConfirmButton = TRUE    | same-scan          | pump latches until confirmed\nFILL   | cleaningConfirmButton=TRUE    | Filling_Valve = TRUE    | fillingConfirmButton = TRUE     | same-scan          | valve latches until confirmed\nCAP    | fillingConfirmButton=TRUE     | Capping_Machine = TRUE  | cappingConfirmButton = TRUE     | same-scan          | machine latches until confirmed\nPACK   | cappingConfirmButton=TRUE     | Packing_Machine = TRUE  | packingConfirmButton = TRUE     | same-scan          | machine latches until confirmed\nDONE   | packingConfirmButton=TRUE     | Completion_Light=TRUE   | finishedButton = TRUE           | same-scan          | light stays on until reset\n*)\n\n(* CONTRACT_RULES [] *)\n\nFUNCTION_BLOCK FillingLineControl\nVAR\n    State : UINT := 0; // 0=IDLE, 1=CLEAN, 2=FILL, 3=CAP, 4=PACK, 5=DONE\nEND_VAR\n\n// State machine logic\nCASE State OF\n    0: // IDLE - Waiting for bottle\n        Pump_Motor := FALSE;\n        Filling_Valve := FALSE;\n        Capping_Machine := FALSE;\n        Packing_Machine := FALSE;\n        Completion_Light := FALSE;\n        \n        IF bottleSensor THEN\n            State := 1;\n        END_IF\n        \n    1: // CLEAN - Cleaning pump running\n        Pump_Motor := TRUE;\n        Filling_Valve := FALSE;\n        Capping_Machine := FALSE;\n        Packing_Machine := FALSE;\n        Completion_Light := FALSE;\n        \n        IF cleaningConfirmButton THEN\n            State := 2;\n        END_IF\n        \n    2: // FILL - Filling valve open\n        Pump_Motor := FALSE;\n        Filling_Valve := TRUE;\n        Capping_Machine := FALSE;\n        Packing_Machine := FALSE;\n        Completion_Light := FALSE;\n        \n        IF fillingConfirmButton THEN\n            State := 3;\n        END_IF\n        \n    3: // CAP - Capping machine running\n        Pump_Motor := FALSE;\n        Filling_Valve := FALSE;\n        Capping_Machine := TRUE;\n        Packing_Machine := FALSE;\n        Completion_Light := FALSE;\n        \n        IF cappingConfirmButton THEN\n            State := 4;\n        END_IF\n        \n    4: // PACK - Packing machine running\n        Pump_Motor := FALSE;\n        Filling_Valve := FALSE;\n        Capping_Machine := FALSE;\n        Packing_Machine := TRUE;\n        Completion_Light := FALSE;\n        \n        IF packingConfirmButton THEN\n            State := 5;\n        END_IF\n        \n    5: // DONE - Packaging complete, waiting for pickup\n        Pump_Motor := FALSE;\n        Filling_Valve := FALSE;\n        Capping_Machine := FALSE;\n        Packing_Machine := FALSE;\n        Completion_Light := TRUE;\n        \n        IF finishedButton THEN\n            State := 0;\n        END_IF\n        \nEND_CASE;\n\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "The user wants me to create a Structured Text (ST) program for a CODESYS 3.5 PLC that controls an automated filling line. Let me analyze the requirements:\n\n**Process Flow:**\n1. Bottle detected by `bottleSensor` → Start `Pump_Motor` (cleaning)\n2. Operator presses `cleaningConfirmButton` → Stop `Pump_Motor`, Start `Filling_Valve`\n3. Operator presses `fillingConfirmButton` → Stop `Filling_Valve`, Start `Capping_Machine`\n4. Operator presses `cappingConfirmButton` → Stop `Capping_Machine`, Start `Packing_Machine`\n5. Operator presses `packingConfirmButton` → Stop `Packing_Machine`, Light `Completion_Light`\n6. Operator presses `finishedButton` → Turn off `Completion_Light`, prepare for next bottle\n\n**Key Points:**\n- This is a state machine with 6 states (plus idle)\n- Outputs are retained when not in their active state (they should be OFF)\n- The pump runs continuously once started until cleaning is confirmed\n- No simultaneous operations (only one machine runs at a time)\n- Reset happens when finishedButton is pressed after picking up the bottle\n\n**State Machine States:**\n- IDLE: Waiting for bottle\n- CLEANING: Pump running\n- FILLING: Filling valve open\n- CAPPING: Capping machine running\n- PACKING: Packing machine running\n- COMPLETE: Completion light on, waiting for pickup\n\nLet me write the ST code with the engineering contract table as requested:\n\n```st\n(* ENGINEERING_CONTRACT *)\n(*\nState | Activation          | Retention              | Reset/Deactivation            | Same-scan Priority | Units\nIDLE  | bottleSensor=TRUE   | No output active       | None (waiting)                | -                  | -\nCLEAN | State=IDLE          | Pump_Motor=TRUE        | cleaningConfirmButton=TRUE    | same               | -\n\n\nFILL  | cleaningConfirm     | Filling_Valve=TRUE     | fillingConfirmButton=TRUE     | same               | -\nCAP   | fillingConfirm      | Capping_Machine=TRUE   | cappingConfirmButton=TRUE     | same               | -\nPACK  | cappingConfirm      | Packing_Machine=TRUE   | packingConfirmButton=TRUE     | same               | -\nDONE  | packingConfirm      | Completion_Light=TRUE  | finishedButton=TRUE           | same               | -\n*)\n\n(* CONTRACT_RULES [] *)\n```\n\nNow I'll implement the state machine logic with proper state transitions and output control based on the current state.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The user wants me to create a Structured Text (ST) program for a CODESYS 3.5 PLC that controls an automated filling line. Let me analyze the requirements:\n\n**Process Flow:**\n1. Bottle detected by `bottleSensor` → Start `Pump_Motor` (cleaning)\n2. Operator presses `cleaningConfirmButton` → Stop `Pump_Motor`, Start `Filling_Valve`\n3. Operator presses `fillingConfirmButton` → Stop `Filling_Valve`, Start `Capping_Machine`\n4. Operator presses `cappingConfirmButton` → Stop `Capping_Machine`, Start `Packing_Machine`\n5. Operator presses `packingConfirmButton` → Stop `Packing_Machine`, Light `Completion_Light`\n6. Operator presses `finishedButton` → Turn off `Completion_Light`, prepare for next bottle\n\n**Key Points:**\n- This is a state machine with 6 states (plus idle)\n- Outputs are retained when not in their active state (they should be OFF)\n- The pump runs continuously once started until cleaning is confirmed\n- No simultaneous operations (only one machine runs at a time)\n- Reset happens when finishedButton is pressed after picking up the bottle\n\n**State Machine States:**\n- IDLE: Waiting for bottle\n- CLEANING: Pump running\n- FILLING: Filling valve open\n- CAPPING: Capping machine running\n- PACKING: Packing machine running\n- COMPLETE: Completion light on, waiting for pickup\n\nLet me write the ST code with the engineering contract table as requested:\n\n```st\n(* ENGINEERING_CONTRACT *)\n(*\nState | Activation          | Retention              | Reset/Deactivation            | Same-scan Priority | Units\nIDLE  | bottleSensor=TRUE   | No output active       | None (waiting)                | -                  | -\nCLEAN | State=IDLE          | Pump_Motor=TRUE        | cleaningConfirmButton=TRUE    | same               | -\n\n\nFILL  | cleaningConfirm     | Filling_Valve=TRUE     | fillingConfirmButton=TRUE     | same               | -\nCAP   | fillingConfirm      | Capping_Machine=TRUE   | cappingConfirmButton=TRUE     | same               | -\nPACK  | cappingConfirm      | Packing_Machine=TRUE   | packingConfirmButton=TRUE     | same               | -\nDONE  | packingConfirm      | Completion_Light=TRUE  | finishedButton=TRUE           | same               | -\n*)\n\n(* CONTRACT_RULES [] *)\n```\n\nNow I'll implement the state machine logic with proper state transitions and output control based on the current state.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794505334,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 8643,
+      "completion_tokens": 1274,
+      "total_tokens": 9917,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.022794"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
