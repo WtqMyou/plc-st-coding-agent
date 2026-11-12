@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-kwb11k-1794486071345044895",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\nFUNCTION_BLOCK FB_MovingAverage\n(* Engineering Contract\n * ┌─────────────────────────────────────────────────────────────────────────────────────┐\n * │ OUTPUT STATE TABLE                                                                │\n * ├─────────────┬────────────────────────────────────────────────────────────────────┤\n * │ average     │ HOLD: Retained between scans; updated when valid sample processed.  │\n * │             │ RETAIN on reset: Returns to 0.0 via sum reset.                      │\n * │ windowSizeReached│ ACTIVE: TRUE when sampleCount >= windowSize (PUB001 window).   │\n * │             │ DEACTIVATION: Set FALSE on reset.                                   │\n * │ error       │ ACTIVE: TRUE when windowSize invalid (<1 or >100).                  │\n * │             │ DEACTIVATION: Set FALSE when reset clears error.                    │\n * │ status      │ RETAIN: 16#8200 when invalid windowSize; 16#0000 otherwise.         │\n * │             │ RESET: Set to 16#0000 on valid reset or valid windowSize.           │\n * ├─────────────┼────────────────────────────────────────────────────────────────────┤\n * │ TRIGGER     │ Rising edge on trigger input (PUB003). Edge detection via           │\n * │             │ triggerPrev state variable. Same-scan priority: cyclicExecution     │\n * │             │ checked first per PUB002.                                           │\n * ├─────────────┼────────────────────────────────────────────────────────────────────┤\n * │ WINDOW      │ Bounded 1..100 (PUB004). Circular buffer (100 elements).            │\n * │ BOUNDARIES  │ Sample count saturates at windowSize.                               │\n * │             │ Zero-value behavior: valid input, included in average per PUB001.   │\n * ├─────────────┼────────────────────────────────────────────────────────────────────┤\n * │ CITATIONS   │ PUB001: Moving arithmetic mean definition.                          │\n * │             │ PUB002: cyclicExecution periodic update.                            │\n * │             │ PUB003: External trigger rising edge.                               │\n * │             │ PUB004: Reset signal and window validation.                         │\n * │             │ PUB006: 16#0000 success status.                                     │\n * │             │ PUB007: 16#8200 window length error status.                         │\n * └─────────────┴────────────────────────────────────────────────────────────────────┘\n *)\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger : BOOL;\n    value : LREAL;\n    windowSize : INT;\n    reset : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    average : LREAL;\n    windowSizeReached : BOOL;\n    error : BOOL;\n    status : WORD;\nEND_VAR\n\nVAR\n    dataBuffer : ARRAY[1..100] OF LREAL;\n    sampleCount : INT := 0;\n    sumAccumulator : LREAL := 0.0;\n    bufferIndex : INT := 0;\n    triggerRisingEdge : BOOL := FALSE;\n    prevTrigger : BOOL := FALSE;\nEND_VAR\n\nIF reset THEN\n    sampleCount := 0;\n    sumAccumulator := 0.0;\n    bufferIndex := 0;\n    windowSizeReached := FALSE;\n    error := FALSE;\n    status := 16#0000;\n    triggerRisingEdge := FALSE;\n    prevTrigger := FALSE;\nEND_IF;\n\nIF NOT error AND (cyclicExecution OR triggerRisingEdge) THEN\n    bufferIndex := (bufferIndex MOD INT_TO_INT(windowSize)) + 1;\n    \n    IF sampleCount >= windowSize THEN\n        sumAccumulator := sumAccumulator - dataBuffer[bufferIndex];\n    ELSE\n        sampleCount := sampleCount + 1;\n    END_IF;\n    \n    dataBuffer[bufferIndex] := value;\n    sumAccumulator := sumAccumulator + value;\n    average := sumAccumulator / LREAL_TO_LREAL(INT_TO_LREAL(sampleCount));\n    windowSizeReached := (sampleCount >= windowSize);\nEND_IF;\n\nIF windowSize < 1 OR windowSize > 100 THEN\n    error := TRUE;\n    status := 16#8200;\nEND_IF;\n\nprevTrigger := trigger;\ntriggerRisingEdge := trigger AND NOT prevTrigger;\n\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "The user wants me to implement a moving average function block in Structured Text for CODESYS 3.5. Let me break down the requirements:\n\n1. Moving arithmetic mean calculation\n2. Cyclic execution when `cyclicExecution` is TRUE\n3. Trigger-based execution on rising edge of `trigger`\n4. Reset functionality when `reset` is TRUE\n5. Window size validation (1-100)\n6. Status codes: 16#0000 (success), 16#8200 (window size error)\n7. `windowSizeReached` output to indicate if window is full\n8. `error` output for error indication\n\nLet me design the function block:\n\n**Engineering Contract:**\n- Inputs: cyclicExecution, trigger, value, windowSize, reset\n- Outputs: average, windowSizeReached, error, status\n- State: circular buffer for storing values, count of valid samples, sum accumulator\n- PUB001: Moving arithmetic mean - sum/count\n- PUB002: Cyclic execution when cyclicExecution=TRUE\n- PUB003: Rising edge trigger for trigger input\n- PUB004: Reset when reset=TRUE, window validation 1-100\n- PUB006/PUB007: Status codes\n\nI'll need:\n- A circular buffer (array) to store windowSize values\n- A counter for current number of samples\n- A sum accumulator for efficiency\n- Rising edge detection for trigger\n- Validation logic for windowSize\n\nLet me write the ST code:\n\n```st\nFUNCTION_BLOCK FB_MovingAverage\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger : BOOL;\n    value : LREAL;\n    windowSize : INT;\n    reset : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    average : LREAL;\n    windowSizeReached : BOOL;\n    error : BOOL;\n    status : WORD;\nEND_VAR\n\nVAR\n    dataBuffer : ARRAY[1..100] OF LREAL;\n    sampleCount : INT := 0;\n    sumAccumulator : LREAL := 0.0;\n    bufferIndex : INT := 0;\n    triggerPrev : BOOL := FALSE;\nEND_VAR\n```\n\nFor the implementation, I'll validate the window size on reset or first execution, then check for rising edges on trigger or handle cyclic execution. When processing new values, I store them in the circular buffer and maintain a running sum. Once the window fills, I subtract the oldest value before adding the new one to keep the sum accurate. The average is calculated by dividing the sum by the sample count.\n\nThe window size reached flag indicates whether we've collected the full window of samples yet. When reset triggers, I clear the sample counter, sum, buffer index, and error state to start fresh.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The user wants me to implement a moving average function block in Structured Text for CODESYS 3.5. Let me break down the requirements:\n\n1. Moving arithmetic mean calculation\n2. Cyclic execution when `cyclicExecution` is TRUE\n3. Trigger-based execution on rising edge of `trigger`\n4. Reset functionality when `reset` is TRUE\n5. Window size validation (1-100)\n6. Status codes: 16#0000 (success), 16#8200 (window size error)\n7. `windowSizeReached` output to indicate if window is full\n8. `error` output for error indication\n\nLet me design the function block:\n\n**Engineering Contract:**\n- Inputs: cyclicExecution, trigger, value, windowSize, reset\n- Outputs: average, windowSizeReached, error, status\n- State: circular buffer for storing values, count of valid samples, sum accumulator\n- PUB001: Moving arithmetic mean - sum/count\n- PUB002: Cyclic execution when cyclicExecution=TRUE\n- PUB003: Rising edge trigger for trigger input\n- PUB004: Reset when reset=TRUE, window validation 1-100\n- PUB006/PUB007: Status codes\n\nI'll need:\n- A circular buffer (array) to store windowSize values\n- A counter for current number of samples\n- A sum accumulator for efficiency\n- Rising edge detection for trigger\n- Validation logic for windowSize\n\nLet me write the ST code:\n\n```st\nFUNCTION_BLOCK FB_MovingAverage\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger : BOOL;\n    value : LREAL;\n    windowSize : INT;\n    reset : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    average : LREAL;\n    windowSizeReached : BOOL;\n    error : BOOL;\n    status : WORD;\nEND_VAR\n\nVAR\n    dataBuffer : ARRAY[1..100] OF LREAL;\n    sampleCount : INT := 0;\n    sumAccumulator : LREAL := 0.0;\n    bufferIndex : INT := 0;\n    triggerPrev : BOOL := FALSE;\nEND_VAR\n```\n\nFor the implementation, I'll validate the window size on reset or first execution, then check for rising edges on trigger or handle cyclic execution. When processing new values, I store them in the circular buffer and maintain a running sum. Once the window fills, I subtract the oldest value before adding the new one to keep the sum accurate. The average is calculated by dividing the sum by the sample count.\n\nThe window size reached flag indicates whether we've collected the full window of samples yet. When reset triggers, I clear the sample counter, sum, buffer index, and error state to start fresh.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794486072,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 8048,
+      "completion_tokens": 1401,
+      "total_tokens": 9449,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.022648"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
