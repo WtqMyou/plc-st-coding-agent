@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-hqjqlt-1794495402505802474",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\n(* ENGINEERING_CONTRACT\n| Output/State      | Activation          | Retention     | Reset               | Same-scan Priority | Units/Boundaries              |\n|-------------------|---------------------|---------------|---------------------|--------------------|-------------------------------|\n| recipeAdded       | addRecipe success   | Latched       | Implicit next call  | True               | status=16#0000 on success     |\n| recipeDeleted     | deleteRecipe success| Latched       | Implicit next call  | True               | status=16#0000 on success     |\n| recipeModified    | modifyRecipe success| Latched       | Implicit next call  | True               | status=16#0000 on success     |\n| recipeQueryResult | queryRecipe found   | Held          | Implicit next call  | True               | Populated on match; preserved |\n| error             | Any error condition | Latched       | Implicit next call  | True               | 16#8001-16#8005               |\n| status            | Any operation       | Held          | Implicit next call  | True               | Error code or 0               |\n\nOperation Order (same-scan priority): addRecipe > deleteRecipe > modifyRecipe > queryRecipe\nEmpty slot detection: recipeID = 0 in database slot\nDuplicate detection: Any database slot with matching non-zero recipeID\nSearch scope: ARRAY[1..10] OF ST_Recipe, sequential scan\n*)\n(* CONTRACT_RULES [] *)\n\nTYPE ST_Recipe :\nSTRUCT\n    recipeID               : INT;\n    ingredientType         : INT;\n    ingredientRatio        : REAL;\n    productionTemperature  : REAL;\nEND_STRUCT\nEND_TYPE\n\nFUNCTION_BLOCK FB_RecipeManagement\nVAR_INPUT\n    addRecipe    : BOOL;\n    deleteRecipe : BOOL;\n    modifyRecipe : BOOL;\n    queryRecipe  : BOOL;\n    recipeIn     : ST_Recipe;\nEND_VAR\nVAR_OUTPUT\n    recipeAdded       : BOOL;\n    recipeDeleted     : BOOL;\n    recipeModified    : BOOL;\n    recipeQueryResult : ST_Recipe;\n    error             : BOOL;\n    status            : WORD;\nEND_VAR\nVAR_IN_OUT\n    recipe : ARRAY[1..10] OF ST_Recipe;\nEND_VAR\nVAR\n    tmp_index      : INT;\n    tmp_found      : BOOL;\n    tmp_emptySlot  : INT;\n    tmp_emptyFound : BOOL;\nEND_VAR\n\n    recipeAdded  := FALSE;\n    recipeDeleted  := FALSE;\n    recipeModified := FALSE;\n    error          := FALSE;\n    status         := 16#0000;\n\n    IF addRecipe THEN\n        tmp_found      := FALSE;\n        tmp_emptySlot  := 0;\n        tmp_emptyFound := FALSE;\n        tmp_index      := 1;\n\n        FOR tmp_index := 1 TO 10 DO\n            IF recipe[tmp_index].recipeID = recipeIn.recipeID AND recipeIn.recipeID <> 0 THEN\n                tmp_found := TRUE;\n                EXIT;\n            END_IF;\n        END_FOR;\n\n        IF NOT tmp_found THEN\n            FOR tmp_index := 1 TO 10 DO\n                IF recipe[tmp_index].recipeID = 0 THEN\n                    tmp_emptySlot  := tmp_index;\n                    tmp_emptyFound := TRUE;\n                    EXIT;\n                END_IF;\n            END_FOR;\n        END_IF;\n\n        IF tmp_found THEN\n            error  := TRUE;\n            status := 16#8002;\n        ELSIF NOT tmp_emptyFound THEN\n            error  := TRUE;\n            status := 16#8003;\n        ELSE\n            recipe[tmp_emptySlot] := recipeIn;\n            recipeAdded := TRUE;\n            error       := FALSE;\n            status      := 16#0000;\n        END_IF;\n        RETURN;\n    END_IF;\n\n    IF deleteRecipe THEN\n        tmp_found := FALSE;\n        tmp_index := 1;\n\n        FOR tmp_index := 1 TO 10 DO\n            IF recipe[tmp_index].recipeID = recipeIn.recipeID AND recipeIn.recipeID <> 0 THEN\n                tmp_found := TRUE;\n                EXIT;\n            END_IF;\n        END_FOR;\n\n        IF NOT tmp_found THEN\n            error  := TRUE;\n            status := 16#8004;\n        ELSE\n            recipe[tmp_index].recipeID := 0;\n            recipeDeleted := TRUE;\n            error         := FALSE;\n            status        := 16#0000;\n        END_IF;\n        RETURN;\n    END_IF;\n\n    IF modifyRecipe THEN\n        tmp_found := FALSE;\n        tmp_index := 1;\n\n        FOR tmp_index := 1 TO 10 DO\n            IF recipe[tmp_index].recipeID = recipeIn.recipeID AND recipeIn.recipeID <> 0 THEN\n                tmp_found := TRUE;\n                EXIT;\n            END_IF;\n        END_FOR;\n\n        IF NOT tmp_found THEN\n            error  := TRUE;\n            status := 16#8005;\n        ELSE\n            recipe[tmp_index] := recipeIn;\n            recipeModified := TRUE;\n            error          := FALSE;\n            status         := 16#0000;\n        END_IF;\n        RETURN;\n    END_IF;\n\n    IF queryRecipe THEN\n        tmp_found := FALSE;\n        tmp_index := 1;\n\n        FOR tmp_index := 1 TO 10 DO\n            IF recipe[tmp_index].recipeID = recipeIn.recipeID AND recipeIn.recipeID <> 0 THEN\n                tmp_found := TRUE;\n                recipeQueryResult := recipe[tmp_index];\n                EXIT;\n            END_IF;\n        END_FOR;\n\n        IF NOT tmp_found THEN\n            error  := TRUE;\n            status := 16#8001;\n        ELSE\n            error  := FALSE;\n            status := 16#0000;\n        END_IF;\n        RETURN;\n    END_IF;\n\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "The error indicates that ST_Recipe type is not known. I need to define the ST_Recipe type within the code since it's not provided by the system. The ST_Recipe structure is defined in the task description:\n\n| Field | Data Type | Description |\n| --- | --- | --- |\n| `recipeID` | `INT` | Recipe identifier; zero denotes an unused database slot. |\n| `ingredientType` | `INT` | Ingredient-type identifier. |\n| `ingredientRatio` | `REAL` | Ingredient proportion. |\n| `productionTemperature` | `REAL` | Production temperature. |\n\nI need to add a TYPE definition for ST_Recipe at the top of the code, before the FUNCTION_BLOCK.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The error indicates that ST_Recipe type is not known. I need to define the ST_Recipe type within the code since it's not provided by the system. The ST_Recipe structure is defined in the task description:\n\n| Field | Data Type | Description |\n| --- | --- | --- |\n| `recipeID` | `INT` | Recipe identifier; zero denotes an unused database slot. |\n| `ingredientType` | `INT` | Ingredient-type identifier. |\n| `ingredientRatio` | `REAL` | Ingredient proportion. |\n| `productionTemperature` | `REAL` | Production temperature. |\n\nI need to add a TYPE definition for ST_Recipe at the top of the code, before the FUNCTION_BLOCK.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794495403,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 5115,
+      "completion_tokens": 1341,
+      "total_tokens": 6456,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.017384"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
