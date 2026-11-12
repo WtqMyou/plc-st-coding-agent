@@ -1,0 +1,737 @@
+{
+  "pid": "public-medium-06",
+  "source": "public",
+  "difficulty": "medium",
+  "title": "Slab Thickness Alarm and Fault History",
+  "requirements": "Monitor slab-thickness faults on a stone-cutting line, including minimum alarm holding, fault counting, normal-cutting runtime accumulation and a history of the five most recent faults.\n\n1. When THICKNESS_SIGNAL_VALID is TRUE, THICKNESS_FAULT indicates that thickness deviation exceeds tolerance. Activate THICKNESS_ALARM immediately when the fault becomes TRUE, and hold each triggered alarm for at least 500 ms. Keep the alarm active while the fault persists.\n2. On each FALSE-to-TRUE transition of a valid fault signal, increment Slab_Fault_Counter and store the current FaultTimestamp in element 0 of Slab_Fault_History. Shift older entries toward higher indices, retaining only the five most recent entries.\n3. Accumulate Slab_Runtime_Accumulator using CycleTime only while CUTTING_RUN is TRUE, the thickness signal is valid and no thickness fault is present. Otherwise preserve the accumulated value.\n4. At power-up or whenever THICKNESS_SIGNAL_VALID is FALSE, switch off the alarm and clear its holding state. Do not add fault records or accumulate normal runtime while the signal is invalid.\n5. At power-up, initialize the fault count, accumulated runtime and all five history entries to zero. Statistics and history are for observation and maintenance only; they must not alter the cutting equipment's operating permissive, and external callers must not modify history entries.",
+  "variables": [
+    {
+      "name": "THICKNESS_FAULT",
+      "data_type": "BOOL",
+      "description": "Thickness deviation exceeds the permitted tolerance.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "THICKNESS_SIGNAL_VALID",
+      "data_type": "BOOL",
+      "description": "Thickness-signal validity; FALSE means the signal is lost or unavailable.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "CUTTING_RUN",
+      "data_type": "BOOL",
+      "description": "Actual cutting-equipment running status.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "FaultTimestamp",
+      "data_type": "DINT",
+      "description": "Current timestamp in seconds, used as the fault-record identifier.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "CycleTime",
+      "data_type": "TIME",
+      "description": "Actual elapsed interval represented by this invocation; must be positive.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "THICKNESS_ALARM",
+      "data_type": "BOOL",
+      "description": "Thickness alarm with a minimum 500 ms hold duration.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "Slab_Fault_Counter",
+      "data_type": "UINT",
+      "description": "Number of valid thickness-fault occurrences.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "Slab_Runtime_Accumulator",
+      "data_type": "LTIME",
+      "description": "Accumulated normal-cutting runtime.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "Slab_Fault_History",
+      "data_type": "ARRAY[0..4] OF DINT",
+      "description": "Five most recent fault timestamps; index 0 is newest; read-only to callers.",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "当厚度信号无效时，厚度报警必须为 FALSE（无效信号不得报警）",
+      "ltl": "G(THICKNESS_SIGNAL_VALID = FALSE -> THICKNESS_ALARM = FALSE)",
+      "kind": "safety",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S2",
+      "text": "有效健康切割的运行时间按实际调用间隔递增，TIME以毫秒、LTIME以纳秒记录。",
+      "ltl": "G((CUTTING_RUN AND THICKNESS_SIGNAL_VALID AND NOT THICKNESS_FAULT) -> Slab_Runtime_Accumulator = prev(Slab_Runtime_Accumulator) + CycleTime * 1000000)",
+      "kind": "data",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S3",
+      "text": "当信号有效且厚度故障存在时，厚度报警必须为 TRUE（有效故障立即报警）",
+      "ltl": "G(THICKNESS_SIGNAL_VALID = TRUE AND THICKNESS_FAULT = TRUE -> THICKNESS_ALARM = TRUE)",
+      "kind": "sequencing",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S4",
+      "text": "可表示时段内，运行时间只增或保持。",
+      "ltl": "G(Slab_Runtime_Accumulator >= prev(Slab_Runtime_Accumulator))",
+      "kind": "safety",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S5",
+      "text": "历史 index0 记录到时间戳时，故障计数必须已经至少为 1",
+      "ltl": "G(Slab_Fault_History[0] <> 0 -> Slab_Fault_Counter >= 1)",
+      "kind": "data",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S6",
+      "text": "故障计数与 5 条历史队列的写入与移位顺序（未满 5 条与满后移位两种状态）：由用例验证的数据性质",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S7",
+      "text": "无合格切割时运行累计保持。",
+      "ltl": "G(NOT (CUTTING_RUN AND THICKNESS_SIGNAL_VALID AND NOT THICKNESS_FAULT) -> Slab_Runtime_Accumulator = prev(Slab_Runtime_Accumulator))",
+      "kind": "safety",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S8",
+      "text": "仅有效故障的上升沿累加计数，在未达到 UINT 上限时加一。",
+      "ltl": "G(((rising((THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT)) AND NOT prev(Slab_Fault_Counter = 65535)) -> Slab_Fault_Counter = prev(Slab_Fault_Counter) + 1) AND (NOT rising((THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT)) -> Slab_Fault_Counter = prev(Slab_Fault_Counter)))",
+      "kind": "safety",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S9",
+      "text": "新故障写入时间戳并逐槽后移其余四条，无新沿时全部五条保持。",
+      "ltl": "G((rising((THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT)) -> (Slab_Fault_History[0] = FaultTimestamp AND Slab_Fault_History[1] = prev(Slab_Fault_History[0]) AND Slab_Fault_History[2] = prev(Slab_Fault_History[1]) AND Slab_Fault_History[3] = prev(Slab_Fault_History[2]) AND Slab_Fault_History[4] = prev(Slab_Fault_History[3]))) AND (NOT rising((THICKNESS_SIGNAL_VALID AND THICKNESS_FAULT)) -> (Slab_Fault_History[0] = prev(Slab_Fault_History[0]) AND Slab_Fault_History[1] = prev(Slab_Fault_History[1]) AND Slab_Fault_History[2] = prev(Slab_Fault_History[2]) AND Slab_Fault_History[3] = prev(Slab_Fault_History[3]) AND Slab_Fault_History[4] = prev(Slab_Fault_History[4]))))",
+      "kind": "safety",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S10",
+      "text": "报警至少保持到触发后500毫秒，故障持续时保持；信号无效时立即清除。按实际间隔及触发后499毫秒的边界检查。",
+      "ltl": "",
+      "kind": "safety",
+      "verified_by": "timed_simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "M06-01",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 0,
+        "CycleTime": 20
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": false,
+        "Slab_Fault_Counter": 0,
+        "Slab_Runtime_Accumulator": 20000000,
+        "Slab_Fault_History": [
+          0,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "按实际 CycleTime 复验运行时长、信号有效性或故障历史。",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true,
+      "scan_interval_ms": 20
+    },
+    {
+      "tc_id": "M06-02",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 100,
+        "CycleTime": 20
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 1,
+        "Slab_Runtime_Accumulator": 20000000,
+        "Slab_Fault_History": [
+          100,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "按实际 CycleTime 复验运行时长、信号有效性或故障历史。",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 2,
+      "expect_full": true,
+      "scan_interval_ms": 20
+    },
+    {
+      "tc_id": "M06-03",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": false,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 999,
+        "CycleTime": 20
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": false,
+        "Slab_Fault_Counter": 1,
+        "Slab_Runtime_Accumulator": 20000000,
+        "Slab_Fault_History": [
+          100,
+          0,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "按实际 CycleTime 复验运行时长、信号有效性或故障历史。",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 3,
+      "expect_full": true,
+      "scan_interval_ms": 20
+    },
+    {
+      "tc_id": "M06-04",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 200,
+        "CycleTime": 20
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 2,
+        "Slab_Runtime_Accumulator": 20000000,
+        "Slab_Fault_History": [
+          200,
+          100,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "按实际 CycleTime 复验运行时长、信号有效性或故障历史。",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true,
+      "scan_interval_ms": 20
+    },
+    {
+      "tc_id": "M06-05",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 200,
+        "CycleTime": 20
+      },
+      "const_inputs": {},
+      "expected": {
+        "Slab_Fault_Counter": 2,
+        "Slab_Runtime_Accumulator": 540000000,
+        "Slab_Fault_History": [
+          200,
+          100,
+          0,
+          0,
+          0
+        ]
+      },
+      "note": "按实际 CycleTime 复验运行时长、信号有效性或故障历史。",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 26,
+      "expect_full": false,
+      "scan_interval_ms": 20
+    },
+    {
+      "tc_id": "M06-06",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 300,
+        "CycleTime": 20
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 3,
+        "Slab_Runtime_Accumulator": 540000000,
+        "Slab_Fault_History": [
+          300,
+          200,
+          100,
+          0,
+          0
+        ]
+      },
+      "note": "按实际 CycleTime 复验运行时长、信号有效性或故障历史。",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true,
+      "scan_interval_ms": 20
+    },
+    {
+      "tc_id": "M06-07",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": false,
+        "FaultTimestamp": 300,
+        "CycleTime": 20
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 3,
+        "Slab_Runtime_Accumulator": 540000000,
+        "Slab_Fault_History": [
+          300,
+          200,
+          100,
+          0,
+          0
+        ]
+      },
+      "note": "按实际 CycleTime 复验运行时长、信号有效性或故障历史。",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true,
+      "scan_interval_ms": 20
+    },
+    {
+      "tc_id": "M06-08",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 400,
+        "CycleTime": 20
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 4,
+        "Slab_Runtime_Accumulator": 540000000,
+        "Slab_Fault_History": [
+          400,
+          300,
+          200,
+          100,
+          0
+        ]
+      },
+      "note": "按实际 CycleTime 复验运行时长、信号有效性或故障历史。",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true,
+      "scan_interval_ms": 20
+    },
+    {
+      "tc_id": "M06-09",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 400,
+        "CycleTime": 20
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 4,
+        "Slab_Runtime_Accumulator": 560000000,
+        "Slab_Fault_History": [
+          400,
+          300,
+          200,
+          100,
+          0
+        ]
+      },
+      "note": "按实际 CycleTime 复验运行时长、信号有效性或故障历史。",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true,
+      "scan_interval_ms": 20
+    },
+    {
+      "tc_id": "M06-10",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 500,
+        "CycleTime": 20
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 5,
+        "Slab_Runtime_Accumulator": 560000000,
+        "Slab_Fault_History": [
+          500,
+          400,
+          300,
+          200,
+          100
+        ]
+      },
+      "note": "按实际 CycleTime 复验运行时长、信号有效性或故障历史。",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true,
+      "scan_interval_ms": 20
+    },
+    {
+      "tc_id": "M06-11",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 500,
+        "CycleTime": 20
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 5,
+        "Slab_Runtime_Accumulator": 580000000,
+        "Slab_Fault_History": [
+          500,
+          400,
+          300,
+          200,
+          100
+        ]
+      },
+      "note": "按实际 CycleTime 复验运行时长、信号有效性或故障历史。",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true,
+      "scan_interval_ms": 20
+    },
+    {
+      "tc_id": "M06-12",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": true,
+        "FaultTimestamp": 600,
+        "CycleTime": 20
+      },
+      "const_inputs": {},
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 6,
+        "Slab_Runtime_Accumulator": 580000000,
+        "Slab_Fault_History": [
+          600,
+          500,
+          400,
+          300,
+          200
+        ]
+      },
+      "note": "按实际 CycleTime 复验运行时长、信号有效性或故障历史。",
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "expect_full": true,
+      "scan_interval_ms": 20
+    },
+    {
+      "tc_id": "hold-500ms-1",
+      "inputs": {
+        "THICKNESS_FAULT": true,
+        "THICKNESS_SIGNAL_VALID": true,
+        "CUTTING_RUN": false,
+        "FaultTimestamp": 101,
+        "CycleTime": 34
+      },
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 1,
+        "Slab_Fault_History": [
+          101,
+          0,
+          0,
+          0,
+          0
+        ],
+        "Slab_Runtime_Accumulator": 0
+      },
+      "note": "按实际 CycleTime 复验运行时长、信号有效性或故障历史。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "group": "hold-500ms",
+      "expect_full": false,
+      "scan_interval_ms": 34
+    },
+    {
+      "tc_id": "hold-500ms-2",
+      "inputs": {
+        "THICKNESS_FAULT": false,
+        "THICKNESS_SIGNAL_VALID": true,
+        "CUTTING_RUN": false,
+        "FaultTimestamp": 101,
+        "CycleTime": 499
+      },
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 1,
+        "Slab_Fault_History": [
+          101,
+          0,
+          0,
+          0,
+          0
+        ],
+        "Slab_Runtime_Accumulator": 0
+      },
+      "note": "距故障起点499毫秒，故障已消失但报警必须维持。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "group": "hold-500ms",
+      "expect_full": false,
+      "scan_interval_ms": 499
+    },
+    {
+      "tc_id": "hold-500ms-3",
+      "inputs": {
+        "THICKNESS_FAULT": false,
+        "THICKNESS_SIGNAL_VALID": true,
+        "CUTTING_RUN": false,
+        "FaultTimestamp": 101,
+        "CycleTime": 1
+      },
+      "expected": {
+        "Slab_Fault_Counter": 1,
+        "Slab_Fault_History": [
+          101,
+          0,
+          0,
+          0,
+          0
+        ],
+        "Slab_Runtime_Accumulator": 0
+      },
+      "note": "达到最小保持时间后，原文未指定最迟清除时刻，此拍只检查计数、时间及历史。",
+      "const_inputs": {},
+      "init": {},
+      "mode": "sequence",
+      "cycles": 1,
+      "group": "hold-500ms",
+      "expect_full": false,
+      "scan_interval_ms": 1
+    },
+    {
+      "tc_id": "slab-elapsed-1",
+      "group": "unequal-scans",
+      "mode": "sequence",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": true,
+        "CycleTime": 3,
+        "FaultTimestamp": 0
+      },
+      "expected": {
+        "Slab_Runtime_Accumulator": 3000000,
+        "THICKNESS_ALARM": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 3,
+      "note": ""
+    },
+    {
+      "tc_id": "slab-elapsed-2",
+      "group": "unequal-scans",
+      "mode": "sequence",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": true,
+        "CycleTime": 117,
+        "FaultTimestamp": 0
+      },
+      "expected": {
+        "Slab_Runtime_Accumulator": 120000000,
+        "THICKNESS_ALARM": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 117,
+      "note": ""
+    },
+    {
+      "tc_id": "slab-elapsed-3",
+      "group": "unequal-scans",
+      "mode": "sequence",
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": true,
+        "CycleTime": 880,
+        "FaultTimestamp": 0
+      },
+      "expected": {
+        "Slab_Runtime_Accumulator": 1000000000,
+        "THICKNESS_ALARM": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 880,
+      "note": ""
+    },
+    {
+      "tc_id": "elapsed-hold-0",
+      "group": "short-intervals",
+      "mode": "sequence",
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": false,
+        "FaultTimestamp": 50,
+        "CycleTime": 1
+      },
+      "expected": {
+        "THICKNESS_ALARM": false,
+        "Slab_Fault_Counter": 0
+      }
+    },
+    {
+      "tc_id": "elapsed-hold-1",
+      "group": "short-intervals",
+      "mode": "sequence",
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": false,
+        "FaultTimestamp": 50,
+        "CycleTime": 1
+      },
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 1
+      }
+    },
+    {
+      "tc_id": "elapsed-hold-2",
+      "group": "short-intervals",
+      "mode": "sequence",
+      "cycles": 35,
+      "scan_interval_ms": 1,
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": false,
+        "CUTTING_RUN": false,
+        "FaultTimestamp": 50,
+        "CycleTime": 1
+      },
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 1
+      }
+    },
+    {
+      "tc_id": "elapsed-hold-3",
+      "group": "short-intervals",
+      "mode": "sequence",
+      "cycles": 1,
+      "scan_interval_ms": 10,
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": false,
+        "FaultTimestamp": 50,
+        "CycleTime": 10
+      },
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 2
+      }
+    },
+    {
+      "tc_id": "elapsed-hold-4",
+      "group": "short-intervals",
+      "mode": "sequence",
+      "cycles": 1,
+      "scan_interval_ms": 600,
+      "inputs": {
+        "THICKNESS_SIGNAL_VALID": true,
+        "THICKNESS_FAULT": true,
+        "CUTTING_RUN": false,
+        "FaultTimestamp": 50,
+        "CycleTime": 600
+      },
+      "expected": {
+        "THICKNESS_ALARM": true,
+        "Slab_Fault_Counter": 2
+      }
+    }
+  ],
+  "provenance": {
+    "source_record": "sources/index.json#public-medium-06",
+    "release_contract": "STBench-F1.4"
+  },
+  "language": "en",
+  "raw_text": "# Slab Thickness Alarm and Fault History\n\n- **Difficulty:** Medium (medium)\n\n## Requirements\n\nMonitor slab-thickness faults on a stone-cutting line, including minimum alarm holding, fault counting, normal-cutting runtime accumulation and a history of the five most recent faults.\n\n1. When THICKNESS_SIGNAL_VALID is TRUE, THICKNESS_FAULT indicates that thickness deviation exceeds tolerance. Activate THICKNESS_ALARM immediately when the fault becomes TRUE, and hold each triggered alarm for at least 500 ms. Keep the alarm active while the fault persists.\n2. On each FALSE-to-TRUE transition of a valid fault signal, increment Slab_Fault_Counter and store the current FaultTimestamp in element 0 of Slab_Fault_History. Shift older entries toward higher indices, retaining only the five most recent entries.\n3. Accumulate Slab_Runtime_Accumulator using CycleTime only while CUTTING_RUN is TRUE, the thickness signal is valid and no thickness fault is present. Otherwise preserve the accumulated value.\n4. At power-up or whenever THICKNESS_SIGNAL_VALID is FALSE, switch off the alarm and clear its holding state. Do not add fault records or accumulate normal runtime while the signal is invalid.\n5. At power-up, initialize the fault count, accumulated runtime and all five history entries to zero. Statistics and history are for observation and maintenance only; they must not alter the cutting equipment's operating permissive, and external callers must not modify history entries.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `THICKNESS_FAULT` | `BOOL` | Thickness deviation exceeds the permitted tolerance. |\n| Input | `THICKNESS_SIGNAL_VALID` | `BOOL` | Thickness-signal validity; FALSE means the signal is lost or unavailable. |\n| Input | `CUTTING_RUN` | `BOOL` | Actual cutting-equipment running status. |\n| Input | `FaultTimestamp` | `DINT` | Current timestamp in seconds, used as the fault-record identifier. |\n| Input | `CycleTime` | `TIME` | Actual elapsed interval represented by this invocation; must be positive. |\n| Output | `THICKNESS_ALARM` | `BOOL` | Thickness alarm with a minimum 500 ms hold duration. |\n| Output | `Slab_Fault_Counter` | `UINT` | Number of valid thickness-fault occurrences. |\n| Output | `Slab_Runtime_Accumulator` | `LTIME` | Accumulated normal-cutting runtime. |\n| Output | `Slab_Fault_History` | `ARRAY[0..4] OF DINT` | Five most recent fault timestamps; index 0 is newest; read-only to callers. |",
+  "case_mode": "sequence"
+}

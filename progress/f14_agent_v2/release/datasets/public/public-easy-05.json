@@ -1,0 +1,373 @@
+{
+  "pid": "public-easy-05",
+  "source": "public",
+  "difficulty": "easy",
+  "title": "Weld Gap Alarm and Startup Inhibition",
+  "requirements": "Control a weld-gap alarm with power-up monitoring inhibition, input debouncing during normal monitoring and emergency-stop priority.\n\n1. Gap_Exceeded indicates that the scanner has detected a weld gap exceeding the permitted 1.5 mm value.\n2. Begin with a 5-second initialization inhibition period after power-up. During this period, Operator_Alert is FALSE, Weld_Soft_Start_Active is TRUE, and gap-signal debounce time does not accumulate.\n3. Resume gap monitoring after initialization. Allow the alarm only after Gap_Exceeded has remained TRUE for DebounceTime. When the signal becomes FALSE, switch off the alarm and clear debounce timing.\n4. When Weld_E_Stop_NC is FALSE, the emergency stop takes priority over initialization and normal monitoring. Operator_Alert must immediately become FALSE and any incomplete debounce timing must be cleared.\n5. Weld_Soft_Start_Active indicates only the power-up inhibition period; it does not represent a continuous speed ramp.",
+  "variables": [
+    {
+      "name": "Gap_Exceeded",
+      "data_type": "BOOL",
+      "description": "Scanner indication that the gap exceeds 1.5 mm.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "Weld_E_Stop_NC",
+      "data_type": "BOOL",
+      "description": "TRUE means the emergency stop is inactive; FALSE means it is active.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "DebounceTime",
+      "data_type": "TIME",
+      "description": "Gap-signal debounce duration during normal monitoring; must be positive.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "Operator_Alert",
+      "data_type": "BOOL",
+      "description": "Audible and visual alarm command.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "Weld_Soft_Start_Active",
+      "data_type": "BOOL",
+      "description": "Monitoring-inhibition status during the 5-second power-up initialization.",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "当上电抑制期指示为 TRUE 时，报警必须为 FALSE（抑制期内屏蔽报警）。",
+      "ltl": "G(Weld_Soft_Start_Active -> NOT Operator_Alert)",
+      "kind": "safety",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S2",
+      "text": "当急停按下（Weld_E_Stop_NC=FALSE）时，报警必须为 FALSE（急停优先）。",
+      "ltl": "G(NOT Weld_E_Stop_NC -> NOT Operator_Alert)",
+      "kind": "safety",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S3",
+      "text": "报警为 TRUE 时必须同时满足：间隙超差为 TRUE 且急停未按下。",
+      "ltl": "G(Operator_Alert -> (Gap_Exceeded AND Weld_E_Stop_NC))",
+      "kind": "safety",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S5",
+      "text": "上电前5秒抑制；监控期间仅在有效超差信号连续达到实际 DebounceTime 后报警。用0、4999、5000毫秒及三种去抖时长复验。",
+      "ltl": "",
+      "kind": "data",
+      "verified_by": "timed_simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "weld-time-1",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 750
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": true
+      },
+      "cycles": 1,
+      "scan_interval_ms": 0,
+      "note": ""
+    },
+    {
+      "tc_id": "weld-time-2",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 750
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": true
+      },
+      "cycles": 1,
+      "scan_interval_ms": 999,
+      "note": ""
+    },
+    {
+      "tc_id": "weld-time-3",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 750
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": true
+      },
+      "cycles": 1,
+      "scan_interval_ms": 4000,
+      "note": ""
+    },
+    {
+      "tc_id": "weld-time-4",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 750
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": ""
+    },
+    {
+      "tc_id": "weld-time-5",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 750
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 749,
+      "note": ""
+    },
+    {
+      "tc_id": "weld-time-6",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 750
+      },
+      "expected": {
+        "Operator_Alert": true,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": ""
+    },
+    {
+      "tc_id": "weld-time-7",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": false,
+        "DebounceTime": 750
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": ""
+    },
+    {
+      "tc_id": "weld-time-8",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": false,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 1500
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": "在急停释放时也观察到间隙恢复正常，合法实现都须清零去抖。"
+    },
+    {
+      "tc_id": "weld-time-9",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 1500
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 900,
+      "note": ""
+    },
+    {
+      "tc_id": "weld-time-10",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 1500
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1499,
+      "note": ""
+    },
+    {
+      "tc_id": "weld-time-11",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 1500
+      },
+      "expected": {
+        "Operator_Alert": true,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": ""
+    },
+    {
+      "tc_id": "weld-time-12",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": false,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 1500
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": ""
+    },
+    {
+      "tc_id": "weld-time-13",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 150
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 30,
+      "note": ""
+    },
+    {
+      "tc_id": "weld-time-14",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 150
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 50,
+      "note": ""
+    },
+    {
+      "tc_id": "weld-time-14-stop",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": false,
+        "DebounceTime": 150
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": "去抖仅51毫秒，未完成时触发急停。"
+    },
+    {
+      "tc_id": "weld-time-15",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 150
+      },
+      "expected": {
+        "Operator_Alert": false,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 100,
+      "note": "急停释放时从零开始，先前未完成的计时不能触发报警。"
+    },
+    {
+      "tc_id": "weld-time-15-done",
+      "group": "startup-and-rearm",
+      "mode": "sequence",
+      "inputs": {
+        "Gap_Exceeded": true,
+        "Weld_E_Stop_NC": true,
+        "DebounceTime": 150
+      },
+      "expected": {
+        "Operator_Alert": true,
+        "Weld_Soft_Start_Active": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 150,
+      "note": "急停释放后连续满150毫秒，报警有效。"
+    }
+  ],
+  "provenance": {
+    "source_record": "sources/index.json#public-easy-05",
+    "release_contract": "STBench-F1.4"
+  },
+  "language": "en",
+  "raw_text": "# Weld Gap Alarm and Startup Inhibition\n\n- **Difficulty:** Easy (easy)\n\n## Requirements\n\nControl a weld-gap alarm with power-up monitoring inhibition, input debouncing during normal monitoring and emergency-stop priority.\n\n1. Gap_Exceeded indicates that the scanner has detected a weld gap exceeding the permitted 1.5 mm value.\n2. Begin with a 5-second initialization inhibition period after power-up. During this period, Operator_Alert is FALSE, Weld_Soft_Start_Active is TRUE, and gap-signal debounce time does not accumulate.\n3. Resume gap monitoring after initialization. Allow the alarm only after Gap_Exceeded has remained TRUE for DebounceTime. When the signal becomes FALSE, switch off the alarm and clear debounce timing.\n4. When Weld_E_Stop_NC is FALSE, the emergency stop takes priority over initialization and normal monitoring. Operator_Alert must immediately become FALSE and any incomplete debounce timing must be cleared.\n5. Weld_Soft_Start_Active indicates only the power-up inhibition period; it does not represent a continuous speed ramp.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `Gap_Exceeded` | `BOOL` | Scanner indication that the gap exceeds 1.5 mm. |\n| Input | `Weld_E_Stop_NC` | `BOOL` | TRUE means the emergency stop is inactive; FALSE means it is active. |\n| Input | `DebounceTime` | `TIME` | Gap-signal debounce duration during normal monitoring; must be positive. |\n| Output | `Operator_Alert` | `BOOL` | Audible and visual alarm command. |\n| Output | `Weld_Soft_Start_Active` | `BOOL` | Monitoring-inhibition status during the 5-second power-up initialization. |",
+  "case_mode": "sequence"
+}
