@@ -1,0 +1,13 @@
+{
+  "name": "FB_AnalogBatchProcessing",
+  "kind": "FUNCTION_BLOCK",
+  "types": [
+    "TYPE ST_AnalogChannel\nSTRUCT\n    enable        : BOOL;\n    hiLIM         : REAL;\n    loLIM         : REAL;\n    bipolar       : BOOL;\n    measuringMode : INT;\n    retVal        : WORD;\n    outputValue   : REAL;\nEND_STRUCT\nEND_TYPE"
+  ],
+  "declaration": "FUNCTION_BLOCK FB_AnalogBatchProcessing\n\nVAR_INPUT\n    count : DINT;\nEND_VAR\nVAR_IN_OUT\n    analogValues : ARRAY[*] OF INT;\n    channels     : ARRAY[*] OF ST_AnalogChannel;\nEND_VAR\nVAR\n    i         : DINT;\n    lowerIdx  : DINT;\n    upperIdx  : DINT;\n    rawValue  : INT;\nEND_VAR\n\n",
+  "implementation": "lowerIdx := LOWER_BOUND(analogValues, 1);\nupperIdx := lowerIdx + count - 1;\n\nFOR i := lowerIdx TO upperIdx DO\n    rawValue := analogValues[i];\n    \n    IF channels[i].enable THEN\n        CASE channels[i].measuringMode OF\n            0: \n                IF channels[i].hiLIM > channels[i].loLIM THEN\n                    IF channels[i].bipolar THEN\n                        channels[i].outputValue := channels[i].loLIM + \n                            ((TO_REAL(rawValue) + 27648.0) / 55296.0) * \n                            (channels[i].hiLIM - channels[i].loLIM);\n                    ELSE\n                        channels[i].outputValue := channels[i].loLIM + \n                            (TO_REAL(rawValue) / 27648.0) * \n                            (channels[i].hiLIM - channels[i].loLIM);\n                    END_IF;\n                    channels[i].retVal := 16#0000;\n                ELSE\n                    channels[i].retVal := 16#8002;\n                END_IF;\n                \n            1: \n                channels[i].outputValue := TO_REAL(rawValue) / 10.0;\n                channels[i].retVal := 16#0000;\n                \n            2: \n                channels[i].outputValue := TO_REAL(rawValue) / 100.0;\n                channels[i].retVal := 16#0000;\n                \n            ELSE\n                channels[i].retVal := 16#8001;\n        END_CASE;\n    END_IF;\nEND_FOR;",
+  "template": "E:\\PLC_Dev\\builds\\codesys_template.project",
+  "project": "E:\\PLC_Dev\\builds\\codesys\\diag_v4_public-medium-02_764ae152db\\candidate.project",
+  "result": "E:\\PLC_Dev\\builds\\codesys\\diag_v4_public-medium-02_764ae152db\\codesys_result.json",
+  "nonce": "7dcd2053509f47c8832598309e515821"
+}

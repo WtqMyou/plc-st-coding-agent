@@ -1,0 +1,13 @@
+{
+  "name": "AnalogBatchProcessing",
+  "kind": "FUNCTION_BLOCK",
+  "types": [
+    "TYPE ST_AnalogChannel :\nSTRUCT\n    enable : BOOL;\n    hiLIM : REAL;\n    loLIM : REAL;\n    bipolar : BOOL;\n    measuringMode : INT;\n    retVal : WORD;\n    outputValue : REAL;\nEND_STRUCT\nEND_TYPE"
+  ],
+  "declaration": "FUNCTION_BLOCK AnalogBatchProcessing\n\nVAR_INPUT\n    count : DINT;\nEND_VAR\nVAR_IN_OUT\n    analogValues : ARRAY[*] OF INT;\n    channels : ARRAY[*] OF ST_AnalogChannel;\nEND_VAR\nVAR\n    i : DINT;\n    raw : INT;\n    rawReal : REAL;\n    valueIndex : DINT;\n    channelIndex : DINT;\nEND_VAR\n\n",
+  "implementation": "FOR i := 0 TO count - 1 DO\n    valueIndex := LOWER_BOUND(analogValues, 1) + i;\n    channelIndex := LOWER_BOUND(channels, 1) + i;\n\n    IF channels[channelIndex].enable THEN\n        raw := analogValues[valueIndex];\n\n        IF (channels[channelIndex].measuringMode <> 0) AND\n           (channels[channelIndex].measuringMode <> 1) AND\n           (channels[channelIndex].measuringMode <> 2) THEN\n            channels[channelIndex].retVal := 16#8001;\n        ELSIF channels[channelIndex].hiLIM <= channels[channelIndex].loLIM THEN\n            channels[channelIndex].retVal := 16#8002;\n        ELSE\n            channels[channelIndex].retVal := 16#0000;\n            rawReal := INT_TO_REAL(raw);\n\n            CASE channels[channelIndex].measuringMode OF\n                0:\n                    IF channels[channelIndex].bipolar THEN\n                        channels[channelIndex].outputValue :=\n                            channels[channelIndex].loLIM +\n                            ((rawReal + 27648.0) / 55296.0) *\n                            (channels[channelIndex].hiLIM - channels[channelIndex].loLIM);\n                    ELSE\n                        channels[channelIndex].outputValue :=\n                            channels[channelIndex].loLIM +\n                            (rawReal / 27648.0) *\n                            (channels[channelIndex].hiLIM - channels[channelIndex].loLIM);\n                    END_IF;\n\n                1:\n                    channels[channelIndex].outputValue := rawReal / 10.0;\n\n                2:\n                    channels[channelIndex].outputValue := rawReal / 100.0;\n            END_CASE;\n        END_IF;\n    END_IF;\nEND_FOR;",
+  "template": "E:\\PLC_Dev\\builds\\codesys_template.project",
+  "project": "E:\\PLC_Dev\\builds\\codesys\\diag_v4_public-medium-02_da40c474ac\\candidate.project",
+  "result": "E:\\PLC_Dev\\builds\\codesys\\diag_v4_public-medium-02_da40c474ac\\codesys_result.json",
+  "nonce": "ff01687779204e9f9198d16da3ef5a32"
+}

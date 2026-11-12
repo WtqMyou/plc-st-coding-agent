@@ -1,0 +1,13 @@
+{
+  "name": "AnalogBatchProcessing",
+  "kind": "FUNCTION_BLOCK",
+  "types": [
+    "TYPE ST_AnalogChannel :\nSTRUCT\n    enable : BOOL;\n    hiLIM : REAL;\n    loLIM : REAL;\n    bipolar : BOOL;\n    measuringMode : INT;\n    retVal : WORD;\n    outputValue : REAL;\nEND_STRUCT\nEND_TYPE"
+  ],
+  "declaration": "FUNCTION_BLOCK AnalogBatchProcessing\n\nVAR_INPUT\n    count : DINT;\nEND_VAR\nVAR_IN_OUT\n    analogValues : ARRAY[*] OF INT;\n    channels : ARRAY[*] OF ST_AnalogChannel;\nEND_VAR\nVAR\n    i : DINT;\n    idxA : DINT;\n    idxC : DINT;\n    lbA : DINT;\n    lbC : DINT;\n    raw : INT;\n    rawReal : REAL;\n    rawMin : REAL;\n    rawSpan : REAL;\n    engSpan : REAL;\nEND_VAR\n\n    ",
+  "implementation": "lbA := LOWER_BOUND(analogValues, 1);\n    lbC := LOWER_BOUND(channels, 1);\n\n    FOR i := 0 TO count - 1 DO\n        idxA := lbA + i;\n        idxC := lbC + i;\n\n        IF channels[idxC].enable THEN\n            IF channels[idxC].measuringMode <> 0 AND channels[idxC].measuringMode <> 1 AND channels[idxC].measuringMode <> 2 THEN\n                channels[idxC].retVal := WORD#16#8001;\n            ELSIF channels[idxC].hiLIM <= channels[idxC].loLIM THEN\n                channels[idxC].retVal := WORD#16#8002;\n            ELSE\n                raw := analogValues[idxA];\n                rawReal := INT_TO_REAL(raw);\n                CASE channels[idxC].measuringMode OF\n                    0:\n                        IF channels[idxC].bipolar THEN\n                            rawMin := -27648.0;\n                            rawSpan := 55296.0;\n                        ELSE\n                            rawMin := 0.0;\n                            rawSpan := 27648.0;\n                        END_IF;\n                        engSpan := channels[idxC].hiLIM - channels[idxC].loLIM;\n                        channels[idxC].outputValue := channels[idxC].loLIM + (rawReal - rawMin) * engSpan / rawSpan;\n                    1:\n                        channels[idxC].outputValue := rawReal / 10.0;\n                    2:\n                        channels[idxC].outputValue := rawReal / 100.0;\n                END_CASE;\n                channels[idxC].retVal := 0;\n            END_IF;\n        END_IF;\n    END_FOR;",
+  "template": "E:\\PLC_Dev\\builds\\codesys_template.project",
+  "project": "E:\\PLC_Dev\\builds\\codesys\\diag_v4_public-medium-02_4057773bb9\\candidate.project",
+  "result": "E:\\PLC_Dev\\builds\\codesys\\diag_v4_public-medium-02_4057773bb9\\codesys_result.json",
+  "nonce": "30c3218636294e10a24a178023032ea4"
+}
