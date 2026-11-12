@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794471859,
+    "id": "resp_0217944718581082fe30231c3416749cd01035ba2ea7b61618b6d",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179447185953400000000000000000000ffffac1551b0b3acdd",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need answer with corrected ST implementation. Need understand failure. Interface names. Requirements. My previous block mistakenly Weld_Soft_Start_Active := PowerUpTimer.Q, so after 5s false. Requirement 2: Begin with 5-second initialization inhibition after power-up. During period Operator_Alert FALSE, Weld_Soft_Start_Active TRUE. So output active while NOT PowerUpTimer.Q. Need also startup latching perhaps if power cycle? TON starts from init and resets after 5 sec. SoftStartActive = NOT PowerUpTimer.Q. Alarm only after init and gap true for DebounceTime, E-stop priority. In previous GapDebounce input gated e-stop and no init but Weld_Soft false initial? Auto test 0/17 likely expected Weld_Soft_Start_Active true in initial trace. Also with e-stop FALSE output immediately false and timer cleared (IN false with TON resets). Need account if E-stop during init, alarm false; soft start? Requirement says emergency stop takes priority over initialization and normal monitoring; Operator alert false, incomplete timing clear. Does Weld_Soft_Start_Active remain true during init even e-stop? Wording: Weld_Soft_Start_Active indicates only power-up inhibition period; emergency stop takes priority over initialization. Could signal soft start perhaps? They only say Operator_Alert immediately FALSE. Interface expects. Likely Weld_Soft_Start_Active = NOT PowerUpTimer.Q regardless. During first 5s true. \n\nDebounce positive. Use TON. But CODESYS: TON local variables instantiate each call? Function block uses persistent local. Fine. We need maybe have a rising reset? Let's derive.\n\nImplementation:\n\nFB maybe name ignored. Requirements no declared FB name given? User asks full code preserving interface. We can use TYPE? only block.\n\nVAR\n  InitTON: TON;\n  GapTON: TON;\nEND_VAR\n\nInitTON(IN := TRUE, PT := T#5S);\nGapTON(IN := Gap_Exceeded AND Weld_E_Stop_NC AND InitTON.Q, PT:=DebounceTime);\n\nOperator_Alert := GapTON.Q;\nWeld_Soft_Start_Active := NOT InitTON.Q;\n\nBut emergency stop priority: if E-Stop false, GapTON.IN false -> TON Q false and elapsed reset to zero next invocation. In same scan, Q ought reset? In CODESYS TON behavior when IN transitions false, Q false immediately. yes.\n\nTest failure reported initial trace one cycle with input gap true DebounceTime 750 (interpret ms maybe). Observed Operator_Alert false, Weld_Soft_Start_Active false. With corrected Weld_Soft true. But 0/17 all \"weld-time\" perhaps expect soft start true and alerts after durations. There could also be issue T#5S fixed.\n\nLet's ensure no reserved identifiers s/r. Names okay.\n\nNeed return only fenced st block no prose. Since user specifically says return complete code. Need likely exact. Could include comment? no. Need maybe assign outputs before RETURN? No RETURN needed.\n\nLet's consider edge semantics with e-stop and soft start. During initialization e-stop active false: Operator false. Weld_Soft_Start_Active maybe should be FALSE if emergency stop priority over initialization. Requirement 4 says emergency stop takes priority over initialization and normal monitoring. Operator_Alert immediately false and debounce cleared. But does Weld_Soft_Start_Active become false? \"Weld_Soft_Start_Active indicates only the power-up inhibition period; it does not represent continuous speed ramp.\" It might continue true even during e-stop? Let's parse exact requirements:\n\n1 Gap indication.\n2 Begin with 5-sec initialization inhibition after power-up. During this period Operator_Alert FALSE, Weld_Soft_Start_Active TRUE, and gap-signal debounce time does not accumulate.\n3 Resume gap monitoring after initialization. Allow alarm only after Gap_Exceeded remains TRUE for DebounceTime. When signal becomes FALSE, switch off alarm and clear debounce timing.\n4 When Weld_E_Stop_NC is FALSE, the emergency stop takes priority over initialization and normal monitoring. Operator_Alert must immediately become FALSE and any incomplete debounce timing must be cleared.\n5 Weld_Soft_Start_Active indicates only the power-up inhibition period; it does not represent continuous speed ramp.\n\n\"takes priority over initialization\" might mean when E-stop active, even though within 5s, output Weld_Soft_Start_Active perhaps should be false? Yet explicitly only Operator_Alert is required false. Interface output Weld_Soft_Start_Active \"Monitoring-inhibition status during 5-second power-up initialization.\" Could emergency stop override means no alarm regardless phase. Soft start is status only, likely NOT PowerUpDone. Could remain true. The test checks both outputs. They may expect during initial sequence after e-stop: Weld_Soft_Start_Active? Need infer from task. \"When Weld_E_Stop_NC is FALSE, emergency stop takes priority over initialization and normal monitoring. Operator_Alert must immediately become FALSE and any incomplete debounce timing must be cleared.\" It doesn't specify Weld_Soft_Start_Active. Since it is merely status of power-up period, should still be true during 5s. So use INIT_DONE := InitTON.Q. \n\nBut consider TON auto-reset if IN false. InitTON input true forever; after PT Q true and remains true. Good.\n\nPotential issue: We need a 5-second timer based on cycle time. TON requires input call. Fine.\n\nCould use TIME_TO_LREAL comparisons? no.\n\nLet's reason test cases weld-time-1 maybe \"Gap_Exceeded true at cycle 0 with DebounceTime 750\" in sequence mode perhaps scan_interval_ms 0 means time advances per cycle? They might simulate CTU? Observing soft start false because previous wrong. Correct output soft start true initial. They expect true. After 5s then alarm after 750? Need variables. \n\nCould there be a need for DebounceTime as TIME and TON PT. Yes.\n\nQuestion says preserve exact interface types; use TIME. Good.\n\nLet's produce corrected block with names no reserved. Could name FB_GapAlarm. The harness may not care block name? Task says one function block implementation. Need maybe output block.\n\nNested use of TON in CODESYS: local `PowerUpTimer : TON; GapDebounce : TON;`. \n\nOne subtlety: E-stop priority \"Operator_Alert must immediately become FALSE\" even if previous Q. In our call ordering, GapDebounce Timer executes before assignment. If e-stop false, IN false, Q false immediately as CODESYS defined, then output false. If due to local ordering with prior state? Standard TON Q is false when IN false in same invocation.\n\nAnother subtlety: initialization timer elapsed should perhaps be paused by e-stop? \"mindest\" no. Emergency priority maybe SoftStart inactive? We'll leave.\n\nNeed no prose, only fenced st. Use `FUNCTION_BLOCK FB_WeldGapMonitor`. Could use `FB_WeldGapAlarm`. User may expect exact maybe no name specified. Use a reasonable name. Earlier failed code used FB_WeldGapAlarm. Preserve. \n\nLet's formulate:\n\n```st\nFUNCTION_BLOCK FB_WeldGapAlarm\nVAR_INPUT\n    Gap_Exceeded: BOOL;\n    Weld_E_Stop_NC: BOOL;\n    DebounceTime: TIME;\nEND_VAR\nVAR_OUTPUT\n    Operator_Alert: BOOL;\n    Weld_Soft_Start_Active: BOOL;\nEND_VAR\nVAR\n    PowerUpTimer: TON;\n    GapDebounceTimer: TON;\n    InitializationDone: BOOL;\nEND_VAR\n\nPowerUpTimer(IN := TRUE, PT := T#5S);\nInitializationDone := PowerUpTimer.Q;\n\nGapDebounceTimer(IN := Gap_Exceeded AND Weld_E_Stop_NC AND InitializationDone,\n                 PT := DebounceTime);\n\nOperator_Alert := GapDebounceTimer.Q;\nWeld_Soft_Start_Active := NOT InitializationDone;\n\nEND_FUNCTION_BLOCK\n```\n\nNo need helper bool perhaps. If DebounceTime positive requirement but no validation. \n\nPotential issue with POWER-UP timer output: TON Q after PT. During exactly 5 s false until elapsed >= PT. The wording begin with period after power-up may mean `Weld_Soft_Start_Active := TRUE` for first 5 sec, so NOT Q is right.\n\nCheck test 0/17 maybe test expected `Weld_Soft_Start_Active` true while initialization timer running. yes.\n\nLet's just respond."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nFUNCTION_BLOCK FB_WeldGapAlarm\nVAR_INPUT\n    Gap_Exceeded : BOOL;\n    Weld_E_Stop_NC : BOOL;\n    DebounceTime : TIME;\nEND_VAR\nVAR_OUTPUT\n    Operator_Alert : BOOL;\n    Weld_Soft_Start_Active : BOOL;\nEND_VAR\nVAR\n    PowerUpTimer : TON;\n    GapDebounceTimer : TON;\n    InitializationDone : BOOL;\nEND_VAR\n\nPowerUpTimer(IN := TRUE, PT := T#5S);\nInitializationDone := PowerUpTimer.Q;\n\nGapDebounceTimer(IN := Gap_Exceeded\n                      AND Weld_E_Stop_NC\n                      AND InitializationDone,\n                 PT := DebounceTime);\n\nOperator_Alert := GapDebounceTimer.Q;\nWeld_Soft_Start_Active := NOT InitializationDone;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179447188726600000000000000000000ffffac1551b0ab8e8c",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 8371,
+      "output_tokens": 2061,
+      "total_tokens": 10432,
+      "input_tokens_details": {
+        "cached_tokens": 6144
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 1856
+      },
+      "cost": "¥0.061252"
+    }
+  }
+}
