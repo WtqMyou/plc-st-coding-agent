@@ -1,0 +1,434 @@
+{
+  "job_id": "custom_minimax-m27/public-hard-04",
+  "pid": "public-hard-04",
+  "condition": "custom_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 40,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 '__ARRAYSIZE'"
+          },
+          {
+            "level": "error",
+            "line": 59,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 '__GETARRAYELEM'"
+          },
+          {
+            "level": "error",
+            "line": 68,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 '__SETARRAYELEM'"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_UNKNOWN_FUNC] 第40行 调用了未知函数/功能块 '__ARRAYSIZE'; [E_UNKNOWN_FUNC] 第59行 调用了未知函数/功能块 '__GETARRAYELEM'; [E_UNKNOWN_FUNC] 第68行 调用了未知函数/功能块 '__SETARRAYELEM'",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "d30aa96814c225fb5086fc0e0c6422bf788f3c17ddb8e1923a11642f8a0e1b5a",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 40 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 '__ARRAYSIZE'\nLine 59 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 '__GETARRAYELEM'\nLine 68 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 '__SETARRAYELEM'",
+      "timing": {
+        "static_seconds": 0.219
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\n(* ENGINEERING_CONTRACT:\n   - Outputs: elementCount (retention, no explicit reset, DINT), status (idle/result, WORD)\n   - Input behaviors: enqueue/dequeue are rising-edge; reset is level-triggered (highest priority)\n   - PUB001: enqueue appends item to tail if queue not full (strict < capacity)\n   - PUB002: dequeue reads head, writes to item, advances head if queue not empty (strict > 0)\n   - PUB003: reset (TRUE) clears head=tail=0, elementCount=0; no buffer overwrite\n   - PUB004: elementCount reflects current valid elements, 0..capacity inclusive\n   - PUB005: rejection returns item/queue unchanged, sets status\n   - PUB006: status 16#0000=no error, 16#8001=dequeue empty, 16#8002=queue full\n   - First invocation: empty queue, capacity derived from __ARRAYSIZE(buffer)\n   - Head and tail wrap via MOD; no same-scan rejection per spec (reset-first priority)\n*)\nVAR_INPUT\n    enqueue  : BOOL;\n    dequeue  : BOOL;\n    reset    : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status       : WORD;\nEND_VAR\nVAR_IN_OUT\n    item   : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    enqueueTrig : R_TRIG;\n    dequeueTrig : R_TRIG;\n    head        : DINT;\n    tail        : DINT;\n    capacity    : DINT;\n    firstRun    : BOOL := TRUE;\nEND_VAR\n\n// (* CONTRACT_RULES [] *)\n\nIF firstRun THEN\n    firstRun := FALSE;\n    capacity := __ARRAYSIZE(buffer);\n    head := 0;\n    tail := 0;\n    elementCount := 0;\n    status := 16#0000;\nEND_IF;\n\nenqueueTrig(CLK := enqueue);\ndequeueTrig(CLK := dequeue);\n\nIF reset THEN\n    head := 0;\n    tail := 0;\n    elementCount := 0;\n    status := 16#0000;\nELSIF dequeueTrig.Q THEN\n    IF elementCount = 0 THEN\n        status := 16#8001;\n    ELSE\n        item := __GETARRAYELEM(buffer, head + 1);\n        head := (head + 1) MOD capacity;\n        elementCount := elementCount - 1;\n        status := 16#0000;\n    END_IF;\nELSIF enqueueTrig.Q THEN\n    IF elementCount >= capacity THEN\n        status := 16#8002;\n    ELSE\n        __SETARRAYELEM(buffer, tail + 1, item);\n        tail := (tail + 1) MOD capacity;\n        elementCount := elementCount + 1;\n        status := 16#0000;\n    END_IF;\nELSE\n    status := 16#0000;\nEND_IF;\nEND_FUNCTION_BLOCK",
+      "code_hash": "d30aa96814c225fb5086fc0e0c6422bf788f3c17ddb8e1923a11642f8a0e1b5a",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 12,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006"
+        ]
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 2327,
+      "completion_tokens": 5125,
+      "cost_cny": 0.037869993000000005,
+      "latency_s": 90.062,
+      "generation_seconds": 90.062,
+      "end_to_end_seconds": 90.281,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 1455,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "3e4df2f9502ef6bfd2699563745ed4f9bd5257ef8b2100694539bc2d792025ef",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 15,
+            "code": "E_BAD_STMT",
+            "message": "无法解析的语句，遇到 'ANY_ELEMENT'"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "71b52ba7bace8bef3066ae441bac2de3d9c3c4336d03e14a5befa0af5d304ca5",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 15 [E_BAD_STMT]: 无法解析的语句，遇到 'ANY_ELEMENT'\nLine 0 [E_NO_POU]: 未找到可执行 POU",
+      "timing": {
+        "static_seconds": 0.188
+      },
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB\n(* ENGINEERING_CONTRACT:\n   - Outputs: elementCount (retention, no explicit reset, DINT), status (idle/result, WORD)\n   - Input behaviors: enqueue/dequeue are rising-edge; reset is level-triggered (highest priority)\n   - PUB001: enqueue appends item to tail if queue not full (strict < capacity)\n   - PUB002: dequeue reads head, writes to item, advances head if queue not empty (strict > 0)\n   - PUB003: reset (TRUE) clears head=tail=lowerBound, elementCount=0; no buffer overwrite\n   - PUB004: elementCount reflects current valid elements, 0..capacity inclusive\n   - PUB005: rejection returns item/queue unchanged, sets status\n   - PUB006: status 16#0000=no error, 16#8001=dequeue empty, 16#8002=queue full\n   - First invocation: empty queue, capacity derived from LOWER_BOUND/UPPER_BOUND\n   - Head and tail wrap via MOD; reset takes priority over same-scan enqueue/dequeue\n*)\n\nTYPE ANY_ELEMENT : BYTE(0); END_TYPE;\n\nVAR_INPUT\n    enqueue  : BOOL;\n    dequeue  : BOOL;\n    reset    : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status       : WORD;\nEND_VAR\nVAR_IN_OUT\n    item   : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    enqueueTrig : R_TRIG;\n    dequeueTrig : R_TRIG;\n    head        : DINT;\n    tail        : DINT;\n    capacity    : DINT;\n    lower       : DINT;\n    firstRun    : BOOL := TRUE;\n    local_item  : ANY_ELEMENT;\nEND_VAR\n\n// (* CONTRACT_RULES [] *)\n\nIF firstRun THEN\n    firstRun := TRUE;\n    lower    := LOWER_BOUND(buffer, 1);\n    capacity := UPPER_BOUND(buffer, 1) - LOWER_BOUND(buffer, 1) + 1;\n    head     := lower;\n    tail     := lower;\n    elementCount := 0;\n    status   := 16#0000;\n    firstRun := FALSE;\nEND_IF;\n\nenqueueTrig(CLK := enqueue);\ndequeueTrig(CLK := dequeue);\n\nIF reset THEN\n    head := lower;\n    tail := lower;\n    elementCount := 0;\n    status := 16#0000;\nELSIF dequeueTrig.Q THEN\n    IF elementCount = 0 THEN\n        status := 16#8001;\n    ELSE\n        local_item := buffer[head];\n        item := local_item;\n        head := lower + ((head - lower + 1) MOD capacity);\n        elementCount := elementCount - 1;\n        status := 16#0000;\n    END_IF;\nELSIF enqueueTrig.Q THEN\n    IF elementCount >= capacity THEN\n        status := 16#8002;\n    ELSE\n        local_item := item;\n        buffer[tail] := local_item;\n        tail := lower + ((tail - lower + 1) MOD capacity);\n        elementCount := elementCount + 1;\n        status := 16#0000;\n    END_IF;\nELSE\n    status := 16#0000;\nEND_IF;\nEND_FUNCTION_BLOCK",
+      "code_hash": "71b52ba7bace8bef3066ae441bac2de3d9c3c4336d03e14a5befa0af5d304ca5",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 12,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006"
+        ]
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 3350,
+      "completion_tokens": 5589,
+      "cost_cny": 0.042646254,
+      "latency_s": 102.89,
+      "generation_seconds": 102.89,
+      "end_to_end_seconds": 103.078,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 933,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "62bd7cde38e93b44a3f357a551ed2494f5a9f5a1ab4113df66d0071b4ac7e796",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 39,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'SIZEOF'"
+          },
+          {
+            "level": "error",
+            "line": 39,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'SIZEOF'"
+          },
+          {
+            "level": "error",
+            "line": 62,
+            "code": "E_TYPE_MISMATCH",
+            "message": "类型不匹配：DINT 不能赋给 VARIANT"
+          },
+          {
+            "level": "error",
+            "line": 71,
+            "code": "E_TYPE_MISMATCH",
+            "message": "类型不匹配：VARIANT 不能赋给 DINT"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_UNKNOWN_FUNC] 第39行 调用了未知函数/功能块 'SIZEOF'; [E_UNKNOWN_FUNC] 第39行 调用了未知函数/功能块 'SIZEOF'; [E_TYPE_MISMATCH] 第62行 类型不匹配：DINT 不能赋给 VARIANT",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "7c64309bcb8caea2d1e57b24a0b3fdd0a53a16df8149323e885836ef3cf6f3cf",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 39 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 'SIZEOF'\nLine 39 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 'SIZEOF'\nLine 62 [E_TYPE_MISMATCH]: 类型不匹配：DINT 不能赋给 VARIANT\nLine 71 [E_TYPE_MISMATCH]: 类型不匹配：VARIANT 不能赋给 DINT",
+      "timing": {
+        "static_seconds": 0.156
+      },
+      "idx": 2,
+      "code": "FUNCTION_BLOCK FB\n(* ENGINEERING_CONTRACT:\n   - Outputs: elementCount (retention, no explicit reset, DINT), status (idle/result, WORD)\n   - Input behaviors: enqueue/dequeue are rising-edge; reset is level-triggered (highest priority)\n   - PUB001: enqueue appends item to tail if queue not full (strict < capacity)\n   - PUB002: dequeue reads head, writes to item, advances head if queue not empty (strict > 0)\n   - PUB003: reset (TRUE) clears head=tail=0, elementCount=0; no buffer overwrite\n   - PUB004: elementCount reflects current valid elements, 0..capacity inclusive\n   - PUB005: rejection returns item/queue unchanged, sets status\n   - PUB006: status 16#0000=no error, 16#8001=dequeue empty, 16#8002=queue full\n   - First invocation: empty queue, capacity derived from SIZEOF(buffer)/SIZEOF(element)\n   - Head and tail wrap via MOD; reset-first priority per spec\n*)\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset   : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status       : WORD;\nEND_VAR\nVAR_IN_OUT\n    item   : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    enqueueTrig : R_TRIG;\n    dequeueTrig : R_TRIG;\n    head        : DINT;\n    tail        : DINT;\n    capacity    : DINT;\n    firstRun    : BOOL := TRUE;\n    tmpElement  : DINT;\nEND_VAR\n\nIF firstRun THEN\n    firstRun    := FALSE;\n    capacity    := SIZEOF(buffer) / SIZEOF(buffer[1]);\n    head        := 0;\n    tail        := 0;\n    elementCount := 0;\n    status      := 16#0000;\nEND_IF;\n\nenqueueTrig(CLK := enqueue);\ndequeueTrig(CLK := dequeue);\n\nIF reset THEN\n    head        := 0;\n    tail        := 0;\n    elementCount := 0;\n    status      := 16#0000;\n    RETURN;\nEND_IF;\n\nIF dequeueTrig.Q THEN\n    IF elementCount = 0 THEN\n        status := 16#8001;\n    ELSE\n        tmpElement := buffer[head + 1];\n        item := tmpElement;\n        head := (head + 1) MOD capacity;\n        elementCount := elementCount - 1;\n        status := 16#0000;\n    END_IF;\nELSIF enqueueTrig.Q THEN\n    IF elementCount >= capacity THEN\n        status := 16#8002;\n    ELSE\n        tmpElement := item;\n        buffer[tail + 1] := tmpElement;\n        tail := (tail + 1) MOD capacity;\n        elementCount := elementCount + 1;\n        status := 16#0000;\n    END_IF;\nELSE\n    status := 16#0000;\nEND_IF;\nEND_FUNCTION_BLOCK",
+      "code_hash": "7c64309bcb8caea2d1e57b24a0b3fdd0a53a16df8149323e885836ef3cf6f3cf",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 12,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006"
+        ]
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 3380,
+      "completion_tokens": 4500,
+      "cost_cny": 0.03546942,
+      "latency_s": 85.515,
+      "generation_seconds": 85.515,
+      "end_to_end_seconds": 85.671,
+      "format_edits": [],
+      "raw_source_sha256": "7c64309bcb8caea2d1e57b24a0b3fdd0a53a16df8149323e885836ef3cf6f3cf",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 39,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 '__ARRAYSIZE'"
+          },
+          {
+            "level": "error",
+            "line": 58,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 '__GETAT'"
+          },
+          {
+            "level": "error",
+            "line": 67,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 '__SETAT'"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_UNKNOWN_FUNC] 第39行 调用了未知函数/功能块 '__ARRAYSIZE'; [E_UNKNOWN_FUNC] 第58行 调用了未知函数/功能块 '__GETAT'; [E_UNKNOWN_FUNC] 第67行 调用了未知函数/功能块 '__SETAT'",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "1084f40c4fd7707e00b3ff5a724b8ba54c970944abdfefa64b66e5d6a27e2c27",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 39 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 '__ARRAYSIZE'\nLine 58 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 '__GETAT'\nLine 67 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 '__SETAT'",
+      "timing": {
+        "static_seconds": 0.172
+      },
+      "idx": 3,
+      "code": "FUNCTION_BLOCK FB\n(* ENGINEERING_CONTRACT:\n   - Outputs: elementCount (retention, no explicit reset, DINT 0..capacity),\n              status (WORD: 16#0000 idle/OK, 16#8001 empty reject, 16#8002 full reject)\n   - Input edge behavior: enqueue/dequeue require R_TRIG rising edge per PUB001/PUB002\n   - PUB003 reset priority: level-triggered, clears head=tail=0, elementCount=0\n   - PUB004 elementCount: strict DINT range 0..capacity, reflects valid elements only\n   - PUB005 rejection: queue and item unchanged, status encodes reason\n   - First invocation: firstRun initializes head=tail=0, capacity=actual array length\n   - Same-scan priority: reset > dequeue > enqueue; no simultaneous add+remove\n   - MOD wraps head/tail; __GETAT/__SETAT use 1-based indices per CODESYS convention\n*)\nVAR_INPUT\n    enqueue  : BOOL;\n    dequeue  : BOOL;\n    reset    : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status       : WORD;\nEND_VAR\nVAR_IN_OUT\n    item   : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    enqueueTrig : R_TRIG;\n    dequeueTrig : R_TRIG;\n    head        : DINT;\n    tail        : DINT;\n    capacity    : DINT;\n    firstRun    : BOOL := TRUE;\nEND_VAR\n\n// (* CONTRACT_RULES [] *)\n\nIF firstRun THEN\n    firstRun := FALSE;\n    capacity := __ARRAYSIZE(buffer);\n    head := 0;\n    tail := 0;\n    elementCount := 0;\n    status := 16#0000;\nEND_IF;\n\nenqueueTrig(CLK := enqueue);\ndequeueTrig(CLK := dequeue);\n\nIF reset THEN\n    head := 0;\n    tail := 0;\n    elementCount := 0;\n    status := 16#0000;\nELSIF dequeueTrig.Q THEN\n    IF elementCount = 0 THEN\n        status := 16#8001;\n    ELSE\n        item := __GETAT(buffer, head + 1);\n        head := (head + 1) MOD capacity;\n        elementCount := elementCount - 1;\n        status := 16#0000;\n    END_IF;\nELSIF enqueueTrig.Q THEN\n    IF elementCount >= capacity THEN\n        status := 16#8002;\n    ELSE\n        __SETAT(buffer, tail + 1, item);\n        tail := (tail + 1) MOD capacity;\n        elementCount := elementCount + 1;\n        status := 16#0000;\n    END_IF;\nELSE\n    status := 16#0000;\nEND_IF;\nEND_FUNCTION_BLOCK",
+      "code_hash": "1084f40c4fd7707e00b3ff5a724b8ba54c970944abdfefa64b66e5d6a27e2c27",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 11,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005"
+        ]
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 3410,
+      "completion_tokens": 6013,
+      "cost_cny": 0.045559458000000004,
+      "latency_s": 113.64,
+      "generation_seconds": 113.64,
+      "end_to_end_seconds": 113.812,
+      "format_edits": [],
+      "raw_source_sha256": "1084f40c4fd7707e00b3ff5a724b8ba54c970944abdfefa64b66e5d6a27e2c27",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "maximum_four_candidates",
+  "tests_total": 31,
+  "study_plan_sha256": "ceee87bda23fdec86f82c35ccba0ed7fb16e190de62d91cf12c3a3776cd1a77c",
+  "started_at": "2026-11-13T05:35:59.389731+08:00",
+  "wall_seconds": 393.063,
+  "finished_at": "2026-11-13T05:42:32.298372+08:00"
+}
