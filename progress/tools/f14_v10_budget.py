@@ -52,7 +52,8 @@ class Coordinator:
         state=base.load(self.path)
         if state.get('version')!=3 or state.get('limit_cny')!=TOTAL:raise ProviderError('Budget identity changed')
         approval=state.get('f14_v10_authorization',{})
-        assert approval.get('study_plan_sha256')==self.plan_sha and approval.get('total_cap_cny')==TOTAL,'Missing matching frozen-plan authorization'
+        approved_plans={approval.get('study_plan_sha256'),approval.get('amended_study_plan_sha256')}
+        assert self.plan_sha in approved_plans and approval.get('total_cap_cny')==TOTAL,'Missing matching frozen-plan authorization'
         if state.get('halted') and not allow_halted:raise CampaignStopped(state['halted'])
         assert state['events'][:HISTORY]==self.baseline['events'],'Historical events changed'
         assert state['recoveries'][:len(self.baseline.get('recoveries',[]))]==self.baseline.get('recoveries',[])
@@ -62,7 +63,7 @@ class Coordinator:
         keys=[(e['request']['job_id'],e['request']['candidate_index']) for e in new]
         assert len(keys)==len(set(keys))
         for event in new:
-            req=event['request'];assert event['phase']==KIND and req['study_plan_sha256']==self.plan_sha
+            req=event['request'];assert event['phase']==KIND and req['study_plan_sha256'] in approved_plans
             assert req['job_id'] in self.bounds and req['candidate_index'] in range(4)
         accounted=money(BASELINE)+sum((money(e.get('accounted_cny',e['reserved_cny'])) for e in new),money(0))
         assert accounted==money(state['spent_cny']) and accounted<=money(TOTAL)

@@ -256,7 +256,7 @@ def capture(transport,budget,job,idx,pending,folder,root):
     original=transport.original_sender if hasattr(transport,'original_sender') else transport.sender
     transport.original_sender=original
     def sender(*args):
-        try:raw=original(*args);observe(raw,transport.protocol);return raw
+        try:return original(*args)
         finally:
             path=transport.diagnostic_dir/'diagnostic.json'
             if path.exists():atomic_json(folder/(job['pid']+f'.transport_{idx+1:02}.json'),json.loads(sanitize(path.read_text(encoding='utf-8'))))
