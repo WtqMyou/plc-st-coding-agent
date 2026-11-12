@@ -58,7 +58,7 @@ def report(cfg,plan):
         lines.append(f"| {r['label']} | {p['first_functional']}→{p['final_functional']} | {p['assertions_passed']}/470 | {own['first_functional']}→{own['final_functional']} | {own['assertions_passed']}/476 |")
     lines+=['','| 组别 | 完整代码首次→最终/35 | 有界形式状态 | 本轮费用/元 |','| --- | --- | --- | ---: |']
     for r in rows:lines.append(f"| {r['label']} | {r['first_complete']}→{r['final_complete']} | {json.dumps(r['formal_statuses'],ensure_ascii=False)} | {r['accounted_cny']:.6f} |")
-    lines+=['',f"本轮最坏预留{plan['worst_reservation_cny']:.6f}元；未结算预留{summary['unsettled_reserved_cny']:.6f}元。", 
+    lines+=['',f"本轮最坏预留{plan['worst_reservation_cny']:.6f}元；未结算预留{summary['unsettled_reserved_cny']:.6f}元。",
         '累计420元硬上限；沿用备用Key，80元不暂停。保留历史1266条费用事件与未知预留。',
         '通过即停止；仅明确的编译、功能或形式违反反馈触发修复。空正文、截断、重复候选不补发；身份、费用或公共工具异常时保存现场并停止新增请求。',
         'FIFO原VARIANT接口在冻结CODESYS平台单列不适用，原生编译分母为34；其功能评分仍保留在35题分母。',
