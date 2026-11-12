@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-2ic8j3-1794521596183929477",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\n(* ENGINEERING_CONTRACT\n * HVAC Multi-mode Energy-Saving Control - Design Table\n * \n * Output: SUPPLY_FAN_RUN (BOOL)\n *   - Activation:    30s TON delay when OCCUPANCY_DETECTED=TRUE AND HVAC_MODE_SELECTOR<>3\n *   - Retention:     Holds TRUE once elapsed >= 30s until deactivated\n *   - Reset:         Immediate deactivation when OCCUPANCY_DETECTED=FALSE OR HVAC_MODE_SELECTOR=3\n *   - Same-scan:     Evaluate conditions before TON, update outputs after TON\n *   - Units:         30 seconds, TON.ET saturates at PT\n *\n * Output: TEMP_SETPOINT_ADJUST (INT, clamped ±4°C)\n *   - PUB001 §3: Auto mode - occupied: 0°C; unoccupied + energy_saving: +3°C; unoccupied + standard: +2°C\n *   - PUB002 §4: Comfort mode - occupied: 0°C; unoccupied: +1°C\n *   - PUB003 §5: Economy mode - occupied: 0°C; unoccupied: +4°C\n *   - PUB004 §6: Night mode (3) - +4°C regardless of occupancy\n *   - Retention:   Updated every scan from current inputs; no state retention between scans\n *   - Boundaries:  Clamped to [-4, +4] inclusive\n *\n * Initialization:\n *   - SUPPLY_FAN_RUN := FALSE on power-up (PUB006)\n *   - TEMP_SETPOINT_ADJUST := 0 on power-up (PUB006)\n *   - Timer state initialized by TON at first call (implicit)\n *\n * Edge Cases:\n *   - Night mode selected: fan disabled immediately, no delay (PUB001)\n *   - Occupancy lost: fan disabled immediately, timer reset (PUB001)\n *   - Recovery: full 30s delay required again (PUB001)\n *   - HVAC_MODE_SELECTOR values 0-3 only; caller supplies valid value\n *)\n\n(* CONTRACT_RULES [] *)\n\nFUNCTION_BLOCK HVAC_MultiMode_Control\nVAR_INPUT\n    OCCUPANCY_DETECTED  : BOOL;\n    ENERGY_SAVING_MODE  : BOOL;\n    HVAC_MODE_SELECTOR  : INT;\nEND_VAR\n\nVAR_OUTPUT\n    SUPPLY_FAN_RUN      : BOOL := FALSE;\n    TEMP_SETPOINT_ADJUST : INT := 0;\nEND_VAR\n\nVAR\n    FanDelayTimer : TON;\n    prevOccupancy : BOOL := FALSE;\n    tmpOccupied   : BOOL;\n    tmpFanEnable  : BOOL;\n    tmpAdjust     : INT;\nEND_VAR\n\n(* Same-scan logic: determine conditions before timer, then act *)\ntmpOccupied := OCCUPANCY_DETECTED AND (HVAC_MODE_SELECTOR <> 3);\n\n(* Fan enable request: occupied AND not night mode *)\ntmpFanEnable := tmpOccupied;\n\n(* Manage fan delay timer *)\nIF tmpFanEnable THEN\n    FanDelayTimer(IN := TRUE, PT := T#30S);\n    (* TON.Q is TRUE when elapsed >= PT; TON.ET saturates at PT *)\n    SUPPLY_FAN_RUN := FanDelayTimer.Q;\nELSE\n    FanDelayTimer(IN := FALSE, PT := T#30S);\n    SUPPLY_FAN_RUN := FALSE;\nEND_IF;\n\n(* Temperature setpoint adjustment per mode *)\nCASE HVAC_MODE_SELECTOR OF\n    0: (* Auto mode *)\n        IF OCCUPANCY_DETECTED THEN\n            tmpAdjust := 0;\n        ELSE\n            IF ENERGY_SAVING_MODE THEN\n                tmpAdjust := 3;\n            ELSE\n                tmpAdjust := 2;\n            END_IF;\n        END_IF;\n        \n    1: (* Comfort mode *)\n        IF OCCUPANCY_DETECTED THEN\n            tmpAdjust := 0;\n        ELSE\n            tmpAdjust := 1;\n        END_IF;\n        \n    2: (* Economy mode *)\n        IF OCCUPANCY_DETECTED THEN\n            tmpAdjust := 0;\n        ELSE\n            tmpAdjust := 4;\n        END_IF;\n        \n    3: (* Night mode *)\n        tmpAdjust := 4;\n        \n    ELSE\n        (* Fallback for invalid values; maintain last safe state *)\n        tmpAdjust := 0;\nEND_CASE;\n\n(* Clamp to ±4°C per PUB007 *)\nIF tmpAdjust > 4 THEN\n    tmpAdjust := 4;\nELSIF tmpAdjust < -4 THEN\n    tmpAdjust := -4;\nEND_IF;\n\nTEMP_SETPOINT_ADJUST := tmpAdjust;\n\n(* Track occupancy for next scan *)\nprevOccupancy := OCCUPANCY_DETECTED;\n\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "The user wants me to implement an IEC 61131-3 Structured Text FUNCTION_BLOCK for an office HVAC multi-mode energy-saving control system. Let me analyze the requirements:\n\n**Inputs:**\n- `OCCUPANCY_DETECTED` (BOOL): Occupancy detection\n- `ENERGY_SAVING_MODE` (BOOL): TRUE for energy saving, FALSE for standard\n- `HVAC_MODE_SELECTOR` (INT): 0=Auto, 1=Comfort, 2=Economy, 3=Night\n\n**Outputs:**\n- `SUPPLY_FAN_RUN` (BOOL): Supply fan enable\n- `TEMP_SETPOINT_ADJUST` (INT): Temperature adjustment in °C\n\n**Requirements:**\n1. Valid HVAC_MODE_SELECTOR values: 0 (Auto), 1 (Comfort), 2 (Economy), 3 (Night)\n2. Start 30-second delay only when:\n   - Occupancy detected AND\n   - Night mode NOT selected\n   - SUPPLY_FAN_RUN becomes TRUE only after 30 seconds\n   - Stop and reset timing if occupancy lost or Night mode selected\n   - Wait full 30 seconds again when conditions recover\n\n3. Auto mode temperature adjustments:\n   - Occupied: 0°C\n   - Unoccupied + energy saving: +3°C\n   - Unoccupied + standard: +2°C\n\n4. Comfort mode:\n   - Occupied: 0°C\n   - Unoccupied: +1°C\n\n5. Economy mode:\n   - Occupied: 0°C\n   - Unoccupied: +4°C\n\n6. Night mode:\n   - +4°C regardless of occupancy\n\n7. Keep TEMP_SETPOINT_ADJUST within ±4°C\n8. Initialize outputs to OFF and zero at power-up\n9. Start delay controls only the BOOL fan enable\n\nLet me create the ENGINEERING_CONTRACT and then the implementation:\n\n\nI need to document the control logic as a state transition table and then implement the function block. The contract will specify the fan activation delay of 30 seconds when occupancy is detected in non-night modes, along with the temperature adjustments for each operating mode and occupancy state. I'll include a JSON rules section for any required latching behavior, then build the implementation using TON timers and state tracking.\n\nThe core logic tracks occupancy changes with edge detection to trigger the fan delay, monitors the HVAC mode selector to control when the fan can activate, and applies the appropriate temperature offset based on the current operating mode and whether the space is occupied.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The user wants me to implement an IEC 61131-3 Structured Text FUNCTION_BLOCK for an office HVAC multi-mode energy-saving control system. Let me analyze the requirements:\n\n**Inputs:**\n- `OCCUPANCY_DETECTED` (BOOL): Occupancy detection\n- `ENERGY_SAVING_MODE` (BOOL): TRUE for energy saving, FALSE for standard\n- `HVAC_MODE_SELECTOR` (INT): 0=Auto, 1=Comfort, 2=Economy, 3=Night\n\n**Outputs:**\n- `SUPPLY_FAN_RUN` (BOOL): Supply fan enable\n- `TEMP_SETPOINT_ADJUST` (INT): Temperature adjustment in °C\n\n**Requirements:**\n1. Valid HVAC_MODE_SELECTOR values: 0 (Auto), 1 (Comfort), 2 (Economy), 3 (Night)\n2. Start 30-second delay only when:\n   - Occupancy detected AND\n   - Night mode NOT selected\n   - SUPPLY_FAN_RUN becomes TRUE only after 30 seconds\n   - Stop and reset timing if occupancy lost or Night mode selected\n   - Wait full 30 seconds again when conditions recover\n\n3. Auto mode temperature adjustments:\n   - Occupied: 0°C\n   - Unoccupied + energy saving: +3°C\n   - Unoccupied + standard: +2°C\n\n4. Comfort mode:\n   - Occupied: 0°C\n   - Unoccupied: +1°C\n\n5. Economy mode:\n   - Occupied: 0°C\n   - Unoccupied: +4°C\n\n6. Night mode:\n   - +4°C regardless of occupancy\n\n7. Keep TEMP_SETPOINT_ADJUST within ±4°C\n8. Initialize outputs to OFF and zero at power-up\n9. Start delay controls only the BOOL fan enable\n\nLet me create the ENGINEERING_CONTRACT and then the implementation:\n\n\nI need to document the control logic as a state transition table and then implement the function block. The contract will specify the fan activation delay of 30 seconds when occupancy is detected in non-night modes, along with the temperature adjustments for each operating mode and occupancy state. I'll include a JSON rules section for any required latching behavior, then build the implementation using TON timers and state tracking.\n\nThe core logic tracks occupancy changes with edge detection to trigger the fan delay, monitors the HVAC mode selector to control when the fan can activate, and applies the appropriate temperature offset based on the current operating mode and whether the space is occupied.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794521597,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 8431,
+      "completion_tokens": 1491,
+      "total_tokens": 9922,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.023882"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
