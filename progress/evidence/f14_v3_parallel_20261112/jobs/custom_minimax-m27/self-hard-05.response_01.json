@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-o23vab-1794474549465192197",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    runRequest  : BOOL;\n    flameOK     : BOOL;\n    o2Valid     : BOOL;\n    o2PV        : REAL;\n    baseAir     : REAL;\n    resetBtn    : BOOL;\nEND_VAR\nVAR_OUTPUT\n    fuelPermit  : BOOL;\n    trimEnable  : BOOL;\n    airTrim     : REAL;\n    airCommand  : REAL;\n    tripLatched : BOOL;\n    o2Fault     : BOOL;\nEND_VAR\nVAR\n    prevResetBtn : BOOL := FALSE;\nEND_VAR\n\n    // Rising edge detection for reset button\n    VAR\n        resetRisingEdge : BOOL;\n    END_VAR\n    resetRisingEdge := resetBtn AND NOT prevResetBtn;\n    prevResetBtn := resetBtn;\n\n    // Trip latch: immediate set on flame loss during run; clear only on safe-state reset edge\n    IF runRequest AND NOT flameOK THEN\n        tripLatched := TRUE;\n    ELSIF resetRisingEdge AND NOT runRequest AND NOT flameOK THEN\n        tripLatched := FALSE;\n    END_IF;\n\n    // Fuel permit\n    fuelPermit := runRequest AND flameOK AND NOT tripLatched;\n\n    // O2 analyzer fault\n    o2Fault := NOT o2Valid OR o2PV < 0.0 OR o2PV > 21.0;\n\n    // Trim enable\n    trimEnable := fuelPermit AND NOT o2Fault;\n\n    // Air trim: compute and clamp to [-10, +10]; force 0 when trim not enabled\n    IF trimEnable THEN\n        airTrim := 2.0 * (2.0 - o2PV);\n        IF airTrim > 10.0 THEN\n            airTrim := 10.0;\n        ELSIF airTrim < -10.0 THEN\n            airTrim := -10.0;\n        END_IF;\n    ELSE\n        airTrim := 0.0;\n    END_IF;\n\n    // Air command: sum and clamp to [0, 100]; force 0 when no fuel permit\n    IF fuelPermit THEN\n        airCommand := baseAir + airTrim;\n        IF airCommand > 100.0 THEN\n            airCommand := 100.0;\n        ELSIF airCommand < 0.0 THEN\n            airCommand := 0.0;\n        END_IF;\n    ELSE\n        airCommand := 0.0;\n    END_IF;\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "Let me analyze the requirements carefully and implement the Function Block.\n\nKey behaviors:\n1. **Flame trip**: When `runRequest=TRUE` and `flameOK=FALSE`, set `tripLatched=TRUE` immediately in the same cycle.\n2. **Trip latch**: Self-holding, cleared only by a rising edge of `resetBtn` when `runRequest=FALSE` AND `flameOK=FALSE`.\n\n\n3. **Fuel permit**: Enabled only when all three conditions are met—run request active, flame confirmed, and no trip active.\n4. **O2 fault**: Triggered if the oxygen reading is invalid, negative, or exceeds the 0-21 range.\n5. **Air trim**: When trim is enabled, the correction is calculated as twice the difference between 2.0 and the oxygen percentage, clamped to a ±10 range.\n6. **Trim enable**: Requires both fuel permit and no O2 fault conditions.\n7. **Air command**: Combines the base flow with the trim adjustment, then clamps the result between 0 and 100, but only when fuel permit is active—otherwise it's forced to zero.\n\nFor the trip latch, I need edge detection on the reset button since the requirement specifies rising edge triggers the clear condition, and I'm tracking the previous state to detect when the button transitions from low to high.\n\nWriting the function block... Continuing with the edge detection logic for resetBtn, then calculating the trip latch condition—if there's a run request but no flame, the system trips; otherwise it stays latched unless we're in a valid reset state. The fuel permit follows from having a run request, flame confirmation, and no active trip, while o2Fault triggers when the oxygen sensor is invalid or reading out of range. For trimEnable, I'm enabling it only when there's fuel permit and no O2 fault. The air trim calculation clamps the oxygen-based correction to ±10 range, but only applies it when trim is enabled—otherwise it stays at zero. Finally, I'm computing the air command by adding the base air flow to the trim adjustment. I need to track the previous state of resetBtn with an edge detector, then use that to determine when to clear the trip latch. The fuelPermit logic ties together the run request, flame status, and trip state, while o2Fault gets set whenever the sensor data is invalid or out of range. For trimEnable, I'm combining the fuel permit with the absence of an O2 fault, and the airTrim calculation applies a clamped adjustment based on the oxygen value, defaulting to zero when trimming is disabled.\n\nNow I'm calculating the air command by adding the trim to the base flow, but clamping it to valid bounds only when fuel is permitted—otherwise forcing it to zero.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "Let me analyze the requirements carefully and implement the Function Block.\n\nKey behaviors:\n1. **Flame trip**: When `runRequest=TRUE` and `flameOK=FALSE`, set `tripLatched=TRUE` immediately in the same cycle.\n2. **Trip latch**: Self-holding, cleared only by a rising edge of `resetBtn` when `runRequest=FALSE` AND `flameOK=FALSE`.\n\n\n3. **Fuel permit**: Enabled only when all three conditions are met—run request active, flame confirmed, and no trip active.\n4. **O2 fault**: Triggered if the oxygen reading is invalid, negative, or exceeds the 0-21 range.\n5. **Air trim**: When trim is enabled, the correction is calculated as twice the difference between 2.0 and the oxygen percentage, clamped to a ±10 range.\n6. **Trim enable**: Requires both fuel permit and no O2 fault conditions.\n7. **Air command**: Combines the base flow with the trim adjustment, then clamps the result between 0 and 100, but only when fuel permit is active—otherwise it's forced to zero.\n\nFor the trip latch, I need edge detection on the reset button since the requirement specifies rising edge triggers the clear condition, and I'm tracking the previous state to detect when the button transitions from low to high.\n\nWriting the function block... Continuing with the edge detection logic for resetBtn, then calculating the trip latch condition—if there's a run request but no flame, the system trips; otherwise it stays latched unless we're in a valid reset state. The fuel permit follows from having a run request, flame confirmation, and no active trip, while o2Fault triggers when the oxygen sensor is invalid or reading out of range. For trimEnable, I'm enabling it only when there's fuel permit and no O2 fault. The air trim calculation clamps the oxygen-based correction to ±10 range, but only applies it when trim is enabled—otherwise it stays at zero. Finally, I'm computing the air command by adding the base air flow to the trim adjustment. I need to track the previous state of resetBtn with an edge detector, then use that to determine when to clear the trip latch. The fuelPermit logic ties together the run request, flame status, and trip state, while o2Fault gets set whenever the sensor data is invalid or out of range. For trimEnable, I'm combining the fuel permit with the absence of an O2 fault, and the airTrim calculation applies a clamped adjustment based on the oxygen value, defaulting to zero when trimming is disabled.\n\nNow I'm calculating the air command by adding the trim to the base flow, but clamping it to valid bounds only when fuel is permitted—otherwise forcing it to zero.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794474550,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 2473,
+      "completion_tokens": 1080,
+      "total_tokens": 3553,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.01127"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
