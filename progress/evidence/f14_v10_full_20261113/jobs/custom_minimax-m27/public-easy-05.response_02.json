@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-yfyjcv-1794518723130411265",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n(* ENGINEERING_CONTRACT\n * ==================================================================\n * State Machine: 2-state (INIT/MONITORING) with E-Stop priority\n * \n * | Output          | Activation          | Retention          | Reset/Deactivation              | Scan Priority |\n * |-----------------|---------------------|--------------------|----------------------------------|---------------|\n * | Operator_Alert  | Gap_Exceed TRUE for | Latch until gap    | Gap_Exceed FALSE (immediate),    | E-Stop highest|\n * |                 | DebounceTime        | stays TRUE         | E-Stop active (immediate)        |               |\n * | Weld_Soft_Start | TRUE during INIT    | Hold across scans  | Timer.Q TRUE → MONITORING entry  | After E-Stop  |\n * |                 |                     |                    | (immediate deactivation)         |               |\n * \n * Boundary/Units:\n * - INIT duration: T#5s (fixed, not configurable)\n * - DebounceTime: input TIME, must be positive during MONITORING\n * - Timer.ET saturates at PT (IEC 61131-3 TON standard)\n * \n * E-Stop Priority (PUB005): checked first every scan, overrides all\n * ==================================================================\n *)\n\n(* CONTRACT_RULES\n * [\n *   {\n *     \"kind\": \"hold_until_reset\",\n *     \"output\": \"Weld_Soft_Start_Active\",\n *     \"set_input\": null,\n *     \"reset_input\": \"SoftStartTimer.Q\"\n *   }\n * ]\n *)\n\nFUNCTION_BLOCK Weld_Gap_Alarm\nVAR_INPUT\n    Gap_Exceeded    : BOOL;\n    Weld_E_Stop_NC  : BOOL;\n    DebounceTime    : TIME;\nEND_VAR\nVAR_OUTPUT\n    Operator_Alert        : BOOL := FALSE;\n    Weld_Soft_Start_Active : BOOL := FALSE;\nEND_VAR\nVAR\n    State            : UINT := 0;  (* 0=INIT, 1=MONITORING *)\n    SoftStartTimer   : TON;\n    AlarmTimer       : TON;\nEND_VAR\n\n    (* E-STOP PRIORITY (PUB005): Highest priority, checked every scan *)\n    IF NOT Weld_E_Stop_NC THEN\n        Operator_Alert         := FALSE;\n        AlarmTimer(IN := FALSE, PT := DebounceTime);\n        Weld_Soft_Start_Active  := FALSE;\n        State                  := 0;\n        SoftStartTimer(IN := FALSE, PT := T#5s);\n        RETURN;\n    END_IF;\n\n    (* STATE MACHINE *)\n    IF State = 0 THEN\n        (* INIT: 5-second power-up inhibition (PUB002) *)\n        SoftStartTimer(IN := TRUE, PT := T#5s);\n        Operator_Alert         := FALSE;\n        Weld_Soft_Start_Active  := TRUE;\n        AlarmTimer(IN := FALSE, PT := DebounceTime);\n\n        (* Transition to MONITORING after 5 seconds (PUB002) *)\n        IF SoftStartTimer.Q THEN\n            State := 1;\n        END_IF;\n\n    ELSE  (* State = 1: MONITORING (PUB003, PUB004) *)\n        SoftStartTimer(IN := FALSE, PT := T#5s);\n        Weld_Soft_Start_Active  := FALSE;\n\n        (* Debounce gap signal during monitoring *)\n        AlarmTimer(IN := Gap_Exceeded, PT := DebounceTime);\n\n        (* Alarm when gap exceeded for full DebounceTime *)\n        Operator_Alert   := AlarmTimer.Q;\n    END_IF;\n\nEND_FUNCTION_BLOCK",
+          "role": "assistant",
+          "reasoning_content": "The error is clear: Cannot convert type 'LTIME' to type 'TIME'. The issue is in the TON timers - I'm using `LTIME#5s` but `SoftStartTimer` and `AlarmTimer` are declared as `TON` which uses `TIME` type for the PT input.\n\nLet me fix this by using `T#5s` instead of `LTIME#5s`. The `TON` function block expects `TIME` type, not `LTIME` type.\n\nI need to change:\n- `LTIME#5s` to `T#5s` (or TIME#5s)\n\nThe interface says:\n- DebounceTime is TIME\n- The internal timer PT should match\n\nLet me fix the implementation.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The error is clear: Cannot convert type 'LTIME' to type 'TIME'. The issue is in the TON timers - I'm using `LTIME#5s` but `SoftStartTimer` and `AlarmTimer` are declared as `TON` which uses `TIME` type for the PT input.\n\nLet me fix this by using `T#5s` instead of `LTIME#5s`. The `TON` function block expects `TIME` type, not `LTIME` type.\n\nI need to change:\n- `LTIME#5s` to `T#5s` (or TIME#5s)\n\nThe interface says:\n- DebounceTime is TIME\n- The internal timer PT should match\n\nLet me fix the implementation.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794518724,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 3118,
+      "completion_tokens": 896,
+      "total_tokens": 4014,
+      "prompt_tokens_details": {
+        "cached_tokens": 1778,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.008758"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
