@@ -1,0 +1,229 @@
+{
+  "job_id": "custom_minimax-m27/public-easy-04",
+  "pid": "public-easy-04",
+  "condition": "custom_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 20,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 20,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "Generate code...",
+              "Cannot convert type 'ULINT' to type 'LTIME'",
+              "Cannot convert type 'LTIME' to type 'ULINT'",
+              "Cannot convert type 'TIME' to type 'ULINT'",
+              "Cannot compare type 'LTIME' with type 'TIME'",
+              "Cannot convert type 'ULINT' to type 'LTIME'",
+              "Cannot convert type 'LTIME' to type 'ULINT'",
+              "Cannot convert type 'TIME' to type 'ULINT'",
+              "Cannot compare type 'LTIME' with type 'TIME'",
+              "Build complete -- 8 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.406000000002678,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-easy-04_c5d1b22c15",
+            "source_sha256": "e4ed83b592fdb7805c71be05ee932f79db12bb143669ba16a0c506e8c9d30ac2",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "e4ed83b592fdb7805c71be05ee932f79db12bb143669ba16a0c506e8c9d30ac2",
+          "task_json_sha256": "24aa4f211feb3d3fded91ef0dd3ef801fc76516db23ea8e698ddce68d048ba01",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\nGenerate code...\nCannot convert type 'ULINT' to type 'LTIME'\nCannot convert type 'LTIME' to type 'ULINT'\nCannot convert type 'TIME' to type 'ULINT'\nCannot compare type 'LTIME' with type 'TIME'\nCannot convert type 'ULINT' to type 'LTIME'\n自动测试：0/20。\nLTL 检查：not_run。",
+      "timing": {
+        "static_seconds": 0.156,
+        "native_queue_seconds": 44.375,
+        "native_compile_seconds": 15.406
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK JamPumpControl\nVAR\n    ViscosityValid : BOOL := FALSE;\n    DebounceAccum  : LTIME  := LTIME#0s;\n    PrevViscosity  : BOOL := FALSE;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN          : BOOL := FALSE;\n    PUMP_MAINT_DUE   : BOOL := FALSE;\n    PUMP_RUNTIME_ACC : LTIME  := LTIME#0s;\nEND_VAR\nVAR_INPUT\n    VISCOSITY_OK    : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceTime    : TIME;\n    CycleTime       : TIME;\nEND_VAR\n\n    // Emergency stop priority: immediate disable and clear debounce state\n    IF NOT PASTE_E_STOP_NC THEN\n        VFD_RUN        := FALSE;\n        ViscosityValid := FALSE;\n        DebounceAccum  := LTIME#0s;\n        PrevViscosity  := FALSE;\n        RETURN;\n    END_IF;\n\n    // Viscosity debouncing\n    IF NOT VISCOSITY_OK THEN\n        // Signal dropped: invalidate immediately and reset\n        ViscosityValid := FALSE;\n        DebounceAccum  := LTIME#0s;\n        PrevViscosity  := FALSE;\n    ELSE\n        // Detect rising edge on VISCOSITY_OK\n        IF NOT PrevViscosity THEN\n            DebounceAccum := LTIME#0s;\n        END_IF;\n\n        // Accumulate debounce time for this cycle\n        DebounceAccum := DebounceAccum + CycleTime;\n\n        // Check if debounce threshold reached\n        IF DebounceAccum >= DebounceTime THEN\n            ViscosityValid := TRUE;\n        END_IF;\n\n        PrevViscosity := TRUE;\n    END_IF;\n\n    // Run permissive: E-stop OK AND viscosity condition valid AND signal present\n    IF PASTE_E_STOP_NC AND ViscosityValid AND VISCOSITY_OK THEN\n        VFD_RUN := TRUE;\n    ELSE\n        VFD_RUN := FALSE;\n    END_IF;\n\n    // Accumulate runtime only while pump is running\n    IF VFD_RUN THEN\n        PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + CycleTime;\n    END_IF;\n\n    // Maintenance indication at 500 hours (informational, non-blocking)\n    IF PUMP_RUNTIME_ACC >= T#500h THEN\n        PUMP_MAINT_DUE := TRUE;\n    END_IF;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "e4ed83b592fdb7805c71be05ee932f79db12bb143669ba16a0c506e8c9d30ac2",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 949,
+      "completion_tokens": 2456,
+      "cost_cny": 0.017872407,
+      "latency_s": 108.14,
+      "generation_seconds": 108.14,
+      "end_to_end_seconds": 168.093,
+      "format_edits": [],
+      "raw_source_sha256": "e4ed83b592fdb7805c71be05ee932f79db12bb143669ba16a0c506e8c9d30ac2",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 20,
+      "verification_status": "inconclusive",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 20,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_UNKNOWN_FUNC] 第37行 调用了未知函数/功能块 'TO_ULINT'; [E_UNKNOWN_FUNC] 第39行 调用了未知函数/功能块 'TO_ULINT'; [E_UNKNOWN_FUNC] 第55行 调用了未知函数/功能块 'TO_ULINT'",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.421999999998661,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-easy-04_73b8525ef9",
+            "source_sha256": "461dbf40501e82c308ed498c7ce059e86c2c88875f6212e5d895269b0a603844",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "461dbf40501e82c308ed498c7ce059e86c2c88875f6212e5d895269b0a603844",
+          "task_json_sha256": "24aa4f211feb3d3fded91ef0dd3ef801fc76516db23ea8e698ddce68d048ba01",
+          "functional_execution": "Python scan interpreter",
+          "classification": "unsupported_modeling",
+          "local_checker_errors": [
+            {
+              "level": "error",
+              "line": 37,
+              "code": "E_UNKNOWN_FUNC",
+              "message": "调用了未知函数/功能块 'TO_ULINT'"
+            },
+            {
+              "level": "error",
+              "line": 39,
+              "code": "E_UNKNOWN_FUNC",
+              "message": "调用了未知函数/功能块 'TO_ULINT'"
+            },
+            {
+              "level": "error",
+              "line": 55,
+              "code": "E_UNKNOWN_FUNC",
+              "message": "调用了未知函数/功能块 'TO_ULINT'"
+            }
+          ]
+        },
+        "mc_error": "Unsupported modeling: native compiler accepted code outside local checker subset"
+      },
+      "feedback": "CODESYS compilation passed. Local checker cannot evaluate this syntax; no model repair is requested.",
+      "timing": {
+        "static_seconds": 0.141,
+        "native_queue_seconds": 38.078,
+        "native_compile_seconds": 15.422
+      },
+      "idx": 1,
+      "code": "FUNCTION_BLOCK JamPumpControl\nVAR\n    ViscosityValid : BOOL := FALSE;\n    DebounceAccum  : LTIME  := LTIME#0s;\n    PrevViscosity  : BOOL := FALSE;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN          : BOOL := FALSE;\n    PUMP_MAINT_DUE   : BOOL := FALSE;\n    PUMP_RUNTIME_ACC : LTIME  := LTIME#0s;\nEND_VAR\nVAR_INPUT\n    VISCOSITY_OK    : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceTime    : TIME;\n    CycleTime       : TIME;\nEND_VAR\n    // Emergency stop priority: immediate disable and clear debounce state\n    IF NOT PASTE_E_STOP_NC THEN\n        VFD_RUN        := FALSE;\n        ViscosityValid := FALSE;\n        DebounceAccum  := LTIME#0s;\n        PrevViscosity  := FALSE;\n        RETURN;\n    END_IF;\n\n    // Viscosity debouncing\n    IF NOT VISCOSITY_OK THEN\n        ViscosityValid := FALSE;\n        DebounceAccum  := LTIME#0s;\n        PrevViscosity  := FALSE;\n    ELSE\n        IF NOT PrevViscosity THEN\n            DebounceAccum := LTIME#0s;\n        END_IF;\n\n        DebounceAccum := DebounceAccum + TO_LTIME(TO_ULINT(CycleTime));\n\n        IF DebounceAccum >= TO_LTIME(TO_ULINT(DebounceTime)) THEN\n            ViscosityValid := TRUE;\n        END_IF;\n\n        PrevViscosity := TRUE;\n    END_IF;\n\n    // Run permissive\n    IF PASTE_E_STOP_NC AND ViscosityValid AND VISCOSITY_OK THEN\n        VFD_RUN := TRUE;\n    ELSE\n        VFD_RUN := FALSE;\n    END_IF;\n\n    // Accumulate runtime only while pump is running\n    IF VFD_RUN THEN\n        PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + TO_LTIME(TO_ULINT(CycleTime));\n    END_IF;\n\n    // Maintenance indication at 500 hours\n    IF PUMP_RUNTIME_ACC >= LTIME#500h THEN\n        PUMP_MAINT_DUE := TRUE;\n    END_IF;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "461dbf40501e82c308ed498c7ce059e86c2c88875f6212e5d895269b0a603844",
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 1578,
+      "completion_tokens": 1787,
+      "cost_cny": 0.014476434000000002,
+      "latency_s": 38.875,
+      "generation_seconds": 38.875,
+      "end_to_end_seconds": 92.531,
+      "format_edits": [],
+      "raw_source_sha256": "461dbf40501e82c308ed498c7ce059e86c2c88875f6212e5d895269b0a603844",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "not_repairable",
+  "tests_total": 20,
+  "study_plan_sha256": "f3ebc68a2f3117c82fdc289b32f83edc8f472bab3de26925dcfc8ed421a96ee0",
+  "started_at": "2026-11-12T16:22:55.221927+08:00",
+  "wall_seconds": 260.719,
+  "finished_at": "2026-11-12T16:27:15.888732+08:00"
+}
