@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794523321,
+    "id": "resp_021794523320266841fc2298faf73f2fc5d524f9c961e716c056e",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179452332159800000000000000000000ffffac154bf26de5b7",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need answer with ST code only? User asks direct complete ST code block. Need include requirement package: ENGINEERING_CONTRACT comment, CONTRACT_RULES comment JSON, implementation. Need no inspection tools. Need reason carefully about formal properties, potential conflicts. We need produce FUNCTION_BLOCK FB exact interface. Need include named TYPE ST_Recipe presumably before block. Need ensure valid CODESYS ST. Need incorporate latching and edge detection semantics.\n\nLet's parse task. We need implement FB. Interface:\nTYPE ST_Recipe :\nSTRUCT\n recipeID : INT;\n totalRatio : REAL;\n temperature : REAL;\nEND_STRUCT\nEND_TYPE\nWait user says top-level END_STRUCT directly followed by END_TYPE; no semicolon between. Fields likely separators ;. Example:\nTYPE ST_Recipe :\nSTRUCT\n    recipeID : INT;\n    totalRatio : REAL;\n    temperature : REAL;\nEND_STRUCT\nEND_TYPE\nCorrect. Function block name FB. Inputs as given. Need helper state: previous loadCmd (for rising). Must avoid local variable name r. But we can use tmp names prefixed. Need retained state. Outputs valid, loadedID. Semantics:\n\n- On rising loadCmd and not running: process valid based on selected slot.\n- If selSlot out of 1..8: invalid, no array access, loadedID=0, valid=false.\n- If in bounds: valid = recipe[selSlot].recipeID <> 0 AND totalRatio in [99,101] AND temp in [30,180]. If valid loadedID = recipe[selSlot].recipeID; if invalid loadedID = 0.\n- If running true, load command invalid/ignored, loadedID hold previous, valid ??? N10-S9 says (running OR !rising) -> valid equiv prev(valid) and loadedID = prev(loadedID). So when running, valid should also hold previous. Good. Requirement 6 loadedID hold.\n- On no rising (including loadCmd high held and loadCmd low), valid and loadedID hold previous. So edge detection crucial.\n- If loadCmd rising at same time running false and selSlot invalid => valid false loadedID 0.\n- Rising while running => hold outputs (valid as previous).\n\nPotential issue: In CODESYS FBs output variables can be read from previous invocation within code. Assignment in code perhaps order. We need preserve prior output values. Could use static helper variables as state, but output internal memory is also state. However formal LTL \"prev\" sampled at end. If we read valid and loadedID at beginning? In FB invocation, output variables retain values from prior scan; reading before modifying is okay. But local static helper cleaner. We can declare VAR:\ntmp_lastLoadCmd : BOOL; // state\ntmp_valid : BOOL? But valid is output and can be retained; no need separate. loadedID output retains. However output assignment persists. Yet TO formally ensure N10-S9 when no edge, no assignment needed; output retains. For edge handling, read current valid and loadedID? If no edge, no write. Running before edge same. Could simply:\nVAR\n    tmp_lastLoadCmd : BOOL := FALSE;\nEND_VAR\nThen:\nIF loadCmd AND NOT tmp_lastLoadCmd THEN\n    IF running THEN\n       // hold values: do nothing\n    ELSE\n       IF selSlot < 1 OR > 8 THEN valid := FALSE; loadedID := 0;\n       ELSE ... \n    END_IF\nEND_IF;\ntmp_lastLoadCmd := loadCmd;\nNeed at no edge outputs unchanged; yes no assignment. Need at initialization loadedID/valid initial? Unspecified.\n\nBut perhaps need ensure when rising edge. tmp_lastLoadCmd updated at end. good.\n\nContract comments. Need up to 12 lines ENGINEERING_CONTRACT. Table maybe \"For each output/state group state: activation, retention/hold, explicit reset/deactivation, same-scan priority, units/boundaries. Cite PUB clause IDs.\" We don't have full PUB IDs text except citations list but user task clauses are visible. We can cite requirement numbers maybe PUB? Actually user includes PUB IDs mapping to character positions, not semantic IDs. Could cite S/N10/F13. Engineering contract up to 12 lines. We can make concise comment:\n(* ENGINEERING_CONTRACT\nvalid: activates on accepted rising load edge only; holds otherwise (incl running); deactivates on accepted invalid edge. ...\nloadedID: updated only on accepted rising edge; holds when running/no edge; reset 0 on invalid accepted edge...\nSame-scan priority: running suppresses edge action; edge detection once per scan...\nUnits: totalRatio REAL [99.0,101.0], temperature REAL [30.0,180.0], slot INT 1..8.\nUnspecified: initial outputs assumed 0.\n*)\nNeed 12 lines or fewer. We can have each statement line.\n\nCONTRACT_RULES JSON list for unconditional public Boolean output latch explicitly required. Which output is Boolean and latch/hold-until-reset? valid has hold conditions; loadedID INT not Bool. Need identify any explicit unconditional latch. Formal properties specify hold but not unconditional latch with set/reset inputs. Maybe [] because no public BOOL output with simple hold_until_reset triggered by separate set input. valid is computed and held until next edge, but not a \"hold_until_reset\" rule. The instruction says emit [] when no such unconditional latch. Use:\n(* CONTRACT_RULES [] *)\nCould be inline. Need complete ST code inside fenced st.\n\nPotential issue: variables named tmp_lastLoadCmd perhaps acceptable. Cannot use r. Use \"tmp_prev_load_cmd\". Good.\n\nNeed include ST_Recipe definition due task says may precede. Ensure no comments outside fenced ST block. Final needs just a single fenced block. They specifically said single fenced st block no prose outside ST comments. System says final should be code only perhaps. We'll output one fenced code block."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nTYPE ST_Recipe :\nSTRUCT\n    recipeID : INT;\n    totalRatio : REAL;\n    temperature : REAL;\nEND_STRUCT\nEND_TYPE\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n    recipe : ARRAY[1..8] OF ST_Recipe;\n    selSlot : INT;\n    loadCmd : BOOL;\n    running : BOOL;\nEND_VAR\nVAR_OUTPUT\n    valid : BOOL;\n    loadedID : INT;\nEND_VAR\nVAR\n    tmp_prev_load_cmd : BOOL;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\nvalid: activates only on an accepted rising loadCmd edge while not running and all checks pass.\nvalid: holds in every non-accepting scan, including all running scans and held loadCmd.\nvalid: deactivates on an accepted rising edge when the slot is empty, out of range, or any numeric check fails.\nloadedID: updates only on an accepted rising edge; otherwise retains its previous value, including while running.\nloadedID: set to recipe[selSlot].recipeID on successful load, or 0 on any accepted invalid load.\nSame-scan priority: running suppresses the load-edge action before any slot validation happens.\nBoundaries: slots are INT in [1,8]; totalRatio is REAL in [99.0,101.0]; temperature is REAL in [30.0,180.0].\nEdge memory: tmp_prev_load_cmd is updated at the end of every scan; no extra reset or interlock is invented.\nInitial outputs are unspecified and are left at their default zero values.\n*)\n\n(* CONTRACT_RULES [] *)\n\nIF loadCmd AND NOT tmp_prev_load_cmd THEN\n    IF NOT running THEN\n        IF (selSlot < 1) OR (selSlot > 8) THEN\n            valid := FALSE;\n            loadedID := 0;\n        ELSIF recipe[selSlot].recipeID = 0 THEN\n            valid := FALSE;\n            loadedID := 0;\n        ELSIF (recipe[selSlot].totalRatio < 99.0)\n           OR (recipe[selSlot].totalRatio > 101.0) THEN\n            valid := FALSE;\n            loadedID := 0;\n        ELSIF (recipe[selSlot].temperature < 30.0)\n           OR (recipe[selSlot].temperature > 180.0) THEN\n            valid := FALSE;\n            loadedID := 0;\n        ELSE\n            valid := TRUE;\n            loadedID := recipe[selSlot].recipeID;\n        END_IF\n    END_IF\nEND_IF\n\ntmp_prev_load_cmd := loadCmd;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179452334010100000000000000000000ffffac154bf28c1c5a",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 11576,
+      "output_tokens": 1810,
+      "total_tokens": 13386,
+      "input_tokens_details": {
+        "cached_tokens": 4096
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 1244
+      },
+      "cost": "¥0.04638"
+    }
+  }
+}
