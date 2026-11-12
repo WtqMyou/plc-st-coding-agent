@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-dw1tc4-1794495634928013564",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\nFUNCTION_BLOCK FB_MovingAverage\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger         : BOOL;\n    value           : LREAL;\n    windowSize      : INT;\n    reset           : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    average           : LREAL;\n    windowSizeReached : BOOL;\n    error             : BOOL;\n    status            : WORD;\nEND_VAR\n\nVAR\n    dataBuffer       : ARRAY[1..100] OF LREAL;\n    currentIndex     : INT := 0;\n    sampleCount      : INT := 0;\n    sum              : LREAL := 0.0;\n    tmp_lastTrigger  : BOOL := FALSE;\n    tmp_newSample    : BOOL := FALSE;\n    tmp_effectiveWin : INT := 0;\nEND_VAR\n\n(*\nENGINEERING_CONTRACT\n===================\nOperation Modes:\n- cyclicExecution=TRUE: Update every scan cycle; trigger ignored (PUB002)\n- cyclicExecution=FALSE: Rising edge on trigger updates average (PUB003)\n- reset=TRUE: Clear all state, outputs to default, status=SUCCESS (PUB004)\n\nOutput Retention Policy:\n| Output             | Activation         | Retention    | Reset by reset=TRUE |\n|--------------------|--------------------|--------------|---------------------|\n| average            | Each valid sample  | Hold last    | Yes (→0.0)          |\n| windowSizeReached  | sampleCount>=winSz | Hold TRUE    | Yes (→FALSE)        |\n| error              | windowSize<1 or >100| Hold TRUE   | Yes (→FALSE)        |\n| status             | Per validation     | Hold code    | Yes (→SUCCESS)      |\n\nBoundary Conditions:\n- windowSize<1 OR >100 → error=TRUE, status=16#8200, skip processing (PUB004, PUB007)\n- reset asserted → immediate clear, no processing (PUB004)\n- Empty window (sampleCount=0) → average=0.0 (division-safe)\n- Circular buffer wraps at windowSize, never exceeds 100 elements\n\nSame-Scan Priority:\n1. reset check (highest)\n2. windowSize validation\n3. trigger rising-edge detection\n4. cyclicExecution evaluation\n5. sample insertion / buffer rotation\n6. average recalculation\n\nUnits: LREAL for all arithmetic (PUB001). windowSize in slots [1..100].\n*)\n\n(* CONTRACT_RULES\n[\n  {\"kind\": \"hold_until_reset\", \"output\": \"windowSizeReached\", \"set_input\": null, \"reset_input\": \"reset\"},\n  {\"kind\": \"hold_until_reset\", \"output\": \"error\", \"set_input\": null, \"reset_input\": \"reset\"},\n  {\"kind\": \"hold_until_reset\", \"output\": \"status\", \"set_input\": null, \"reset_input\": \"reset\"}\n]\n*)\n\n    // Reset: clear all state and outputs\n    IF reset THEN\n        currentIndex      := 0;\n        sampleCount       := 0;\n        sum               := 0.0;\n        average           := 0.0;\n        windowSizeReached := FALSE;\n        error             := FALSE;\n        status            := 16#0000;\n        tmp_lastTrigger   := FALSE;\n        tmp_newSample     := FALSE;\n        tmp_effectiveWin  := 0;\n        RETURN;\n    END_IF;\n\n    // Validate window size (PUB007)\n    IF windowSize < 1 OR windowSize > 100 THEN\n        error  := TRUE;\n        status := 16#8200;\n        RETURN;\n    END_IF;\n\n    // No validation error; set success status (PUB006)\n    error  := FALSE;\n    status := 16#0000;\n\n    // Determine if a new sample should be processed (PUB002, PUB003)\n    tmp_newSample := FALSE;\n    IF cyclicExecution THEN\n        tmp_newSample := TRUE;\n    ELSIF trigger AND NOT tmp_lastTrigger THEN\n        tmp_newSample := TRUE;\n    END_IF;\n    tmp_lastTrigger := trigger;\n\n    // Process new data point if triggered (PUB001)\n    IF tmp_newSample THEN\n        // Clamp effective window to array upper bound (100)\n        tmp_effectiveWin := windowSize;\n        IF tmp_effectiveWin > 100 THEN\n            tmp_effectiveWin := 100;\n        END_IF;\n\n        IF sampleCount < tmp_effectiveWin THEN\n            // Window not yet full: append new value\n            sampleCount := sampleCount + 1;\n            dataBuffer[sampleCount] := value;\n            sum := sum + value;\n        ELSE\n            // Window full: rotate out oldest value using circular buffer\n            currentIndex := (currentIndex MOD tmp_effectiveWin) + 1;\n            sum := sum - dataBuffer[currentIndex] + value;\n            dataBuffer[currentIndex] := value;\n        END_IF;\n    END_IF;\n\n    // Calculate moving arithmetic mean (PUB001)\n    IF sampleCount > 0 THEN\n        average := sum / TO_LREAL(sampleCount);\n    ELSE\n        average := 0.0;\n    END_IF;\n\n    // Indicate whether maximum window width has been reached (PUB001)\n    tmp_effectiveWin := windowSize;\n    IF tmp_effectiveWin > 100 THEN\n        tmp_effectiveWin := 100;\n    END_IF;\n    windowSizeReached := (sampleCount >= tmp_effectiveWin);\n\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "The compilation failed because I didn't declare the helper variables `tmp_newSample` and `tmp_effectiveWindow` in the VAR section. Let me fix this by adding them to the VAR block.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The compilation failed because I didn't declare the helper variables `tmp_newSample` and `tmp_effectiveWindow` in the VAR section. Let me fix this by adding them to the VAR block.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794495635,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 3334,
+      "completion_tokens": 1162,
+      "total_tokens": 4496,
+      "prompt_tokens_details": {
+        "cached_tokens": 1820,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.010826"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
