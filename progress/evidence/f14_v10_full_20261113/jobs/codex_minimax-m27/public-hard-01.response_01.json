@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-0viktk-1794518807201282796",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\n(* ENGINEERING_CONTRACT *)\n(*\n  PUB001: Emergency stop (estop=FALSE) immediately de-energizes all outputs (valveARun, valveBRun, valveCRun, valveDRun, mixMotorRun).\n  PUB002: opeMode=FALSE selects Manual Mode; opeMode=TRUE selects Automatic Mode.\n  PUB003: Manual Mode - rising edge on valveAStart toggles valveARun; similarly B/C/D and mixMotorStart each toggle their respective outputs.\n  PUB004: Automatic Mode - rising edge on autoStart initiates sequence; valve A opens first.\n  PUB005: Level >= 50 cm triggers close valve A + open valve B transition.\n  PUB006: Level >= 80 cm triggers close valve B; processMode=FALSE skips valve C; processMode=TRUE proceeds to valve C fill.\n  PUB007: processMode=TRUE: valve C opens at level>=80; level>=100 closes valve C.\n  PUB008: After level>=80 (or level>=100 for processMode=TRUE), mixing motor starts on mixMotorComplete signal.\n  PUB009: mixMotorComplete=TRUE stops mixing motor, opens valve D, and terminates the automatic sequence.\n  PUB010: All outputs retain state across scans except when explicitly changed by state transitions or estop.\n  PUB011: Rising-edge detection uses R_TRIG on momentary inputs; manual toggles are stateful across scans.\n  PUB012: Level sensor thresholds are strict >= comparisons at integer resolution (cm).\n  PUB013: No unstated resets, interlocks, or edge triggers beyond R_TRIG on start inputs.\n  PUB014: Same-scan priority: output assignments before RETURN; state changes apply to subsequent scan.\n  PUB015: Valve/motor stop on estop or mode change takes precedence over automatic sequence state.\n*)\n(* CONTRACT_RULES [] *)\n\nFUNCTION_BLOCK MaterialProportioning\nVAR_INPUT\n    estop           : BOOL;\n    opeMode         : BOOL;\n    valveAStart     : BOOL;\n    valveBStart     : BOOL;\n    valveCStart     : BOOL;\n    valveDStart     : BOOL;\n    mixMotorStart   : BOOL;\n    autoStart       : BOOL;\n    processMode     : BOOL;\n    levelSensor     : INT;\n    mixMotorComplete: BOOL;\nEND_VAR\nVAR_OUTPUT\n    valveARun       : BOOL;\n    valveBRun       : BOOL;\n    valveCRun       : BOOL;\n    valveDRun       : BOOL;\n    mixMotorRun     : BOOL;\nEND_VAR\nVAR\n    tmp_autoStartTrig    : R_TRIG;\n    tmp_valveAStartTrig  : R_TRIG;\n    tmp_valveBStartTrig  : R_TRIG;\n    tmp_valveCStartTrig  : R_TRIG;\n    tmp_valveDStartTrig  : R_TRIG;\n    tmp_mixMotorStartTrig: R_TRIG;\n    tmp_autoState        : INT;\n    tmp_manualValveA     : BOOL;\n    tmp_manualValveB     : BOOL;\n    tmp_manualValveC     : BOOL;\n    tmp_manualValveD     : BOOL;\n    tmp_manualMixMotor   : BOOL;\nEND_VAR\n\nCONSTANTS\n    AUTO_IDLE      : INT := 0;\n    AUTO_FILL_A    : INT := 1;\n    AUTO_FILL_B    : INT := 2;\n    AUTO_FILL_C    : INT := 3;\n    AUTO_MIXING    : INT := 4;\n    AUTO_DRAINING  : INT := 5;\nEND_CONSTANTS\n\n(* Rising edge detection *)\ntmp_autoStartTrig(CLK := autoStart);\ntmp_valveAStartTrig(CLK := valveAStart);\ntmp_valveBStartTrig(CLK := valveBStart);\ntmp_valveCStartTrig(CLK := valveCStart);\ntmp_valveDStartTrig(CLK := valveDStart);\ntmp_mixMotorStartTrig(CLK := mixMotorStart);\n\n(* Emergency stop: all outputs OFF immediately *)\nIF NOT estop THEN\n    valveARun  := FALSE;\n    valveBRun  := FALSE;\n    valveCRun  := FALSE;\n    valveDRun  := FALSE;\n    mixMotorRun := FALSE;\n    tmp_autoState := AUTO_IDLE;\n    tmp_manualValveA := FALSE;\n    tmp_manualValveB := FALSE;\n    tmp_manualValveC := FALSE;\n    tmp_manualValveD := FALSE;\n    tmp_manualMixMotor := FALSE;\n    RETURN;\nEND_IF\n\n(* Mode selection *)\nIF NOT opeMode THEN\n    (* Manual Mode *)\n    valveARun  := tmp_manualValveA;\n    valveBRun  := tmp_manualValveB;\n    valveCRun  := tmp_manualValveC;\n    valveDRun  := tmp_manualValveD;\n    mixMotorRun := tmp_manualMixMotor;\n    tmp_autoState := AUTO_IDLE;\n\n    IF tmp_valveAStartTrig.Q THEN\n        tmp_manualValveA := NOT tmp_manualValveA;\n    END_IF\n    IF tmp_valveBStartTrig.Q THEN\n        tmp_manualValveB := NOT tmp_manualValveB;\n    END_IF\n    IF tmp_valveCStartTrig.Q THEN\n        tmp_manualValveC := NOT tmp_manualValveC;\n    END_IF\n    IF tmp_valveDStartTrig.Q THEN\n        tmp_manualValveD := NOT tmp_manualValveD;\n    END_IF\n    IF tmp_mixMotorStartTrig.Q THEN\n        tmp_manualMixMotor := NOT tmp_manualMixMotor;\n    END_IF;\nELSE\n    (* Automatic Mode *)\n    tmp_manualValveA := FALSE;\n    tmp_manualValveB := FALSE;\n    tmp_manualValveC := FALSE;\n    tmp_manualValveD := FALSE;\n    tmp_manualMixMotor := FALSE;\n\n    CASE tmp_autoState OF\n        AUTO_IDLE:\n            valveARun  := FALSE;\n            valveBRun  := FALSE;\n            valveCRun  := FALSE;\n            valveDRun  := FALSE;\n            mixMotorRun := FALSE;\n            IF tmp_autoStartTrig.Q THEN\n                tmp_autoState := AUTO_FILL_A;\n            END_IF;\n\n        AUTO_FILL_A:\n            valveARun := TRUE;\n            valveBRun := FALSE;\n            valveCRun := FALSE;\n            valveDRun := FALSE;\n            mixMotorRun := FALSE;\n            IF levelSensor >= 50 THEN\n                valveARun := FALSE;\n                valveBRun := TRUE;\n                tmp_autoState := AUTO_FILL_B;\n            END_IF;\n\n        AUTO_FILL_B:\n            valveARun := FALSE;\n            valveBRun := TRUE;\n            valveCRun := FALSE;\n            valveDRun := FALSE;\n            mixMotorRun := FALSE;\n            IF levelSensor >= 80 THEN\n                valveBRun := FALSE;\n                IF NOT processMode THEN\n                    tmp_autoState := AUTO_MIXING;\n                ELSE\n                    valveCRun := TRUE;\n                    tmp_autoState := AUTO_FILL_C;\n                END_IF;\n            END_IF;\n\n        AUTO_FILL_C:\n            valveARun := FALSE;\n            valveBRun := FALSE;\n            valveCRun := TRUE;\n            valveDRun := FALSE;\n            mixMotorRun := FALSE;\n            IF levelSensor >= 100 THEN\n                valveCRun := FALSE;\n                tmp_autoState := AUTO_MIXING;\n            END_IF;\n\n        AUTO_MIXING:\n            valveARun := FALSE;\n            valveBRun := FALSE;\n            valveCRun := FALSE;\n            valveDRun := FALSE;\n            mixMotorRun := TRUE;\n            IF mixMotorComplete THEN\n                mixMotorRun := FALSE;\n                valveDRun := TRUE;\n                tmp_autoState := AUTO_DRAINING;\n            END_IF;\n\n        AUTO_DRAINING:\n            valveARun := FALSE;\n            valveBRun := FALSE;\n            valveCRun := FALSE;\n            valveDRun := TRUE;\n            mixMotorRun := FALSE;\n            tmp_autoState := AUTO_IDLE;\n\n    END_CASE;\nEND_IF;\n\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "The user wants me to create a PLC program in Structured Text (ST) for CODESYS 3.5 that controls a material proportioning process. Let me analyze the requirements:\n\n**Interface:**\n- Inputs: estop, opeMode, valveAStart, valveBStart, valveCStart, valveDStart, mixMotorStart, autoStart, processMode, levelSensor, mixMotorComplete\n- Outputs: valveARun, valveBRun, valveCRun, valveDRun, mixMotorRun\n\n**Requirements:**\n1. Emergency Stop (estop=FALSE) stops all equipment immediately\n2. Manual Mode (opeMode=false): Toggle valves and motor with rising edge detection\n3. Automatic Mode (opeMode=true): \n   - Press autoStart to begin\n   - Open valve A\n   - When levelSensor >= 50cm, close valve A, open valve B\n   - When levelSensor >= 80cm, close valve B\n   - If processMode=false: start mixer, when complete stop mixer, open valve D, end\n   - If processMode=true: open valve C, when levelSensor >= 100cm close valve C, start mixer, when complete stop mixer, open valve D, end\n\nLet me design the state machine and implement this.\n\n**ENGINEERING_CONTRACT:**\n1. All outputs OFF when estop=FALSE\n2. Manual mode (opeMode=false): Toggle each valve/motor on rising edge of respective start button\n3. Auto mode (opeMode=true): Sequential control based on level sensor\n4. processMode determines whether valve C is used\n5. Level thresholds: 50cm, 80cm, 100cm (>= comparison)\n\n**State Machine for Automatic Mode:**\n- IDLE: waiting for autoStart\n- FILL_A: valve A open\n- FILL_B: valve A closed, valve B open (after level >= 50)\n\n\n- If processMode=false: FILL_B transitions directly to MIX after level >= 80\n- If processMode=true: FILL_B opens valve C when level reaches 80cm, then MIX starts once level hits 100cm\n- MIX: motor runs until mixMotorComplete signals, then DRAIN opens valve D and returns to IDLE\n\nNow I'll write the ST code.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The user wants me to create a PLC program in Structured Text (ST) for CODESYS 3.5 that controls a material proportioning process. Let me analyze the requirements:\n\n**Interface:**\n- Inputs: estop, opeMode, valveAStart, valveBStart, valveCStart, valveDStart, mixMotorStart, autoStart, processMode, levelSensor, mixMotorComplete\n- Outputs: valveARun, valveBRun, valveCRun, valveDRun, mixMotorRun\n\n**Requirements:**\n1. Emergency Stop (estop=FALSE) stops all equipment immediately\n2. Manual Mode (opeMode=false): Toggle valves and motor with rising edge detection\n3. Automatic Mode (opeMode=true): \n   - Press autoStart to begin\n   - Open valve A\n   - When levelSensor >= 50cm, close valve A, open valve B\n   - When levelSensor >= 80cm, close valve B\n   - If processMode=false: start mixer, when complete stop mixer, open valve D, end\n   - If processMode=true: open valve C, when levelSensor >= 100cm close valve C, start mixer, when complete stop mixer, open valve D, end\n\nLet me design the state machine and implement this.\n\n**ENGINEERING_CONTRACT:**\n1. All outputs OFF when estop=FALSE\n2. Manual mode (opeMode=false): Toggle each valve/motor on rising edge of respective start button\n3. Auto mode (opeMode=true): Sequential control based on level sensor\n4. processMode determines whether valve C is used\n5. Level thresholds: 50cm, 80cm, 100cm (>= comparison)\n\n**State Machine for Automatic Mode:**\n- IDLE: waiting for autoStart\n- FILL_A: valve A open\n- FILL_B: valve A closed, valve B open (after level >= 50)\n\n\n- If processMode=false: FILL_B transitions directly to MIX after level >= 80\n- If processMode=true: FILL_B opens valve C when level reaches 80cm, then MIX starts once level hits 100cm\n- MIX: motor runs until mixMotorComplete signals, then DRAIN opens valve D and returns to IDLE\n\nNow I'll write the ST code.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794518808,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 9148,
+      "completion_tokens": 2161,
+      "total_tokens": 11309,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.029516"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
