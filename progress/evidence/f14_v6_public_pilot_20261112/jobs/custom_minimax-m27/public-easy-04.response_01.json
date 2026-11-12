@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-iy9gt1-1794494801268278823",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\nFUNCTION_BLOCK FB_JamPumpControl\nVAR_INPUT\n    VISCOSITY_OK    : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceTime    : TIME;\n    CycleTime       : TIME;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN          : BOOL;\n    PUMP_MAINT_DUE   : BOOL;\n    PUMP_RUNTIME_ACC : LTIME;\nEND_VAR\nVAR\n    ViscosityValid : BOOL := FALSE;\n    DebounceTimer  : TON;\n    tmp_MaintThreshold : LTIME := LTIME#500h;\nEND_VAR\n\n(* CONTRACT_RULES [] *)\n\n(* ENGINEERING_CONTRACT\n+====================+================+==========+=========================+================+===============+\n| Output/State       | Activation     | Retention| Reset/Deactivation      | Same-Scan Prio | Boundaries    |\n+====================+================+==========+=========================+================+===============+\n| VFD_RUN            | ESTOP=TRUE     | Hold     | Immediately on ESTOP=FALSE per PUB003 | Immediate disable | Boolean       |\n|                    | AND            |          | No delay on ESTOP loss   |               |               |\n|                    | ViscosityValid |          |                          |               |               |\n+--------------------+----------------+----------+-------------------------+----------------+---------------+\n| ViscosityValid     | TON.Q=TRUE     | Hold TRUE| Invalidate on           | Immediate      | Internal state|\n| (internal)         | after          | while    | VISCOSITY_OK=FALSE      | invalidation   |               |\n|                    | DebounceTime   | VISCOSITY_OK=TRUE        | per PUB002     |               |               |\n+--------------------+----------------+----------+-------------------------+----------------+---------------+\n| PUMP_RUNTIME_ACC   | +CycleTime     | Preserve | Only via power-up init  | Increment per  | LTIME, max    |\n|                    | per scan while | when     | (PUB006). No auto-reset | scan when      | 500h threshold|\n|                    | VFD_RUN=TRUE   | stopped  | specified.              | VFD_RUN=TRUE   | for PUMP_MAINT|\n+--------------------+----------------+----------+-------------------------+----------------+---------------+\n| PUMP_MAINT_DUE     | Set when       | Hold TRUE| Not specified (informational per PUB005) | At threshold | Boolean       |\n|                    | ACC >= 500h    |          | No reset required       |               |               |\n+--------------------+----------------+----------+-------------------------+----------------+---------------+\n| DebounceTimer      | Start when     | Running  | Reset (ET=TRUE) on      | Clear on input | TON; PT=DebounceTime |\n|                    | VISCOSITY_OK   | if input | VISCOSITY_OK=FALSE per  | drop (PUB002)  |               |\n|                    | becomes TRUE   | stays TRUE| PUB002                 |               |               |\n+--------------------+----------------+----------+-------------------------+----------------+---------------+\n*)\n\nCASE BOOL_TO_INT(PASTE_E_STOP_NC) OF\n    0: // Emergency stop active\n        VFD_RUN := FALSE;\n        ViscosityValid := FALSE;\n        DebounceTimer(IN := FALSE, PT := DebounceTime);\n        \n    1: // Emergency stop cleared - normal operation\n        IF NOT VISCOSITY_OK THEN\n            ViscosityValid := FALSE;\n            DebounceTimer(IN := FALSE, PT := DebounceTime);\n        ELSE\n            DebounceTimer(IN := TRUE, PT := DebounceTime);\n            ViscosityValid := DebounceTimer.Q;\n        END_IF;\n        \n        VFD_RUN := ViscosityValid;\nEND_CASE;\n\nIF VFD_RUN THEN\n    PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + LTIME(CycleTime);\nEND_IF;\n\nIF PUMP_RUNTIME_ACC >= tmp_MaintThreshold THEN\n    PUMP_MAINT_DUE := TRUE;\nEND_IF;\n\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "Let me analyze the requirements and create the IEC 61131-3 Structured Text FUNCTION_BLOCK implementation.\n\n**Engineering Contract:**\n\n| Output/State | Activation | Retention | Reset | Same-Scan Priority | Units/Boundaries |\n|--------------|------------|-----------|-------|-------------------|------------------|\n| VFD_RUN | TRUE when ESTOP_NC=TRUE AND viscosity_valid=TRUE | Hold TRUE until ESTOP_NC=FALSE or viscosity invalid | Deactivated immediately on ESTOP_NC=FALSE (PUB003) | Immediate disable on ESTOP (no debounce delay) | Boolean |\n| Viscosity_Valid | TRUE after DebounceTime of continuous VISCOSITY_OK=TRUE | Retain TRUE while VISCOSITY_OK=TRUE continuously | Immediate clear when VISCOSITY_OK=FALSE | Clear on input drop | Internal state |\n| PUMP_RUNTIME_ACC | Increment by CycleTime each scan while VFD_RUN=TRUE | Preserve value when VFD_RUN=FALSE | Never auto-reset (power-up init only per PUB006) | Increment per scan | LTIME, accumulated |\n| PUMP_MAINT_DUE | Set TRUE when PUMP_RUNTIME_ACC >= 500 hours | Hold TRUE once set | Manual reset not specified (informational only) | Set at threshold crossing | Boolean |\n\n**Contract Rules (latches):**\n- No unconditional public Boolean output latch with explicit reset is specified in this task\n\n**Key design decisions:**\n1. Debounce timer using TON - start TON.PT = DebounceTime, TON.IN = VISCOSITY_OK AND NOT viscosity_valid (to avoid re-triggering), TON.Q indicates debounce complete\n2. Actually, let me reconsider: the debounce should validate VISCOSITY_OK after it has been TRUE for DebounceTime. The TON should start when VISCOSITY_OK becomes TRUE, and Q becomes TRUE after PT duration. \n\nWhen VISCOSITY_OK drops, I need to invalidate the debounce immediately. I'll use a TON that starts on the leading edge of VISCOSITY_OK, stays running while the signal is high, and outputs Q once the debounce duration elapses. On the falling edge of VISCOSITY_OK, I reset both the timer and the validity flag right away.\n\nThe implementation uses TON(IN := VISCOSITY_OK, PT := DebounceTime), where the timer's Q output directly represents whether the viscosity condition is valid. VFD_RUN combines this with the emergency stop status.\n\nFor runtime accumulation, PUMP_RUNTIME_ACC increments by CycleTime whenever VFD_RUN is active. The maintenance flag triggers once accumulated runtime exceeds 500 hours, though this doesn't affect pump operation or safety permissive. At startup, all outputs initialize to false and accumulated values reset to zero.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "Let me analyze the requirements and create the IEC 61131-3 Structured Text FUNCTION_BLOCK implementation.\n\n**Engineering Contract:**\n\n| Output/State | Activation | Retention | Reset | Same-Scan Priority | Units/Boundaries |\n|--------------|------------|-----------|-------|-------------------|------------------|\n| VFD_RUN | TRUE when ESTOP_NC=TRUE AND viscosity_valid=TRUE | Hold TRUE until ESTOP_NC=FALSE or viscosity invalid | Deactivated immediately on ESTOP_NC=FALSE (PUB003) | Immediate disable on ESTOP (no debounce delay) | Boolean |\n| Viscosity_Valid | TRUE after DebounceTime of continuous VISCOSITY_OK=TRUE | Retain TRUE while VISCOSITY_OK=TRUE continuously | Immediate clear when VISCOSITY_OK=FALSE | Clear on input drop | Internal state |\n| PUMP_RUNTIME_ACC | Increment by CycleTime each scan while VFD_RUN=TRUE | Preserve value when VFD_RUN=FALSE | Never auto-reset (power-up init only per PUB006) | Increment per scan | LTIME, accumulated |\n| PUMP_MAINT_DUE | Set TRUE when PUMP_RUNTIME_ACC >= 500 hours | Hold TRUE once set | Manual reset not specified (informational only) | Set at threshold crossing | Boolean |\n\n**Contract Rules (latches):**\n- No unconditional public Boolean output latch with explicit reset is specified in this task\n\n**Key design decisions:**\n1. Debounce timer using TON - start TON.PT = DebounceTime, TON.IN = VISCOSITY_OK AND NOT viscosity_valid (to avoid re-triggering), TON.Q indicates debounce complete\n2. Actually, let me reconsider: the debounce should validate VISCOSITY_OK after it has been TRUE for DebounceTime. The TON should start when VISCOSITY_OK becomes TRUE, and Q becomes TRUE after PT duration. \n\nWhen VISCOSITY_OK drops, I need to invalidate the debounce immediately. I'll use a TON that starts on the leading edge of VISCOSITY_OK, stays running while the signal is high, and outputs Q once the debounce duration elapses. On the falling edge of VISCOSITY_OK, I reset both the timer and the validity flag right away.\n\nThe implementation uses TON(IN := VISCOSITY_OK, PT := DebounceTime), where the timer's Q output directly represents whether the viscosity condition is valid. VFD_RUN combines this with the emergency stop status.\n\nFor runtime accumulation, PUMP_RUNTIME_ACC increments by CycleTime whenever VFD_RUN is active. The maintenance flag triggers once accumulated runtime exceeds 500 hours, though this doesn't affect pump operation or safety permissive. At startup, all outputs initialize to false and accumulated values reset to zero.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794494802,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 1921,
+      "completion_tokens": 1377,
+      "total_tokens": 3298,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.012324"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
