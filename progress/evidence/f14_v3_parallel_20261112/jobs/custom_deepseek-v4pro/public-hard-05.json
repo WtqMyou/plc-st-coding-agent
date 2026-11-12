@@ -1,0 +1,1023 @@
+{
+  "job_id": "custom_deepseek-v4pro/public-hard-05",
+  "pid": "public-hard-05",
+  "condition": "custom_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 54,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 227,
+            "code": "E_MISSING_END_POU",
+            "message": "FUNCTION_BLOCK MechanicalArmControl 缺少结束关键字"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 54,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "7de900fac0b988132d698c29f2a7cef73b567ff1a3666082c3b3081fc1689c8e",
+          "task_json_sha256": "7eb305baaa585f6846468a7ef94bd70bddb6225346c1d325425f9b4fb3d0cdb1",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "静态检查或接口契约失败：\n第 227 行 [E_MISSING_END_POU] FUNCTION_BLOCK MechanicalArmControl 缺少结束关键字\n第 0 行 [E_NO_POU] 未找到可执行 POU\nLTL 检查：not_run。",
+      "timing": {
+        "static_seconds": 0.172
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK MechanicalArmControl\nVAR\n    Step: INT := 1;                     // Current action step (1..8)\n    ActionActive: BOOL := FALSE;        // TRUE when an automated action is being executed\n    WaitingForStart: BOOL := TRUE;      // TRUE in single-step mode when waiting for start press\n    CycleRunning: BOOL := FALSE;        // TRUE when a cycle is in progress (single/continuous)\n    StartPrev: BOOL := FALSE;           // Previous value of Start input for edge detection\n    StartPulse: BOOL := FALSE;          // One-scan pulse on rising edge of Start\n    WaitingForStartPrev: BOOL := TRUE;  // Snapshot of WaitingForStart at scan start\n    CycleRunningPrev: BOOL := FALSE;    // Snapshot of CycleRunning at scan start\nEND_VAR\n\n// Rising edge detection for Start\nStartPulse := Start AND NOT StartPrev;\nStartPrev := Start;\n\n// Capture previous states before any logic changes (to avoid race conditions)\nWaitingForStartPrev := WaitingForStart;\nCycleRunningPrev := CycleRunning;\n\nIF NOT EmergencyStop THEN\n    // Emergency stop triggered: stop all actions and reset automated state\n    MoveDown := FALSE;\n    MoveUp := FALSE;\n    MoveLeft := FALSE;\n    MoveRight := FALSE;\n    ActivateGrip := FALSE;\n    ActivateRelease := FALSE;\n    Step := 1;\n    ActionActive := FALSE;\n    WaitingForStart := TRUE;\n    CycleRunning := FALSE;\nELSE\n    // Normal operation (no emergency stop)\n    IF ManualMode THEN\n        // Manual mode: direct button control with limit switch interlock\n        MoveDown := DownButton AND NOT DownLimitSwitch;\n        MoveUp := UpButton AND NOT UpLimitSwitch;\n        MoveLeft := LeftButton AND NOT LeftLimitSwitch;\n        MoveRight := RightButton AND NOT RightLimitSwitch;\n        ActivateGrip := GripButton AND NOT GripLimitSwitch;\n        ActivateRelease := ReleaseButton AND NOT ReleaseLimitSwitch;\n        // Reset automated state when in manual mode\n        Step := 1;\n        ActionActive := FALSE;\n        WaitingForStart := TRUE;\n        CycleRunning := FALSE;\n    ELSIF SingleStepMode THEN\n        // Single step mode: one action per start press\n        // Default outputs to false\n        MoveDown := FALSE;\n        MoveUp := FALSE;\n        MoveLeft := FALSE;\n        MoveRight := FALSE;\n        ActivateGrip := FALSE;\n        ActivateRelease := FALSE;\n\n        // Start next action if waiting and start pulse occurs\n        IF WaitingForStartPrev AND StartPulse THEN\n            WaitingForStart := FALSE;\n            ActionActive := TRUE;\n            Step := 1;  // Always start from step 1\n        END_IF;\n\n        // Check completion of current action\n        IF ActionActive THEN\n            CASE Step OF\n                1: IF DownLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 1;\n                   END_IF;\n                2: IF GripLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 2;\n                   END_IF;\n                3: IF UpLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 3;\n                   END_IF;\n                4: IF RightLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 4;\n                   END_IF;\n                5: IF DownLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 5;\n                   END_IF;\n                6: IF ReleaseLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 6;\n                   END_IF;\n                7: IF UpLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 7;\n                   END_IF;\n                8: IF LeftLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 1;  // Reset to step 1 for next cycle\n                   END_IF;\n            END_CASE;\n        END_IF;\n\n        // Set outputs based on current step and action active\n        IF ActionActive THEN\n            CASE Step OF\n                1: MoveDown := TRUE;\n                2: ActivateGrip := TRUE;\n                3: MoveUp := TRUE;\n                4: MoveRight := TRUE;\n                5: MoveDown := TRUE;\n                6: ActivateRelease := TRUE;\n                7: MoveUp := TRUE;\n                8: MoveLeft := TRUE;\n            END_CASE;\n        END_IF;\n    ELSIF SingleCycleMode THEN\n        // Single cycle mode: complete one full cycle automatically\n        MoveDown := FALSE;\n        MoveUp := FALSE;\n        MoveLeft := FALSE;\n        MoveRight := FALSE;\n        ActivateGrip := FALSE;\n        ActivateRelease := FALSE;\n\n        // Start cycle on rising edge of Start if not already running\n        IF NOT CycleRunningPrev AND StartPulse THEN\n            CycleRunning := TRUE;\n            Step := 1;\n            ActionActive := TRUE;\n        END_IF;\n\n        // Execute cycle and advance to next action on completion\n        IF CycleRunning AND ActionActive THEN\n            CASE Step OF\n                1: IF DownLimitSwitch THEN Step := 2; END_IF;\n                2: IF GripLimitSwitch THEN Step := 3; END_IF;\n                3: IF UpLimitSwitch THEN Step := 4; END_IF;\n                4: IF RightLimitSwitch THEN Step := 5; END_IF;\n                5: IF DownLimitSwitch THEN Step := 6; END_IF;\n                6: IF ReleaseLimitSwitch THEN Step := 7; END_IF;\n                7: IF UpLimitSwitch THEN Step := 8; END_IF;\n                8: IF LeftLimitSwitch THEN\n                       ActionActive := FALSE;   // Cycle finished\n                       CycleRunning := FALSE;\n                       Step := 1;               // Reset for next start\n                   END_IF;\n            END_CASE;\n        END_IF;\n\n        // Set outputs according to current step\n        IF CycleRunning AND ActionActive THEN\n            CASE Step OF\n                1: MoveDown := TRUE;\n                2: ActivateGrip := TRUE;\n                3: MoveUp := TRUE;\n                4: MoveRight := TRUE;\n                5: MoveDown := TRUE;\n                6: ActivateRelease := TRUE;\n                7: MoveUp := TRUE;\n                8: MoveLeft := TRUE;\n            END_CASE;\n        END_IF;\n    ELSIF ContinuousMode THEN\n        // Continuous mode: repeat cycle indefinitely\n        MoveDown := FALSE;\n        MoveUp := FALSE;\n        MoveLeft := FALSE;\n        MoveRight := FALSE;\n        ActivateGrip := FALSE;\n        ActivateRelease := FALSE;\n\n        // Start continuous operation on rising edge of Start if not already running\n        IF NOT CycleRunningPrev AND StartPulse THEN\n            CycleRunning := TRUE;\n            Step := 1;\n            ActionActive := TRUE;\n        END_IF;\n\n        // Execute cycle and loop back to step 1 after step 8\n        IF CycleRunning AND ActionActive THEN\n            CASE Step OF\n                1: IF DownLimitSwitch THEN Step := 2; END_IF;\n                2: IF GripLimitSwitch THEN Step := 3; END_IF;\n                3: IF UpLimitSwitch THEN Step := 4; END_IF;\n                4: IF RightLimitSwitch THEN Step := 5; END_IF;\n                5: IF DownLimitSwitch THEN Step := 6; END_IF;\n                6: IF ReleaseLimitSwitch THEN Step := 7; END_IF;\n                7: IF UpLimitSwitch THEN Step := 8; END_IF;\n                8: IF LeftLimitSwitch THEN Step := 1; END_IF;  // Loop back\n            END_CASE;\n        END_IF;\n\n        // Set outputs according to current step\n        IF CycleRunning AND ActionActive THEN\n            CASE Step OF\n                1: MoveDown := TRUE;\n                2: ActivateGrip := TRUE;\n                3: MoveUp := TRUE;\n                4: MoveRight := TRUE;\n                5: MoveDown := TRUE;\n                6: ActivateRelease := TRUE;\n                7: MoveUp := TRUE;\n                8: MoveLeft := TRUE;\n            END_CASE;\n        END_IF;\n    ELSE\n        // No mode selected (should not happen, but safe default)\n        MoveDown := FALSE;\n        MoveUp := FALSE;\n        MoveLeft := FALSE;\n        MoveRight := FALSE;\n        ActivateGrip := FALSE;\n        ActivateRelease := FALSE;\n        Step := 1;\n        ActionActive := FALSE;\n        WaitingForStart := TRUE;\n        CycleRunning := FALSE;\n    END_IF;\nEND_IF;",
+      "code_hash": "7de900fac0b988132d698c29f2a7cef73b567ff1a3666082c3b3081fc1689c8e",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 2013,
+      "completion_tokens": 10198,
+      "cost_cny": 0.23183577,
+      "latency_s": 128.797,
+      "generation_seconds": 128.797,
+      "end_to_end_seconds": 128.969,
+      "format_edits": [],
+      "raw_source_sha256": "7de900fac0b988132d698c29f2a7cef73b567ff1a3666082c3b3081fc1689c8e",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 54,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 14,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'Start'"
+          },
+          {
+            "level": "error",
+            "line": 15,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'Start'"
+          },
+          {
+            "level": "error",
+            "line": 21,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'EmergencyStop'"
+          },
+          {
+            "level": "error",
+            "line": 23,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveDown'"
+          },
+          {
+            "level": "error",
+            "line": 24,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveUp'"
+          },
+          {
+            "level": "error",
+            "line": 25,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveLeft'"
+          },
+          {
+            "level": "error",
+            "line": 26,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveRight'"
+          },
+          {
+            "level": "error",
+            "line": 27,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateGrip'"
+          },
+          {
+            "level": "error",
+            "line": 28,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateRelease'"
+          },
+          {
+            "level": "error",
+            "line": 35,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ManualMode'"
+          },
+          {
+            "level": "error",
+            "line": 37,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveDown'"
+          },
+          {
+            "level": "error",
+            "line": 37,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'DownButton'"
+          },
+          {
+            "level": "error",
+            "line": 37,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'DownLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 38,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveUp'"
+          },
+          {
+            "level": "error",
+            "line": 38,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'UpButton'"
+          },
+          {
+            "level": "error",
+            "line": 38,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'UpLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 39,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveLeft'"
+          },
+          {
+            "level": "error",
+            "line": 39,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'LeftButton'"
+          },
+          {
+            "level": "error",
+            "line": 39,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'LeftLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 40,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveRight'"
+          },
+          {
+            "level": "error",
+            "line": 40,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'RightButton'"
+          },
+          {
+            "level": "error",
+            "line": 40,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'RightLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 41,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateGrip'"
+          },
+          {
+            "level": "error",
+            "line": 41,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'GripButton'"
+          },
+          {
+            "level": "error",
+            "line": 41,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'GripLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 42,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateRelease'"
+          },
+          {
+            "level": "error",
+            "line": 42,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ReleaseButton'"
+          },
+          {
+            "level": "error",
+            "line": 42,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ReleaseLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 48,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'SingleStepMode'"
+          },
+          {
+            "level": "error",
+            "line": 50,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveDown'"
+          },
+          {
+            "level": "error",
+            "line": 51,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveUp'"
+          },
+          {
+            "level": "error",
+            "line": 52,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveLeft'"
+          },
+          {
+            "level": "error",
+            "line": 53,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveRight'"
+          },
+          {
+            "level": "error",
+            "line": 54,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateGrip'"
+          },
+          {
+            "level": "error",
+            "line": 55,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateRelease'"
+          },
+          {
+            "level": "error",
+            "line": 65,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'DownLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 70,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'GripLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 75,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'UpLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 80,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'RightLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 85,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'DownLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 90,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ReleaseLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 95,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'UpLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 100,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'LeftLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 110,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveDown'"
+          },
+          {
+            "level": "error",
+            "line": 111,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateGrip'"
+          },
+          {
+            "level": "error",
+            "line": 112,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveUp'"
+          },
+          {
+            "level": "error",
+            "line": 113,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveRight'"
+          },
+          {
+            "level": "error",
+            "line": 114,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveDown'"
+          },
+          {
+            "level": "error",
+            "line": 115,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateRelease'"
+          },
+          {
+            "level": "error",
+            "line": 116,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveUp'"
+          },
+          {
+            "level": "error",
+            "line": 117,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveLeft'"
+          },
+          {
+            "level": "error",
+            "line": 120,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'SingleCycleMode'"
+          },
+          {
+            "level": "error",
+            "line": 122,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveDown'"
+          },
+          {
+            "level": "error",
+            "line": 123,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveUp'"
+          },
+          {
+            "level": "error",
+            "line": 124,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveLeft'"
+          },
+          {
+            "level": "error",
+            "line": 125,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveRight'"
+          },
+          {
+            "level": "error",
+            "line": 126,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateGrip'"
+          },
+          {
+            "level": "error",
+            "line": 127,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateRelease'"
+          },
+          {
+            "level": "error",
+            "line": 137,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'DownLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 138,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'GripLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 139,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'UpLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 140,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'RightLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 141,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'DownLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 142,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ReleaseLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 143,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'UpLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 144,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'LeftLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 154,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveDown'"
+          },
+          {
+            "level": "error",
+            "line": 155,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateGrip'"
+          },
+          {
+            "level": "error",
+            "line": 156,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveUp'"
+          },
+          {
+            "level": "error",
+            "line": 157,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveRight'"
+          },
+          {
+            "level": "error",
+            "line": 158,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveDown'"
+          },
+          {
+            "level": "error",
+            "line": 159,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateRelease'"
+          },
+          {
+            "level": "error",
+            "line": 160,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveUp'"
+          },
+          {
+            "level": "error",
+            "line": 161,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveLeft'"
+          },
+          {
+            "level": "error",
+            "line": 164,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ContinuousMode'"
+          },
+          {
+            "level": "error",
+            "line": 166,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveDown'"
+          },
+          {
+            "level": "error",
+            "line": 167,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveUp'"
+          },
+          {
+            "level": "error",
+            "line": 168,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveLeft'"
+          },
+          {
+            "level": "error",
+            "line": 169,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveRight'"
+          },
+          {
+            "level": "error",
+            "line": 170,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateGrip'"
+          },
+          {
+            "level": "error",
+            "line": 171,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateRelease'"
+          },
+          {
+            "level": "error",
+            "line": 181,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'DownLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 182,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'GripLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 183,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'UpLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 184,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'RightLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 185,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'DownLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 186,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ReleaseLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 187,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'UpLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 188,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'LeftLimitSwitch'"
+          },
+          {
+            "level": "error",
+            "line": 194,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveDown'"
+          },
+          {
+            "level": "error",
+            "line": 195,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateGrip'"
+          },
+          {
+            "level": "error",
+            "line": 196,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveUp'"
+          },
+          {
+            "level": "error",
+            "line": 197,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveRight'"
+          },
+          {
+            "level": "error",
+            "line": 198,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveDown'"
+          },
+          {
+            "level": "error",
+            "line": 199,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateRelease'"
+          },
+          {
+            "level": "error",
+            "line": 200,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveUp'"
+          },
+          {
+            "level": "error",
+            "line": 201,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveLeft'"
+          },
+          {
+            "level": "error",
+            "line": 206,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveDown'"
+          },
+          {
+            "level": "error",
+            "line": 207,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveUp'"
+          },
+          {
+            "level": "error",
+            "line": 208,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveLeft'"
+          },
+          {
+            "level": "error",
+            "line": 209,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'MoveRight'"
+          },
+          {
+            "level": "error",
+            "line": 210,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateGrip'"
+          },
+          {
+            "level": "error",
+            "line": 211,
+            "code": "E_UNDECLARED",
+            "message": "使用了未声明的标识符 'ActivateRelease'"
+          }
+        ],
+        "tests_total": 54,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_UNDECLARED] 第14行 使用了未声明的标识符 'Start'; [E_UNDECLARED] 第15行 使用了未声明的标识符 'Start'; [E_UNDECLARED] 第21行 使用了未声明的标识符 'EmergencyStop'",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "Generate code...",
+              "Cannot convert type 'Unknown type: '(Start AND NOT(StartPrev))'' to type 'BOOL'",
+              "Unknown type: 'Start'",
+              "Identifier 'Start' not defined",
+              "Cannot convert type 'Unknown type: 'Start'' to type 'BOOL'",
+              "Identifier 'Start' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Unknown type: 'EmergencyStop'",
+              "Identifier 'EmergencyStop' not defined",
+              "Identifier 'MoveDown' not defined",
+              "'MoveDown' is no valid assignment target",
+              "Identifier 'MoveUp' not defined",
+              "'MoveUp' is no valid assignment target",
+              "Identifier 'MoveLeft' not defined",
+              "'MoveLeft' is no valid assignment target",
+              "Identifier 'MoveRight' not defined",
+              "'MoveRight' is no valid assignment target",
+              "Identifier 'ActivateGrip' not defined",
+              "'ActivateGrip' is no valid assignment target",
+              "Identifier 'ActivateRelease' not defined",
+              "'ActivateRelease' is no valid assignment target",
+              "Identifier 'ManualMode' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'MoveDown' not defined",
+              "'MoveDown' is no valid assignment target",
+              "Unknown type: 'DownButton'",
+              "Identifier 'DownButton' not defined",
+              "Unknown type: 'NOT(DownLimitSwitch)'",
+              "Unknown type: 'DownLimitSwitch'",
+              "Identifier 'DownLimitSwitch' not defined",
+              "Identifier 'MoveUp' not defined",
+              "'MoveUp' is no valid assignment target",
+              "Unknown type: 'UpButton'",
+              "Identifier 'UpButton' not defined",
+              "Unknown type: 'NOT(UpLimitSwitch)'",
+              "Unknown type: 'UpLimitSwitch'",
+              "Identifier 'UpLimitSwitch' not defined",
+              "Identifier 'MoveLeft' not defined",
+              "'MoveLeft' is no valid assignment target",
+              "Unknown type: 'LeftButton'",
+              "Identifier 'LeftButton' not defined",
+              "Unknown type: 'NOT(LeftLimitSwitch)'",
+              "Unknown type: 'LeftLimitSwitch'",
+              "Identifier 'LeftLimitSwitch' not defined",
+              "Identifier 'MoveRight' not defined",
+              "'MoveRight' is no valid assignment target",
+              "Unknown type: 'RightButton'",
+              "Identifier 'RightButton' not defined",
+              "Unknown type: 'NOT(RightLimitSwitch)'",
+              "Unknown type: 'RightLimitSwitch'",
+              "Identifier 'RightLimitSwitch' not defined",
+              "Identifier 'ActivateGrip' not defined",
+              "'ActivateGrip' is no valid assignment target",
+              "Unknown type: 'GripButton'",
+              "Identifier 'GripButton' not defined",
+              "Unknown type: 'NOT(GripLimitSwitch)'",
+              "Unknown type: 'GripLimitSwitch'",
+              "Identifier 'GripLimitSwitch' not defined",
+              "Identifier 'ActivateRelease' not defined",
+              "'ActivateRelease' is no valid assignment target",
+              "Unknown type: 'ReleaseButton'",
+              "Identifier 'ReleaseButton' not defined",
+              "Unknown type: 'NOT(ReleaseLimitSwitch)'",
+              "Unknown type: 'ReleaseLimitSwitch'",
+              "Identifier 'ReleaseLimitSwitch' not defined",
+              "Identifier 'SingleStepMode' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'MoveDown' not defined",
+              "'MoveDown' is no valid assignment target",
+              "Identifier 'MoveUp' not defined",
+              "'MoveUp' is no valid assignment target",
+              "Identifier 'MoveLeft' not defined",
+              "'MoveLeft' is no valid assignment target",
+              "Identifier 'MoveRight' not defined",
+              "'MoveRight' is no valid assignment target",
+              "Identifier 'ActivateGrip' not defined",
+              "'ActivateGrip' is no valid assignment target",
+              "Identifier 'ActivateRelease' not defined",
+              "'ActivateRelease' is no valid assignment target",
+              "Identifier 'DownLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'GripLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'UpLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'RightLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'DownLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'ReleaseLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'UpLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'LeftLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'MoveDown' not defined",
+              "'MoveDown' is no valid assignment target",
+              "Identifier 'ActivateGrip' not defined",
+              "'ActivateGrip' is no valid assignment target",
+              "Identifier 'MoveUp' not defined",
+              "'MoveUp' is no valid assignment target",
+              "Identifier 'MoveRight' not defined",
+              "'MoveRight' is no valid assignment target",
+              "Identifier 'MoveDown' not defined",
+              "'MoveDown' is no valid assignment target",
+              "Identifier 'ActivateRelease' not defined",
+              "'ActivateRelease' is no valid assignment target",
+              "Identifier 'MoveUp' not defined",
+              "'MoveUp' is no valid assignment target",
+              "Identifier 'MoveLeft' not defined",
+              "'MoveLeft' is no valid assignment target",
+              "Identifier 'SingleCycleMode' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'MoveDown' not defined",
+              "'MoveDown' is no valid assignment target",
+              "Identifier 'MoveUp' not defined",
+              "'MoveUp' is no valid assignment target",
+              "Identifier 'MoveLeft' not defined",
+              "'MoveLeft' is no valid assignment target",
+              "Identifier 'MoveRight' not defined",
+              "'MoveRight' is no valid assignment target",
+              "Identifier 'ActivateGrip' not defined",
+              "'ActivateGrip' is no valid assignment target",
+              "Identifier 'ActivateRelease' not defined",
+              "'ActivateRelease' is no valid assignment target",
+              "Identifier 'DownLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'GripLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'UpLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'RightLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'DownLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'ReleaseLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'UpLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'LeftLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'MoveDown' not defined",
+              "'MoveDown' is no valid assignment target",
+              "Identifier 'ActivateGrip' not defined",
+              "'ActivateGrip' is no valid assignment target",
+              "Identifier 'MoveUp' not defined",
+              "'MoveUp' is no valid assignment target",
+              "Identifier 'MoveRight' not defined",
+              "'MoveRight' is no valid assignment target",
+              "Identifier 'MoveDown' not defined",
+              "'MoveDown' is no valid assignment target",
+              "Identifier 'ActivateRelease' not defined",
+              "'ActivateRelease' is no valid assignment target",
+              "Identifier 'MoveUp' not defined",
+              "'MoveUp' is no valid assignment target",
+              "Identifier 'MoveLeft' not defined",
+              "'MoveLeft' is no valid assignment target",
+              "Identifier 'ContinuousMode' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'MoveDown' not defined",
+              "'MoveDown' is no valid assignment target",
+              "Identifier 'MoveUp' not defined",
+              "'MoveUp' is no valid assignment target",
+              "Identifier 'MoveLeft' not defined",
+              "'MoveLeft' is no valid assignment target",
+              "Identifier 'MoveRight' not defined",
+              "'MoveRight' is no valid assignment target",
+              "Identifier 'ActivateGrip' not defined",
+              "'ActivateGrip' is no valid assignment target",
+              "Identifier 'ActivateRelease' not defined",
+              "'ActivateRelease' is no valid assignment target",
+              "Identifier 'DownLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'GripLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'UpLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'RightLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'DownLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'ReleaseLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'UpLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'LeftLimitSwitch' not defined",
+              "Expression of type 'BOOL' expected in this place",
+              "Identifier 'MoveDown' not defined",
+              "'MoveDown' is no valid assignment target",
+              "Identifier 'ActivateGrip' not defined",
+              "'ActivateGrip' is no valid assignment target",
+              "Identifier 'MoveUp' not defined",
+              "'MoveUp' is no valid assignment target",
+              "Identifier 'MoveRight' not defined",
+              "'MoveRight' is no valid assignment target",
+              "Identifier 'MoveDown' not defined",
+              "'MoveDown' is no valid assignment target",
+              "Identifier 'ActivateRelease' not defined",
+              "'ActivateRelease' is no valid assignment target",
+              "Identifier 'MoveUp' not defined",
+              "'MoveUp' is no valid assignment target",
+              "Identifier 'MoveLeft' not defined",
+              "'MoveLeft' is no valid assignment target",
+              "Identifier 'MoveDown' not defined",
+              "'MoveDown' is no valid assignment target",
+              "Identifier 'MoveUp' not defined",
+              "'MoveUp' is no valid assignment target",
+              "Identifier 'MoveLeft' not defined",
+              "'MoveLeft' is no valid assignment target",
+              "Identifier 'MoveRight' not defined",
+              "'MoveRight' is no valid assignment target",
+              "Identifier 'ActivateGrip' not defined",
+              "'ActivateGrip' is no valid assignment target",
+              "Identifier 'ActivateRelease' not defined",
+              "'ActivateRelease' is no valid assignment target",
+              "Build complete -- 214 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.421999999998661,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-05_eba4026f26",
+            "source_sha256": "5e29018e8c406d46bc95e893362a43ba19ddc0adba1e5452ec161d4642f57e74",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "5e29018e8c406d46bc95e893362a43ba19ddc0adba1e5452ec161d4642f57e74",
+          "task_json_sha256": "7eb305baaa585f6846468a7ef94bd70bddb6225346c1d325425f9b4fb3d0cdb1",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\nGenerate code...\nCannot convert type 'Unknown type: '(Start AND NOT(StartPrev))'' to type 'BOOL'\nUnknown type: 'Start'\nIdentifier 'Start' not defined\nCannot convert type 'Unknown type: 'Start'' to type 'BOOL'\nIdentifier 'Start' not defined\n静态检查或接口契约失败：\n第 14 行 [E_UNDECLARED] 使用了未声明的标识符 'Start'\n第 15 行 [E_UNDECLARED] 使用了未声明的标识符 'Start'\n第 21 行 [E_UNDECLARED] 使用了未声明的标识符 'EmergencyStop'\n第 23 行 [E_UNDECLARED] 使用了未声明的标识符 'MoveDown'\n第 24 行 [E_UNDECLARED] 使用了未声明的标识符 'MoveUp'\nLTL 检查：not_run。",
+      "timing": {
+        "static_seconds": 0.172,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 15.422
+      },
+      "idx": 1,
+      "code": "FUNCTION_BLOCK MechanicalArmControl\nVAR\n    Step: INT := 1;                     // Current action step (1..8)\n    ActionActive: BOOL := FALSE;        // TRUE when an automated action is being executed\n    WaitingForStart: BOOL := TRUE;      // TRUE in single-step mode when waiting for start press\n    CycleRunning: BOOL := FALSE;        // TRUE when a cycle is in progress (single/continuous)\n    StartPrev: BOOL := FALSE;           // Previous value of Start input for edge detection\n    StartPulse: BOOL := FALSE;          // One-scan pulse on rising edge of Start\n    WaitingForStartPrev: BOOL := TRUE;  // Snapshot of WaitingForStart at scan start\n    CycleRunningPrev: BOOL := FALSE;    // Snapshot of CycleRunning at scan start\nEND_VAR\n\n// Rising edge detection for Start\nStartPulse := Start AND NOT StartPrev;\nStartPrev := Start;\n\n// Capture previous states before any logic changes (to avoid race conditions)\nWaitingForStartPrev := WaitingForStart;\nCycleRunningPrev := CycleRunning;\n\nIF NOT EmergencyStop THEN\n    // Emergency stop triggered: stop all actions and reset automated state\n    MoveDown := FALSE;\n    MoveUp := FALSE;\n    MoveLeft := FALSE;\n    MoveRight := FALSE;\n    ActivateGrip := FALSE;\n    ActivateRelease := FALSE;\n    Step := 1;\n    ActionActive := FALSE;\n    WaitingForStart := TRUE;\n    CycleRunning := FALSE;\nELSE\n    // Normal operation (no emergency stop)\n    IF ManualMode THEN\n        // Manual mode: direct button control with limit switch interlock\n        MoveDown := DownButton AND NOT DownLimitSwitch;\n        MoveUp := UpButton AND NOT UpLimitSwitch;\n        MoveLeft := LeftButton AND NOT LeftLimitSwitch;\n        MoveRight := RightButton AND NOT RightLimitSwitch;\n        ActivateGrip := GripButton AND NOT GripLimitSwitch;\n        ActivateRelease := ReleaseButton AND NOT ReleaseLimitSwitch;\n        // Reset automated state when in manual mode\n        Step := 1;\n        ActionActive := FALSE;\n        WaitingForStart := TRUE;\n        CycleRunning := FALSE;\n    ELSIF SingleStepMode THEN\n        // Single step mode: one action per start press\n        MoveDown := FALSE;\n        MoveUp := FALSE;\n        MoveLeft := FALSE;\n        MoveRight := FALSE;\n        ActivateGrip := FALSE;\n        ActivateRelease := FALSE;\n\n        IF WaitingForStartPrev AND StartPulse THEN\n            WaitingForStart := FALSE;\n            ActionActive := TRUE;\n            Step := 1;  // Always start from step 1\n        END_IF;\n\n        IF ActionActive THEN\n            CASE Step OF\n                1: IF DownLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 1;\n                   END_IF;\n                2: IF GripLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 2;\n                   END_IF;\n                3: IF UpLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 3;\n                   END_IF;\n                4: IF RightLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 4;\n                   END_IF;\n                5: IF DownLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 5;\n                   END_IF;\n                6: IF ReleaseLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 6;\n                   END_IF;\n                7: IF UpLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 7;\n                   END_IF;\n                8: IF LeftLimitSwitch THEN\n                       ActionActive := FALSE;\n                       WaitingForStart := TRUE;\n                       Step := 1;  // Reset to step 1 for next cycle\n                   END_IF;\n            END_CASE;\n        END_IF;\n\n        IF ActionActive THEN\n            CASE Step OF\n                1: MoveDown := TRUE;\n                2: ActivateGrip := TRUE;\n                3: MoveUp := TRUE;\n                4: MoveRight := TRUE;\n                5: MoveDown := TRUE;\n                6: ActivateRelease := TRUE;\n                7: MoveUp := TRUE;\n                8: MoveLeft := TRUE;\n            END_CASE;\n        END_IF;\n    ELSIF SingleCycleMode THEN\n        // Single cycle mode: complete one full cycle automatically\n        MoveDown := FALSE;\n        MoveUp := FALSE;\n        MoveLeft := FALSE;\n        MoveRight := FALSE;\n        ActivateGrip := FALSE;\n        ActivateRelease := FALSE;\n\n        IF NOT CycleRunningPrev AND StartPulse THEN\n            CycleRunning := TRUE;\n            Step := 1;\n            ActionActive := TRUE;\n        END_IF;\n\n        IF CycleRunning AND ActionActive THEN\n            CASE Step OF\n                1: IF DownLimitSwitch THEN Step := 2; END_IF;\n                2: IF GripLimitSwitch THEN Step := 3; END_IF;\n                3: IF UpLimitSwitch THEN Step := 4; END_IF;\n                4: IF RightLimitSwitch THEN Step := 5; END_IF;\n                5: IF DownLimitSwitch THEN Step := 6; END_IF;\n                6: IF ReleaseLimitSwitch THEN Step := 7; END_IF;\n                7: IF UpLimitSwitch THEN Step := 8; END_IF;\n                8: IF LeftLimitSwitch THEN\n                       ActionActive := FALSE;   // Cycle finished\n                       CycleRunning := FALSE;\n                       Step := 1;               // Reset for next start\n                   END_IF;\n            END_CASE;\n        END_IF;\n\n        IF CycleRunning AND ActionActive THEN\n            CASE Step OF\n                1: MoveDown := TRUE;\n                2: ActivateGrip := TRUE;\n                3: MoveUp := TRUE;\n                4: MoveRight := TRUE;\n                5: MoveDown := TRUE;\n                6: ActivateRelease := TRUE;\n                7: MoveUp := TRUE;\n                8: MoveLeft := TRUE;\n            END_CASE;\n        END_IF;\n    ELSIF ContinuousMode THEN\n        // Continuous mode: repeat cycle indefinitely\n        MoveDown := FALSE;\n        MoveUp := FALSE;\n        MoveLeft := FALSE;\n        MoveRight := FALSE;\n        ActivateGrip := FALSE;\n        ActivateRelease := FALSE;\n\n        IF NOT CycleRunningPrev AND StartPulse THEN\n            CycleRunning := TRUE;\n            Step := 1;\n            ActionActive := TRUE;\n        END_IF;\n\n        IF CycleRunning AND ActionActive THEN\n            CASE Step OF\n                1: IF DownLimitSwitch THEN Step := 2; END_IF;\n                2: IF GripLimitSwitch THEN Step := 3; END_IF;\n                3: IF UpLimitSwitch THEN Step := 4; END_IF;\n                4: IF RightLimitSwitch THEN Step := 5; END_IF;\n                5: IF DownLimitSwitch THEN Step := 6; END_IF;\n                6: IF ReleaseLimitSwitch THEN Step := 7; END_IF;\n                7: IF UpLimitSwitch THEN Step := 8; END_IF;\n                8: IF LeftLimitSwitch THEN Step := 1; END_IF;  // Loop back\n            END_CASE;\n        END_IF;\n\n        IF CycleRunning AND ActionActive THEN\n            CASE Step OF\n                1: MoveDown := TRUE;\n                2: ActivateGrip := TRUE;\n                3: MoveUp := TRUE;\n                4: MoveRight := TRUE;\n                5: MoveDown := TRUE;\n                6: ActivateRelease := TRUE;\n                7: MoveUp := TRUE;\n                8: MoveLeft := TRUE;\n            END_CASE;\n        END_IF;\n    ELSE\n        // No mode selected (should not happen, but safe default)\n        MoveDown := FALSE;\n        MoveUp := FALSE;\n        MoveLeft := FALSE;\n        MoveRight := FALSE;\n        ActivateGrip := FALSE;\n        ActivateRelease := FALSE;\n        Step := 1;\n        ActionActive := FALSE;\n        WaitingForStart := TRUE;\n        CycleRunning := FALSE;\n    END_IF;\nEND_IF;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "5e29018e8c406d46bc95e893362a43ba19ddc0adba1e5452ec161d4642f57e74",
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 3968,
+      "completion_tokens": 3748,
+      "cost_cny": 0.10815731999999999,
+      "latency_s": 36.719,
+      "generation_seconds": 36.719,
+      "end_to_end_seconds": 81.469,
+      "format_edits": [],
+      "raw_source_sha256": "5e29018e8c406d46bc95e893362a43ba19ddc0adba1e5452ec161d4642f57e74",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 54,
+  "study_plan_sha256": "f3ebc68a2f3117c82fdc289b32f83edc8f472bab3de26925dcfc8ed421a96ee0",
+  "started_at": "2026-11-12T16:34:10.990189+08:00",
+  "wall_seconds": 210.562,
+  "finished_at": "2026-11-12T16:37:41.458489+08:00"
+}
