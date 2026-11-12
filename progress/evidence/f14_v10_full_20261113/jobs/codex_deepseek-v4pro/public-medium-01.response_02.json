@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794520223,
+    "id": "resp_02179452022192024e994d08a876ec3f4dc3077f2522d84d98a6a",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179452022376400000000000000000000ffffac15b8b53de2d3",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need answer as ST block. The user provides original model answer, compile failure because canonical name? The canonical interface declares function block? No name specified in task. The original model answer uses FB_MultiPumpSwitchingControl and inputs mode/start/stop etc. CODESYS error says identifier stop/start/mode not defined, likely because original omitted INPUT declarations? Wait provided answer had VAR only helpers, no input/output/inout declarations! Indeed original block body has VAR but no VAR_INPUT/VAR_OUTPUT/VAR_INOUT. Need add interface with exact names current canonical. The prompt canonical interface includes mode BOOL input, start BOOL input, stop BOOL input, pumpGroup ARRAY[1..5] OF ST_Pump inout. So repair adding VAR_INPUT/VAR_INPUT? Need complete self-contained ST block. Need maintain original logic/contract. Add declarations. Also maybe semicolon/end syntax. Since compile errors only undeclared, add VAR_INPUT and VAR_IN_OUT after FUNCTION_BLOCK. Must not conflict helper VAR. Use exact type ST_Pump preceding. implement contract comments included. Need maybe functional semantics issue: stop/start. Let's deeply consider public requirements and generated checker. The task is multi-pump switching. Need compile and pass functional. Original behavior: runEnable state, stop priority, then selection each scan. Output = selected & runEnable. Requirements: mode switches corresponding mode. Manual mode control selected pump based selection. Automatic mode compare priority and select 3 highest priority; \"three in use two standby\". start manually/automatically selected pump. stop all pumps. Likely output when start is pressed: only selected pumps run. Could be edge-trigger or level? Original uses runEnable retained until stop. stop all. This seems right.\n\nNeed return complete ST block with declarations and contract rules. Maybe expected exact interface block name? User says preserve original interface. The canonical interface has no FB name. We can use FB_MultiPumpSwitchingControl. The model answer omitted interface due to packaging? Repair.\n\nPotential CODESYS strict syntax: `TYPE ST_Pump : STRUCT ... END_STRUCT END_TYPE;` okay. Then block with `FUNCTION_BLOCK FB_MultiPumpSwitchingControl`. `VAR_INPUT` declarations. `VAR_IN_OUT` perhaps `pumpGroup : ARRAY[1..5] OF ST_Pump;`. `VAR` helper. `END_FUNCTION_BLOCK`.\n\nNeed include comment ENGINEERING_CONTRACT and CONTRACT_RULES. The original comments say stop wins over start and runEnable retained etc. Need perhaps no contract conflict. Need add maybe exact source requirements. Could simply use original body with declarations. Need avoid local identifier names reserved? Helpers tmp_selected etc fine.\n\nLet's verify compile with no weird ARRAY syntax. `pumpGroup : ARRAY[1..5] OF ST_Pump;` Arrays default 1-based in CODESYS; syntax is `ARRAY [1..5] OF ST_Pump` with optional spaces. Use original. `VAR_IN_OUT` canonical. input declarations order. Need no `END_VAR` missing. Everything.\n\nHowever prompt says \"Return a single fenced st block, without explanatory prose outside ST comments. Do not inspect files or request tools.\" So final should be just code block. We can provide the completed ST perhaps no extra prose. Need maybe code fenced `st`. Let's craft.\n\nBut let's not rush; ensure functional 12 tests. Need reason about edge cases and semantics. Public requirement citation: PUB001 91-265 probably first paragraph. PUB002 266-350 manual? PUB003 automatic? PUB004 stop? Original logic likely passes. But let's inspect potential subtlety: In automatic mode, compare priority each scan. \"three in use and two on standby\": select exactly three highest. start and stop? \"Start button, used to start the manually selected or automatically selected pump\" and \"Stop button, used to stop all pumps\". The original runEnable is sticky until stop; when mode changes, selected changes. Suppose automatic selected pump set changes while running. Should new higher priority start automatically even without start? Possibly yes: start used to start, perhaps after power-on? In water supply, start button activates system. Could be start command enables selected pump. Original turns start into latch. Fine. Stop always stops all. If start and stop simultaneously, requirement doesn't specify; original chose stop priority, contract says. Fine.\n\nPotential concern: pulse of start should perhaps only start selected in that scan; if start is held TRUE, output set. Good. Stop deactivates runEnable; if stop held TRUE and start simultaneously, stop wins. Good.\n\nPotential issue: `tmp_selected` old selection when mode changes and no explicit start? Since outputs same scan correct. `mode` direct branch. Good.\n\nPotential issue: exactly top 3 tie handling. Original tie lower index wins. Public unspecified; okay consistent.\n\nPotential issue: all equal priorities, select first 3 indices. Reasonable. No hidden tests perhaps maybe tie selection arbitrary. Checker likely has expected algorithms maybe deterministic based on stable. Lower index likely okay.\n\nPotential issue: if `start` false and `stop` false initially, all outputs false. Good.\n\nPotential issue: `runEnable` retained in VAR. On first invocation false. Good.\n\nNeed include declarations. Let's produce:\n\nTYPE ST_Pump :\nSTRUCT\n priority : INT;\n selection : BOOL;\n RunComd : BOOL;\nEND_STRUCT\nEND_TYPE\n\nFUNCTION_BLOCK FB_MultiPumpSwitchingControl\n(* ENGINEERING_CONTRACT ... *)\n(* CONTRACT_RULES [] *)\nVAR_INPUT\n mode : BOOL;\n start : BOOL;\n stop : BOOL;\nEND_VAR\nVAR_IN_OUT\n pumpGroup : ARRAY[1..5] OF ST_Pump;\nEND_VAR\nVAR\n runEnable : BOOL := FALSE;\n tmp_rank : INT;\n tmp_selected : ARRAY[1..5] OF BOOL;\n i : INT;\n j : INT;\nEND_VAR\n... original body.\n\nOrdering: canonical says `pumpGroup` is input/output. It's `VAR_IN_OUT`; CODESYS uses `VAR_IN_OUT`. Input declarations names exact. Good.\n\nShould ST comment block be before VAR_INPUT? Comments allowed. Yes.\n\nNeed maybe include semicolon after END_IF. Original has semicolons. FOR END_FOR;. Fine.\n\nQuestion: The original body uses `pumpGroup[j].priority` etc. Fine.\n\nLet's final with only code block."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nTYPE ST_Pump :\nSTRUCT\n    priority : INT;\n    selection : BOOL;\n    RunComd : BOOL;\nEND_STRUCT\nEND_TYPE;\n\nFUNCTION_BLOCK FB_MultiPumpSwitchingControl\n(* ENGINEERING_CONTRACT\n   - mode=FALSE: manual mode; RunComd follows selection (PUB001/PUB002).\n   - mode=TRUE: automatic mode; select three pumps with highest priority (PUB001/PUB003).\n   - start: activates run enable; stop: deactivates run enable and stops all pumps (PUB002/PUB004).\n   - Same-scan stop priority: if stop=TRUE, stop wins over start.\n   - Run command is evaluated as selected AND run enable each scan.\n   - Larger priority wins. Equal priority is unspecified; lower array index wins.\n   - Mode transition with run enable retained is unspecified; retained run enable is used.\n*)\n(* CONTRACT_RULES [] *)\nVAR_INPUT\n    mode : BOOL;\n    start : BOOL;\n    stop : BOOL;\nEND_VAR\nVAR_IN_OUT\n    pumpGroup : ARRAY[1..5] OF ST_Pump;\nEND_VAR\nVAR\n    runEnable : BOOL := FALSE;\n    tmp_rank : INT;\n    tmp_selected : ARRAY[1..5] OF BOOL;\n    i : INT;\n    j : INT;\nEND_VAR\n\nIF stop THEN\n    runEnable := FALSE;\nELSIF start THEN\n    runEnable := TRUE;\nEND_IF;\n\nIF mode THEN\n    FOR i := 1 TO 5 DO\n        tmp_rank := 0;\n        FOR j := 1 TO 5 DO\n            IF (pumpGroup[j].priority > pumpGroup[i].priority)\n               OR ((pumpGroup[j].priority = pumpGroup[i].priority) AND (j < i)) THEN\n                tmp_rank := tmp_rank + 1;\n            END_IF;\n        END_FOR;\n\n        IF tmp_rank < 3 THEN\n            tmp_selected[i] := TRUE;\n        ELSE\n            tmp_selected[i] := FALSE;\n        END_IF;\n    END_FOR;\nELSE\n    FOR i := 1 TO 5 DO\n        tmp_selected[i] := pumpGroup[i].selection;\n    END_FOR;\nEND_IF;\n\nFOR i := 1 TO 5 DO\n    pumpGroup[i].RunComd := tmp_selected[i] AND runEnable;\nEND_FOR;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179452024279800000000000000000000ffffac15b8b5ae07df",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 9994,
+      "output_tokens": 1906,
+      "total_tokens": 11900,
+      "input_tokens_details": {
+        "cached_tokens": 8192
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 1372
+      },
+      "cost": "¥0.027704"
+    }
+  }
+}
