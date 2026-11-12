@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-tdsrrj-1794521446216446088",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n(* ENGINEERING_CONTRACT *)\n(*\n| Output/State            | Activation              | Retention          | Reset/Deactivation                | Same-scan Priority | Units/Boundaries     |\n|-------------------------|-------------------------|--------------------|-----------------------------------|--------------------|----------------------|\n| THICKNESS_ALARM         | Immediate on valid TRUE | Hold >=500ms min   | Signal invalid OR hold timer done | Alarm active wins  | TON PT=500ms         |\n| Slab_Fault_Counter      | Rising edge of valid    | Count accumulates  | Power-up only                     | N/A                | UINT max             |\n| Slab_Fault_History[0]   | Rising edge of valid    | Newest entry       | Power-up only                     | N/A                | DINT timestamp       |\n| Slab_Fault_History[1-4] | Shifted from lower idx  | Older entries      | Power-up only                     | N/A                | DINT timestamp       |\n| Slab_Runtime_Accumulator| Accum when cutting valid| Accumulates       | Power-up only                     | N/A                | LTIME nanoseconds    |\n| Hold timer (TON)        | Starts on fault clear   | Runs for PT        | Q=TRUE stops hold; signal invalid | N/A                | PT=T#500ms           |\n| prev_valid_fault (VAR)  | Updated each scan       | Last cycle fault   | Power-up only                     | N/A                | BOOL                 |\n| alarm_state (VAR)       | Transitions per FSM     | Holds across scans | Signal invalid resets             | N/A                | (0,1,2) enum         |\n*)\n(* CONTRACT_RULES [] *)\n\nTYPE AlarmState :\n(\n    AlarmOff    := 0,\n    FaultActive := 1,\n    FaultCleared := 2\n);\nEND_TYPE;\n\nFUNCTION_BLOCK SlabThicknessMonitor\n    VAR_INPUT\n        THICKNESS_FAULT        : BOOL;\n        THICKNESS_SIGNAL_VALID : BOOL;\n        CUTTING_RUN            : BOOL;\n        FaultTimestamp         : DINT;\n        CycleTime              : TIME;\n    END_VAR\n    VAR_OUTPUT\n        THICKNESS_ALARM         : BOOL := FALSE;\n        Slab_Fault_Counter      : UINT := 0;\n        Slab_Runtime_Accumulator: LTIME := LTIME#0s;\n        Slab_Fault_History      : ARRAY[0..4] OF DINT;\n    END_VAR\n    VAR\n        prev_valid_fault : BOOL := FALSE;\n        hold_timer       : TON;\n        alarm_state      : AlarmState := AlarmOff;\n        tmp_hold_q       : BOOL;\n        tmp_idx          : UINT;\n    END_VAR\n\n    // Clear all state when signal becomes invalid (power-up also covered by first-scan initialization)\n    IF NOT THICKNESS_SIGNAL_VALID THEN\n        alarm_state         := AlarmOff;\n        THICKNESS_ALARM     := FALSE;\n        hold_timer(IN := FALSE);\n        prev_valid_fault    := FALSE;\n        Slab_Fault_Counter  := 0;\n        Slab_Fault_History[0] := DINT#0;\n        Slab_Fault_History[1] := DINT#0;\n        Slab_Fault_History[2] := DINT#0;\n        Slab_Fault_History[3] := DINT#0;\n        Slab_Fault_History[4] := DINT#0;\n        Slab_Runtime_Accumulator := LTIME#0s;\n    ELSE\n        // Detect FALSE-to-TRUE transition of valid fault signal (PUB001)\n        IF prev_valid_fault = FALSE AND THICKNESS_FAULT = TRUE THEN\n            // Shift history: older entries toward higher indices, retain 5 most recent\n            Slab_Fault_History[4] := Slab_Fault_History[3];\n            Slab_Fault_History[3] := Slab_Fault_History[2];\n            Slab_Fault_History[2] := Slab_Fault_History[1];\n            Slab_Fault_History[1] := Slab_Fault_History[0];\n            Slab_Fault_History[0] := FaultTimestamp;\n            Slab_Fault_Counter := Slab_Fault_Counter + UINT#1;\n        END_IF;\n\n        // Accumulate runtime only while cutting, signal valid, no fault (PUB003)\n        IF CUTTING_RUN AND NOT THICKNESS_FAULT THEN\n            Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + CycleTime;\n        END_IF;\n\n        // Alarm state machine with 500ms minimum hold (PUB001, PUB002)\n        // Evaluate timer first so same-scan enable and elapsed origin agree\n        hold_timer(IN := (alarm_state = FaultCleared));\n        tmp_hold_q := hold_timer.Q;\n\n        CASE alarm_state OF\n            AlarmOff:\n                IF THICKNESS_FAULT THEN\n                    alarm_state     := FaultActive;\n                    THICKNESS_ALARM := TRUE;\n                END_IF;\n\n            FaultActive:\n                THICKNESS_ALARM := TRUE;\n                IF NOT THICKNESS_FAULT THEN\n                    alarm_state := FaultCleared;\n                END_IF;\n\n            FaultCleared:\n                THICKNESS_ALARM := TRUE;\n                IF tmp_hold_q THEN\n                    alarm_state     := AlarmOff;\n                    THICKNESS_ALARM := FALSE;\n                END_IF;\n        END_CASE;\n    END_IF;\n\n    // Update previous fault state for next scan edge detection\n    prev_valid_fault := THICKNESS_FAULT;\nEND_FUNCTION_BLOCK",
+          "role": "assistant",
+          "reasoning_content": "The user is asking me to repair an IEC 61131-3 Structured Text FUNCTION_BLOCK implementation. The error is:\n\n\"Unexpected array initialisation\" at line 36, which is:\n```\nSlab_Fault_History      : ARRAY[0..4] OF DINT := [5(DINT#0)];\n```\n\nThis is a CODESYS syntax error. In CODESYS, you cannot initialize an array with `[5(DINT#0)]` directly in the VAR_OUTPUT section. The correct way is to use `[DINT#0, DINT#0, DINT#0, DINT#0, DINT#0]` or just rely on default initialization.\n\nLet me fix this by changing the array initialization syntax.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The user is asking me to repair an IEC 61131-3 Structured Text FUNCTION_BLOCK implementation. The error is:\n\n\"Unexpected array initialisation\" at line 36, which is:\n```\nSlab_Fault_History      : ARRAY[0..4] OF DINT := [5(DINT#0)];\n```\n\nThis is a CODESYS syntax error. In CODESYS, you cannot initialize an array with `[5(DINT#0)]` directly in the VAR_OUTPUT section. The correct way is to use `[DINT#0, DINT#0, DINT#0, DINT#0, DINT#0]` or just rely on default initialization.\n\nLet me fix this by changing the array initialization syntax.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794521447,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 3859,
+      "completion_tokens": 1320,
+      "total_tokens": 5179,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.015162"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
