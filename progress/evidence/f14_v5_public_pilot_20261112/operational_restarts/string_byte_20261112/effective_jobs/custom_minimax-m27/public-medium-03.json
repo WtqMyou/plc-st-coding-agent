@@ -1,0 +1,162 @@
+{
+  "job_id": "custom_minimax-m27/public-medium-03",
+  "pid": "public-medium-03",
+  "condition": "custom_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 21,
+      "verification_status": "inconclusive",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 21,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_UNKNOWN_FUNC] 第105行 调用了未知函数/功能块 'TO_LREAL'",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.531000000002678,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-03_b36cc79ec3",
+            "source_sha256": "85253f9493f7dbc0291a35f3e11878e6b3700b7275bd5d40ff443e74af9ac763",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "85253f9493f7dbc0291a35f3e11878e6b3700b7275bd5d40ff443e74af9ac763",
+          "task_json_sha256": "43c671b780ac805094ae0f39eea801df5e1171ff266ac8e206a05d0541a36142",
+          "functional_execution": "Python scan interpreter",
+          "classification": "unsupported_modeling",
+          "local_checker_errors": [
+            {
+              "level": "error",
+              "line": 105,
+              "code": "E_UNKNOWN_FUNC",
+              "message": "调用了未知函数/功能块 'TO_LREAL'"
+            }
+          ]
+        },
+        "mc_error": "Unsupported modeling: native compiler accepted code outside local checker subset"
+      },
+      "feedback": "CODESYS compilation passed. Local checker cannot evaluate this syntax; no model repair is requested.",
+      "timing": {
+        "static_seconds": 0.156,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 15.531
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB_MovingAverage\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger         : BOOL;\n    value           : LREAL;\n    windowSize      : INT;\n    reset           : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    average         : LREAL;\n    windowSizeReached: BOOL;\n    error           : BOOL;\n    status          : WORD;\nEND_VAR\n\nVAR\n    dataBuffer      : ARRAY[1..100] OF LREAL;\n    currentIndex    : INT := 0;\n    sampleCount     : INT := 0;\n    sum             : LREAL := 0.0;\n    lastTrigger     : BOOL := FALSE;\n    lastWindowSize  : INT := 0;\nEND_VAR\n\n(* =========================================================================\n   ENGINEERING_CONTRACT - Moving Average Function Block\n   \n   PUB001: Moving arithmetic mean via FIFO sliding window\n   PUB002: cyclicExecution TRUE -> auto-update every scan (no edge needed)\n   PUB003: trigger rising edge -> single-sample update per edge\n   PUB004: reset TRUE -> full state clear; windowSize validation 1..100\n   \n   OUTPUT BEHAVIOR TABLE:\n   | Output            | Activation        | Retention    | Reset        | Units/Range          |\n   |-------------------|-------------------|--------------|--------------|----------------------|\n   | average           | on valid update   | holds last   | on reset     | LREAL, computed      |\n   | windowSizeReached | when count == size| holds state  | on reset     | FALSE(0..n-1), TRUE(n)|\n   | error             | windowSize !in[1,100]| holds    | on reset     | FALSE=ok, TRUE=error |\n   | status            | 16#8200 on bad size| holds      | on reset     | 16#0000, 16#8200     |\n   \n   BOUNDARY/SAME-SCAN RULES:\n   - windowSize change invalidates: reinit buffer, no error until next cycle\n   - cyclicExecution dominates trigger; trigger ignored when cyclic=TRUE\n   - Rising edge: lastTrigger (previous cycle) vs trigger (current)\n   - Zero samples: average=0.0, windowSizeReached=FALSE\n   - reset clears all state including error and status in same scan\n   \n   ========================================================================= *)\n\n    // --- Reset handling (highest priority) ---\n    IF reset THEN\n        currentIndex     := 0;\n        sampleCount      := 0;\n        sum              := 0.0;\n        average          := 0.0;\n        windowSizeReached := FALSE;\n        error            := FALSE;\n        status           := 16#0000;\n        lastTrigger      := FALSE;\n        lastWindowSize   := 0;\n        RETURN;\n    END_IF;\n\n    // --- Window size validation ---\n    IF (windowSize < 1) OR (windowSize > 100) THEN\n        error  := TRUE;\n        status := 16#8200;\n        RETURN;\n    END_IF;\n\n    // --- Reinitialize buffer when window size changes to valid value ---\n    IF lastWindowSize <> windowSize THEN\n        currentIndex     := 0;\n        sampleCount      := 0;\n        sum              := 0.0;\n        average          := 0.0;\n        windowSizeReached := FALSE;\n        lastWindowSize   := windowSize;\n    END_IF;\n\n    // --- Execution trigger selection ---\n    // PUB002: cyclicExecution TRUE -> update every scan\n    // PUB003: trigger rising edge -> update per edge\n    // Same-scan priority: cyclicExecution takes precedence\n    IF cyclicExecution OR (trigger AND NOT lastTrigger) THEN\n        // Advance circular buffer index\n        currentIndex := (currentIndex MOD windowSize) + 1;\n\n        // Subtract the value being overwritten from sum (FIFO principle)\n        IF sampleCount >= windowSize THEN\n            sum := sum - dataBuffer[currentIndex];\n        END_IF;\n\n        // Add new value to sum and buffer\n        sum := sum + value;\n        dataBuffer[currentIndex] := value;\n\n        // Increment sample count up to window size\n        IF sampleCount < windowSize THEN\n            sampleCount := sampleCount + 1;\n        END_IF;\n\n        // Compute moving average (sum / current count)\n        average := sum / TO_LREAL(sampleCount);\n\n        // Update window reached flag\n        windowSizeReached := (sampleCount >= windowSize);\n\n        // Clear error on successful execution\n        error  := FALSE;\n        status := 16#0000;\n    END_IF;\n\n    // --- Latch last trigger state for edge detection ---\n    lastTrigger := trigger;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "85253f9493f7dbc0291a35f3e11878e6b3700b7275bd5d40ff443e74af9ac763",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 1647,
+      "completion_tokens": 1674,
+      "cost_cny": 0.013841037,
+      "latency_s": 29.344,
+      "generation_seconds": 29.344,
+      "end_to_end_seconds": 45.031,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2431,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2599,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2931,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3490,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3758,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 4071,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "b799a5e1ad24313fc0b4ee9343e738caddac049fdb7f9b3d64d8cffc4b8bf381",
+      "provider_error": "",
+      "judge_amendment": "string_byte_20261112"
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "not_repairable",
+  "tests_total": 21,
+  "study_plan_sha256": "ca7dd11222ba7b7cb72e32f222cffb7343a0d982bfe8e293e635b71bdbd0b6d6",
+  "started_at": "2026-11-12T20:20:15.327944+08:00",
+  "wall_seconds": 45.125,
+  "finished_at": "2026-11-12T20:21:00.372171+08:00",
+  "judge_amendment": "string_byte_20261112",
+  "recovered_from_original_record_sha256": "7a79f778a24367f7b7d41e320e7d977298c5279cac0124bb4f97475099f5d2e8"
+}

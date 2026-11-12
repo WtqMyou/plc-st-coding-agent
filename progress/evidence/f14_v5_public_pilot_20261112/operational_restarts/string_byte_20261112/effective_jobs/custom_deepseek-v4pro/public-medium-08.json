@@ -1,0 +1,407 @@
+{
+  "job_id": "custom_deepseek-v4pro/public-medium-08",
+  "pid": "public-medium-08",
+  "condition": "custom_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 14,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 14,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "Generate code...",
+              "Cannot convert type 'Unknown type: 'LEN(ipText)'' to type 'INT'",
+              "Program name, function or function block instance expected instead of 'LEN'",
+              "Related position",
+              "Build complete -- 2 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 16.68699999999808,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-08_04296e3762",
+            "source_sha256": "48e8506590c6c1a22a00b1e9ea9f991df8a22a097e5ce6610efcc3d9ce815597",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "48e8506590c6c1a22a00b1e9ea9f991df8a22a097e5ce6610efcc3d9ce815597",
+          "task_json_sha256": "c1afc0cb164ce8bab7b9e8d32bb0657d468da0f3f260e13162a9b67340185792",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\nGenerate code...\nCannot convert type 'Unknown type: 'LEN(ipText)'' to type 'INT'\nProgram name, function or function block instance expected instead of 'LEN'\nRelated position\nBuild complete -- 2 errors, 0 warnings : No download possible\nAdditional code checks ...\nFunctional checks: 0/14; bounded status: not_run.",
+      "timing": {
+        "static_seconds": 0.172,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 16.687
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB_IPv4Parser\nVAR_INPUT\n    ipText : STRING(254);\nEND_VAR\nVAR_OUTPUT\n    ipValue : UDINT;\nEND_VAR\nVAR\n    i : INT;\n    len : INT;\n    digit : INT;\n    segVal : UDINT;\n    segCount : INT;\n    segHasDigit : BOOL;\nEND_VAR\n\n(*\nENGINEERING_CONTRACT\n- ipValue: activated on valid 4-segment parse (PUB001/PUB003); recomputed every scan, no retention.\n- ipValue reset/deactivated: malformed/non-digit/incorrect segment count/out-of-range -> 0 (PUB004); first failing check returns immediately.\n- Same-scan priority: pure combinational; default 0, valid path overwrites with assembled value; any invalid path assigns 0 then RETURN.\n- Units/boundaries: UDINT output 0..4294967295; each segment 0..255; first segment MSB, fourth LSB (PUB003).\n- segCount: local state; reset to 0 each call; increments on completed segment; success requires exactly 4 (PUB002).\n- segHasDigit: local state; reset FALSE each call and after each period; must be TRUE before every segment boundary (PUB002).\n- Unspecified: leading zeros are accepted as ordinary decimal digits; no leading-zero rejection stated.\n*)\n\nipValue := 0;\nsegVal := 0;\nsegCount := 0;\nsegHasDigit := FALSE;\nlen := LEN(ipText);\n\nFOR i := 1 TO len DO\n    digit := BYTE_TO_INT(ipText[i]);\n\n    IF (digit >= 48) AND (digit <= 57) THEN\n        segVal := segVal * UDINT#10 + INT_TO_UDINT(digit - INT#48);\n        IF segVal > 255 THEN\n            ipValue := 0;\n            RETURN;\n        END_IF;\n        segHasDigit := TRUE;\n\n    ELSIF digit = 46 THEN\n        IF NOT segHasDigit THEN\n            ipValue := 0;\n            RETURN;\n        END_IF;\n\n        ipValue := SHL(ipValue, UINT#8);\n        ipValue := ipValue OR segVal;\n\n        segCount := segCount + 1;\n        IF segCount > 3 THEN\n            ipValue := 0;\n            RETURN;\n        END_IF;\n\n        segVal := 0;\n        segHasDigit := FALSE;\n\n    ELSE\n        ipValue := 0;\n        RETURN;\n    END_IF;\nEND_FOR;\n\nIF NOT segHasDigit THEN\n    ipValue := 0;\n    RETURN;\nEND_IF;\n\nipValue := SHL(ipValue, UINT#8);\nipValue := ipValue OR segVal;\nsegCount := segCount + 1;\n\nIF segCount <> 4 THEN\n    ipValue := 0;\n    RETURN;\nEND_IF;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "48e8506590c6c1a22a00b1e9ea9f991df8a22a097e5ce6610efcc3d9ce815597",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 10,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004"
+        ]
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 1244,
+      "completion_tokens": 12911,
+      "cost_cny": 0.28423647,
+      "latency_s": 167.625,
+      "generation_seconds": 167.625,
+      "end_to_end_seconds": 217.672,
+      "format_edits": [],
+      "raw_source_sha256": "48e8506590c6c1a22a00b1e9ea9f991df8a22a097e5ce6610efcc3d9ce815597",
+      "provider_error": "",
+      "judge_amendment": "string_byte_20261112"
+    },
+    {
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB_IPv4Parser\nVAR_INPUT\n    ipText : STRING(254);\nEND_VAR\nVAR_OUTPUT\n    ipValue : UDINT;\nEND_VAR\nVAR\n    i : INT;\n    digit : INT;\n    segVal : UDINT;\n    segCount : INT;\n    segHasDigit : BOOL;\nEND_VAR\n\n(*\nENGINEERING_CONTRACT\n- ipValue: active only on valid 4-segment IPv4; recomputed every scan, no retention (PUB001/PUB003).\n- ipValue reset: any malformed / nondigit / wrong segment count / out-of-range segment forces 0 immediately (PUB004).\n- Same-scan priority: combinational; initializes ipValue=0, valid path overwrites; invalid path sets 0 then RETURN.\n- Units/boundaries: UDINT output 0..4294967295; each segment 0..255; first segment MSB, fourth LSB (PUB003).\n- segCount: local; reset to 0 each call; increments after each period and after last segment; success requires exactly 4 (PUB002).\n- segHasDigit: local; reset FALSE each call and after each period; must be TRUE before every segment boundary and at end (PUB002).\n- Unspecified: leading zeros accepted as plain decimal digits; no leading‑zero rejection stated.\n*)\n\nipValue := 0;\nsegVal := 0;\nsegCount := 0;\nsegHasDigit := FALSE;\ni := 1;\n\nWHILE (i <= 254) AND (BYTE_TO_INT(ipText[i]) <> 0) DO\n    digit := BYTE_TO_INT(ipText[i]);\n\n    IF (digit >= 48) AND (digit <= 57) THEN\n        segVal := segVal * UDINT#10 + INT_TO_UDINT(digit - INT#48);\n        IF segVal > 255 THEN\n            ipValue := 0;\n            RETURN;\n        END_IF;\n        segHasDigit := TRUE;\n\n    ELSIF digit = 46 THEN  (* '.' *)\n        IF NOT segHasDigit THEN\n            ipValue := 0;\n            RETURN;\n        END_IF;\n\n        ipValue := SHL(ipValue, UINT#8);\n        ipValue := ipValue OR segVal;\n\n        segCount := segCount + 1;\n        IF segCount > 3 THEN\n            ipValue := 0;\n            RETURN;\n        END_IF;\n\n        segVal := 0;\n        segHasDigit := FALSE;\n\n    ELSE\n        ipValue := 0;\n        RETURN;\n    END_IF;\n\n    i := i + 1;\nEND_WHILE;\n\nIF NOT segHasDigit THEN\n    ipValue := 0;\n    RETURN;\nEND_IF;\n\nipValue := SHL(ipValue, UINT#8);\nipValue := ipValue OR segVal;\nsegCount := segCount + 1;\n\nIF segCount <> 4 THEN\n    ipValue := 0;\n    RETURN;\nEND_IF;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "ab15937d38e0024e780801ee26fe74daec6f3ad454ac3eb1df042b1c534a01bf",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 14,
+        "tests_passed": 6,
+        "pass_rate": 0.4286,
+        "failure_summary": "M08-01: ipValue 期望 3232235786，实际 1554514186",
+        "cases": [
+          {
+            "tc_id": "M08-01",
+            "passed": false,
+            "mode": "single",
+            "message": "ipValue 期望 3232235786，实际 1554514186",
+            "expected": {
+              "ipValue": 3232235786
+            },
+            "actual": {
+              "ipValue": 1554514186
+            },
+            "hint": "M08-01（合法地址：验证网络字节序拼装（192 占最高 8 位））：ipValue 期望 3232235786，实际 1554514186"
+          },
+          {
+            "tc_id": "M08-02",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-03",
+            "passed": false,
+            "mode": "single",
+            "message": "ipValue 期望 4294967295，实际 939524095",
+            "expected": {
+              "ipValue": 4294967295
+            },
+            "actual": {
+              "ipValue": 939524095
+            },
+            "hint": "M08-03（合法上界：四段全 255 → 4294967295）：ipValue 期望 4294967295，实际 939524095"
+          },
+          {
+            "tc_id": "M08-04",
+            "passed": false,
+            "mode": "single",
+            "message": "ipValue 期望 167772161，实际 1",
+            "expected": {
+              "ipValue": 167772161
+            },
+            "actual": {
+              "ipValue": 1
+            },
+            "hint": "M08-04（合法地址：低字节非 0，验证第 4 段权重 256^0）：ipValue 期望 167772161，实际 1"
+          },
+          {
+            "tc_id": "M08-05",
+            "passed": false,
+            "mode": "single",
+            "message": "ipValue 期望 16909060，实际 131844",
+            "expected": {
+              "ipValue": 16909060
+            },
+            "actual": {
+              "ipValue": 131844
+            },
+            "hint": "M08-05（合法短地址：验证四段权重 256^3/256^2/256^1/256^0）：ipValue 期望 16909060，实际 131844"
+          },
+          {
+            "tc_id": "M08-06",
+            "passed": false,
+            "mode": "single",
+            "message": "ipValue 期望 2886794753，实际 1209073153",
+            "expected": {
+              "ipValue": 2886794753
+            },
+            "actual": {
+              "ipValue": 1209073153
+            },
+            "hint": "M08-06（合法私有网段地址：中段 254 不越界）：ipValue 期望 2886794753，实际 1209073153"
+          },
+          {
+            "tc_id": "M08-07",
+            "passed": false,
+            "mode": "single",
+            "message": "ipValue 期望 0，实际 939589889",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 939589889
+            },
+            "hint": "M08-07（负例：首段 256 超出 0~255 → ipValue=0）：ipValue 期望 0，实际 939589889"
+          },
+          {
+            "tc_id": "M08-08",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-09",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-10",
+            "passed": true,
+            "mode": "single",
+            "message": "",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M08-11",
+            "passed": false,
+            "mode": "single",
+            "message": "ipValue 期望 0，实际 515",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 515
+            },
+            "hint": "M08-11（负例：空段（连续点）→ 0）：ipValue 期望 0，实际 515"
+          },
+          {
+            "tc_id": "last-segment-1",
+            "passed": false,
+            "mode": "sequence",
+            "message": "ipValue 期望 0，实际 256",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 256
+            },
+            "hint": "last-segment-1（在末段检查越界、前导零、额外分隔符和合法边界。）：ipValue 期望 0，实际 256"
+          },
+          {
+            "tc_id": "last-segment-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "ipValue": 0
+            },
+            "actual": {
+              "ipValue": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "last-segment-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "ipValue": 16711681
+            },
+            "actual": {
+              "ipValue": 16711681
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 16.2809999999954,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-08_c16372ca11",
+            "source_sha256": "ab15937d38e0024e780801ee26fe74daec6f3ad454ac3eb1df042b1c534a01bf",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "ab15937d38e0024e780801ee26fe74daec6f3ad454ac3eb1df042b1c534a01bf",
+          "task_json_sha256": "c1afc0cb164ce8bab7b9e8d32bb0657d468da0f3f260e13162a9b67340185792",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated",
+          "judge_amendment": "string_byte_20261112"
+        }
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 1998,
+      "completion_tokens": 3736,
+      "cost_cny": 0.093895,
+      "provider_error": "",
+      "format_edits": [],
+      "raw_source_sha256": "ab15937d38e0024e780801ee26fe74daec6f3ad454ac3eb1df042b1c534a01bf",
+      "latency_s": 51.438,
+      "generation_seconds": 51.438,
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 10,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004"
+        ]
+      },
+      "reconstructed_from_settled_response": true,
+      "judge_amendment": "string_byte_20261112",
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 6,
+      "tests_total": 14,
+      "verification_status": "not_run",
+      "feedback": "Functional checks: 6/14; bounded status: not_run.\nObserved executions and related public clauses (no assertion values or test notes):\n[{\"case\": \"M08-01\", \"mode\": \"single\", \"check_outputs\": [\"ipValue\"], \"prefix_omitted\": false, \"input_trace\": [{\"inputs\": {\"ipText\": \"192.168.1.10\"}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"cycles\": 1, \"scan_interval_ms\": null}], \"observed_outputs\": {\"ipValue\": 1554514186}, \"relevant_public_clauses\": [{\"id\": \"PUB003\", \"text\": \"2. Assemble the address in network byte order: the first segment occupies the most significant 8 bits and the fourth occupies the least significant 8 bits. Write the result to ipValue.\", \"excerpt_truncated\": false}, {\"id\": \"PUB004\", \"text\": \"3. Set ipValue to 0 for malformed input, a nondigit segment, an incorrect segment count or any out-of-range segment. The valid address 0.0.0.0 also produces 0.\", \"excerpt_truncated\": false}]}, {\"case\": \"last-segment-1\", \"mode\": \"sequence\", \"check_outputs\": [\"ipValue\"], \"prefix_omitted\": false, \"input_trace\": [{\"inputs\": {\"ipText\": \"1.2.3.256\"}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"cycles\": 1, \"scan_interval_ms\": null}], \"observed_outputs\": {\"ipValue\": 256}, \"relevant_public_clauses\": [{\"id\": \"PUB003\", \"text\": \"2. Assemble the address in network byte order: the first segment occupies the most significant 8 bits and the fourth occupies the least significant 8 bits. Write the result to ipValue.\", \"excerpt_truncated\": false}, {\"id\": \"PUB004\", \"text\": \"3. Set ipValue to 0 for malformed input, a nondigit segment, an incorrect segment count or any out-of-range segment. The valid address 0.0.0.0 also produces 0.\", \"excerpt_truncated\": false}]}]",
+      "timing": {}
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "existing_settled_response_evaluated_after_judge_repair",
+  "tests_total": 14,
+  "study_plan_sha256": "ca7dd11222ba7b7cb72e32f222cffb7343a0d982bfe8e293e635b71bdbd0b6d6",
+  "started_at": "2026-11-12T20:29:14.412345+08:00",
+  "wall_seconds": 287.094,
+  "finished_at": "2026-11-12T20:34:01.413992+08:00",
+  "judge_amendment": "string_byte_20261112",
+  "recovered_from_original_record_sha256": "35522c618957b83efc393e3030418512a32d95d2b7cb443eef1922216c151a95"
+}

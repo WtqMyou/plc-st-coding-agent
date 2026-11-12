@@ -1,0 +1,567 @@
+{
+  "job_id": "codex_minimax-m27/public-easy-04",
+  "pid": "public-easy-04",
+  "condition": "codex_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 20,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 20,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "Generate code...",
+              "Cannot convert type 'ULINT' to type 'LTIME'",
+              "Cannot convert type 'LTIME' to type 'ULINT'",
+              "Cannot convert type 'TIME' to type 'ULINT'",
+              "Cannot compare type 'LTIME' with type 'TIME'",
+              "Cannot convert type 'ULINT' to type 'LTIME'",
+              "Cannot convert type 'LTIME' to type 'ULINT'",
+              "Cannot convert type 'TIME' to type 'ULINT'",
+              "Cannot compare type 'LTIME' with type 'TIME'",
+              "Build complete -- 8 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 18.45300000000134,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-easy-04_d86d3d255f",
+            "source_sha256": "7b1c8816430d95e6cd225aa34e80ddd310e067bf2a9cbd6e567443c0d12ded65",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "7b1c8816430d95e6cd225aa34e80ddd310e067bf2a9cbd6e567443c0d12ded65",
+          "task_json_sha256": "24aa4f211feb3d3fded91ef0dd3ef801fc76516db23ea8e698ddce68d048ba01",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\nGenerate code...\nCannot convert type 'ULINT' to type 'LTIME'\nCannot convert type 'LTIME' to type 'ULINT'\nCannot convert type 'TIME' to type 'ULINT'\nCannot compare type 'LTIME' with type 'TIME'\nCannot convert type 'ULINT' to type 'LTIME'\nFunctional checks: 0/20; bounded status: not_run.",
+      "timing": {
+        "static_seconds": 0.203,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 18.468
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK JamPumpControl\nVAR_INPUT\n    VISCOSITY_OK    : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceTime    : TIME;\n    CycleTime       : TIME;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN          : BOOL := FALSE;\n    PUMP_MAINT_DUE   : BOOL := FALSE;\n    PUMP_RUNTIME_ACC : LTIME := LTIME#0s;\nEND_VAR\nVAR\n    ViscosityDebounceTimer : TON;\n    ViscosityDebounceAccum : LTIME := LTIME#0s;\n    ViscosityValid         : BOOL := FALSE;\nEND_VAR\n// ENGINEERING_CONTRACT\n// | Output/State    | Activation         | Retention          | Reset/Deactivation                      | Priority | Units/Boundaries |\n// |-----------------|--------------------|--------------------|-----------------------------------------|----------|-------------------|\n// | VFD_RUN         | TRUE when safety   | Retained while     | Cleared on E-Stop or viscosity invalid  | Safety   | Boolean permissive|\n// |                 | permissive AND     | conditions met     | (PUB003)                                | first    |                   |\n// |                 | viscosity valid    |                    |                                         |          |                   |\n// | PUMP_MAINT_DUE  | Set when runtime   | Latched TRUE       | No reset (informational only, PUB004)   | None     | 500h threshold    |\n// |                 | >= 500h (PUB004)   |                    |                                         |          |                   |\n// | PUMP_RUNTIME_ACC| Increments by      | Preserved when     | Init to 0 at power-up only (PUB005)     | None     | LTIME (nanoseconds)|\n// |                 | CycleTime when     | VFD_RUN = FALSE    |                                         |          | 0 to max          |\n// |                 | VFD_RUN = TRUE     | (PUB003)           |                                         |          |                   |\n// |                 | (PUB003)          |                    |                                         |          |                   |\n// | ViscosityValid  | After DebounceTime | Retained while     | Immediate on VISCITY_OK=FALSE or        | None     | Debounced state   |\n// |                 | continuous TRUE    | VISCOSITY_OK=TRUE  | E-Stop (PUB002, PUB003)                 |          |                   |\n// |                 | (PUB002)          | (PUB002)           |                                         |          |                   |\n// | ViscosityDebounceAccum | Accumulates  | Reset to 0 when   | Reset on VISCOSITY_OK=FALSE or          | None     | LTIME nanoseconds |\n// |                 | elapsed time when  | VISCOSITY_OK=FALSE | E-Stop (PUB003)                         |          | >= 0              |\n// |                 | VISCOSITY_OK=TRUE  |                    |                                         |          |                   |\n\n// Viscosity debouncing (PUB002)\nIF NOT VISCOSITY_OK THEN\n    ViscosityDebounceAccum := LTIME#0s;\n    ViscosityValid := FALSE;\n    ViscosityDebounceTimer(IN := FALSE);\nELSIF ViscosityValid THEN\n    ViscosityDebounceTimer(IN := TRUE, PT := DebounceTime);\nELSE\n    ViscosityDebounceAccum := ViscosityDebounceAccum + CycleTime;\n    IF ViscosityDebounceAccum >= DebounceTime THEN\n        ViscosityValid := TRUE;\n    END_IF;\n    ViscosityDebounceTimer(IN := FALSE);\nEND_IF;\n\n// Safety permissive and run command (PUB003)\nIF NOT PASTE_E_STOP_NC THEN\n    VFD_RUN := FALSE;\n    ViscosityDebounceAccum := LTIME#0s;\n    ViscosityValid := FALSE;\nEND_IF;\n\nIF PASTE_E_STOP_NC AND ViscosityValid THEN\n    VFD_RUN := TRUE;\nELSE\n    VFD_RUN := FALSE;\nEND_IF;\n\n// Runtime accumulation (PUB003, PUB004)\nIF VFD_RUN THEN\n    PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + CycleTime;\nEND_IF;\n\nIF PUMP_RUNTIME_ACC >= T#500h THEN\n    PUMP_MAINT_DUE := TRUE;\nEND_IF;\nEND_FUNCTION_BLOCK",
+      "code_hash": "7b1c8816430d95e6cd225aa34e80ddd310e067bf2a9cbd6e567443c0d12ded65",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 8019,
+      "completion_tokens": 2953,
+      "cost_cny": 0.032899629,
+      "latency_s": 77.407,
+      "generation_seconds": 77.407,
+      "end_to_end_seconds": 96.078,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3222,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "cd7cedf4280ead08b34636ccd05acf5ae0b50fd1f8934eac7cfd7866d2af77ae",
+      "provider_error": "",
+      "judge_amendment": "string_byte_20261112"
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 19,
+      "tests_total": 20,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 20,
+        "tests_passed": 19,
+        "pass_rate": 0.95,
+        "failure_summary": "time-pump-18: PUMP_RUNTIME_ACC 期望 1800000020000000，实际 1800000040000000",
+        "cases": [
+          {
+            "tc_id": "time-pump-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_RUNTIME_ACC": 0,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 0,
+              "VFD_RUN": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_RUNTIME_ACC": 0,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 0,
+              "VFD_RUN": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_RUNTIME_ACC": 0,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 0,
+              "VFD_RUN": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": true,
+              "PUMP_RUNTIME_ACC": 102000000,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 102000000,
+              "VFD_RUN": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": true,
+              "PUMP_RUNTIME_ACC": 113000000,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 113000000,
+              "VFD_RUN": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_RUNTIME_ACC": 113000000,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 113000000,
+              "VFD_RUN": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_RUNTIME_ACC": 113000000,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 113000000,
+              "VFD_RUN": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_RUNTIME_ACC": 113000000,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 113000000,
+              "VFD_RUN": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-8-stop",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_RUNTIME_ACC": 113000000,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 113000000,
+              "VFD_RUN": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-8-resume",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_RUNTIME_ACC": 113000000,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 113000000,
+              "VFD_RUN": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": true,
+              "PUMP_RUNTIME_ACC": 128000000,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 128000000,
+              "VFD_RUN": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_RUNTIME_ACC": 128000000,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 128000000,
+              "VFD_RUN": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_RUNTIME_ACC": 128000000,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 128000000,
+              "VFD_RUN": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": true,
+              "PUMP_RUNTIME_ACC": 148000000,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 148000000,
+              "VFD_RUN": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": true,
+              "PUMP_RUNTIME_ACC": 1796400148000000,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 1796400148000000,
+              "VFD_RUN": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": true,
+              "PUMP_RUNTIME_ACC": 1799999999000000,
+              "PUMP_MAINT_DUE": false
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": false,
+              "PUMP_RUNTIME_ACC": 1799999999000000,
+              "VFD_RUN": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": true,
+              "PUMP_RUNTIME_ACC": 1800000000000000,
+              "PUMP_MAINT_DUE": true
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": true,
+              "PUMP_RUNTIME_ACC": 1800000000000000,
+              "VFD_RUN": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_RUNTIME_ACC": 1800000000000000,
+              "PUMP_MAINT_DUE": true
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": true,
+              "PUMP_RUNTIME_ACC": 1800000000000000,
+              "VFD_RUN": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "VFD_RUN": false,
+              "PUMP_RUNTIME_ACC": 1800000000000000,
+              "PUMP_MAINT_DUE": true
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": true,
+              "PUMP_RUNTIME_ACC": 1800000000000000,
+              "VFD_RUN": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "time-pump-18",
+            "passed": false,
+            "mode": "sequence",
+            "message": "PUMP_RUNTIME_ACC 期望 1800000020000000，实际 1800000040000000",
+            "expected": {
+              "VFD_RUN": true,
+              "PUMP_RUNTIME_ACC": 1800000020000000,
+              "PUMP_MAINT_DUE": true
+            },
+            "actual": {
+              "PUMP_MAINT_DUE": true,
+              "PUMP_RUNTIME_ACC": 1800000040000000,
+              "VFD_RUN": true
+            },
+            "hint": "time-pump-18（先观察到黏度从低到高，下一次调用到达20毫秒，恢复运行。）：PUMP_RUNTIME_ACC 期望 1800000020000000，实际 1800000040000000"
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 21.07800000000134,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-easy-04_f98d704e42",
+            "source_sha256": "874014db2d5423c348b67d3e5df237e5f6b977f59e3725273d915814b7eefdf6",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "874014db2d5423c348b67d3e5df237e5f6b977f59e3725273d915814b7eefdf6",
+          "task_json_sha256": "24aa4f211feb3d3fded91ef0dd3ef801fc76516db23ea8e698ddce68d048ba01",
+          "functional_execution": "Python scan interpreter",
+          "classification": "evaluated",
+          "judge_amendment": "string_byte_20261112"
+        }
+      },
+      "feedback": "Functional checks: 19/20; bounded status: not_run.\nObserved executions and related public clauses (no assertion values or test notes):\n[{\"case\": \"time-pump-18\", \"mode\": \"sequence\", \"check_outputs\": [\"PUMP_RUNTIME_ACC\"], \"prefix_omitted\": true, \"input_trace\": [{\"inputs\": {\"VISCOSITY_OK\": true, \"PASTE_E_STOP_NC\": true, \"DebounceTime\": 20, \"CycleTime\": 3599851}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"cycles\": 1, \"scan_interval_ms\": 3599851}, {\"inputs\": {\"VISCOSITY_OK\": true, \"PASTE_E_STOP_NC\": true, \"DebounceTime\": 20, \"CycleTime\": 1}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"cycles\": 1, \"scan_interval_ms\": 1}, {\"inputs\": {\"VISCOSITY_OK\": true, \"PASTE_E_STOP_NC\": false, \"DebounceTime\": 20, \"CycleTime\": 17}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"cycles\": 1, \"scan_interval_ms\": 17}, {\"inputs\": {\"VISCOSITY_OK\": false, \"PASTE_E_STOP_NC\": true, \"DebounceTime\": 20, \"CycleTime\": 1}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"cycles\": 1, \"scan_interval_ms\": 1}, {\"inputs\": {\"VISCOSITY_OK\": true, \"PASTE_E_STOP_NC\": true, \"DebounceTime\": 20, \"CycleTime\": 20}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"cycles\": 2, \"scan_interval_ms\": 20}], \"observed_outputs\": {\"PUMP_MAINT_DUE\": true, \"PUMP_RUNTIME_ACC\": 1800000040000000, \"VFD_RUN\": true}, \"relevant_public_clauses\": [{\"id\": \"PUB004\", \"text\": \"3. Accumulate PUMP_RUNTIME_ACC using the actual invocation interval CycleTime only while VFD_RUN is TRUE. Preserve the accumulated time while the pump is stopped.\", \"excerpt_truncated\": false}, {\"id\": \"PUB005\", \"text\": \"4. Set PUMP_MAINT_DUE when accumulated runtime reaches 500 hours. This indication is informational and must not affect pump operation or the safety permissive.\", \"excerpt_truncated\": false}]}]",
+      "timing": {},
+      "idx": 1,
+      "code": "FUNCTION_BLOCK JamPumpControl\nVAR_INPUT\n    VISCOSITY_OK    : BOOL;\n    PASTE_E_STOP_NC : BOOL;\n    DebounceTime    : TIME;\n    CycleTime       : TIME;\nEND_VAR\nVAR_OUTPUT\n    VFD_RUN          : BOOL := FALSE;\n    PUMP_MAINT_DUE   : BOOL := FALSE;\n    PUMP_RUNTIME_ACC : LTIME := LTIME#0s;\nEND_VAR\nVAR\n    ViscosityValid         : BOOL := FALSE;\n    ViscosityDebounceAccum : LTIME := LTIME#0s;\n    DebounceTarget         : LTIME;\n    CycleAsLTIME           : LTIME;\nEND_VAR\n// ENGINEERING_CONTRACT\n// | Output/State             | Activation                          | Retention            | Reset/Deactivation                      | Priority | Units/Boundaries |\n// |--------------------------|-------------------------------------|----------------------|-----------------------------------------|----------|-------------------|\n// | VFD_RUN                  | TRUE when safety permissive AND     | Retained while       | Cleared on E-Stop or viscosity invalid  | Safety   | Boolean permissive|\n// |                          | viscosity valid (PUB003)            | conditions met       | (PUB003)                                | first    |                   |\n// | PUMP_MAINT_DUE           | Set when runtime >= 500h (PUB004)   | Latched TRUE         | No reset (informational only, PUB004)   | None     | 500h threshold    |\n// | PUMP_RUNTIME_ACC         | Increments by CycleTime when        | Preserved when       | Init to 0 at power-up only (PUB005)     | None     | LTIME nanoseconds |\n// |                          | VFD_RUN = TRUE (PUB003)             | VFD_RUN = FALSE      |                                         |          | 0 to max          |\n// | ViscosityValid           | After DebounceTime continuous TRUE  | Retained while       | Immediate on VISCOSITY_OK=FALSE or      | None     | Debounced state   |\n// |                          | (PUB002)                            | VISCITY_OK=TRUE      | E-Stop (PUB002, PUB003)                 |          |                   |\n// | ViscosityDebounceAccum   | Accumulates elapsed time when       | Reset to 0 when      | Reset on VISCOSITY_OK=FALSE or          | None     | LTIME nanoseconds |\n// |                          | VISCOSITY_OK=TRUE (PUB002)          | VISCITY_OK=FALSE     | E-Stop (PUB003)                         |          | >= 0              |\n\nDebounceTarget := TIME_TO_LTIME(DebounceTime);\nCycleAsLTIME   := TIME_TO_LTIME(CycleTime);\n\n// Emergency stop immediately clears run output and debounce state (PUB003)\nIF NOT PASTE_E_STOP_NC THEN\n    VFD_RUN := FALSE;\n    ViscosityDebounceAccum := LTIME#0s;\n    ViscosityValid := FALSE;\nEND_IF;\n\n// Viscosity debouncing (PUB002): invalidate immediately on FALSE\nIF NOT VISCOSITY_OK THEN\n    ViscosityDebounceAccum := LTIME#0s;\n    ViscosityValid := FALSE;\nELSE\n    // Accumulate only when viscosity TRUE and not yet valid\n    IF NOT ViscosityValid THEN\n        ViscosityDebounceAccum := ViscosityDebounceAccum + CycleAsLTIME;\n        IF ViscosityDebounceAccum >= DebounceTarget THEN\n            ViscosityValid := TRUE;\n        END_IF;\n    END_IF;\nEND_IF;\n\n// VFD_RUN permissive (PUB003)\nIF PASTE_E_STOP_NC AND ViscosityValid THEN\n    VFD_RUN := TRUE;\nELSE\n    VFD_RUN := FALSE;\nEND_IF;\n\n// Runtime accumulation (PUB003, PUB004)\nIF VFD_RUN THEN\n    PUMP_RUNTIME_ACC := PUMP_RUNTIME_ACC + CycleAsLTIME;\nEND_IF;\n\nIF PUMP_RUNTIME_ACC >= LTIME#500h THEN\n    PUMP_MAINT_DUE := TRUE;\nEND_IF;\nEND_FUNCTION_BLOCK",
+      "code_hash": "874014db2d5423c348b67d3e5df237e5f6b977f59e3725273d915814b7eefdf6",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 9016,
+      "completion_tokens": 1013,
+      "cost_cny": 0.021679812,
+      "latency_s": 34.266,
+      "generation_seconds": 34.266,
+      "end_to_end_seconds": 68.906,
+      "format_edits": [],
+      "raw_source_sha256": "874014db2d5423c348b67d3e5df237e5f6b977f59e3725273d915814b7eefdf6",
+      "provider_error": "",
+      "judge_amendment": "string_byte_20261112"
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "maximum_two_candidates",
+  "tests_total": 20,
+  "study_plan_sha256": "ca7dd11222ba7b7cb72e32f222cffb7343a0d982bfe8e293e635b71bdbd0b6d6",
+  "started_at": "2026-11-12T20:11:57.078722+08:00",
+  "wall_seconds": 165.157,
+  "finished_at": "2026-11-12T20:14:42.154037+08:00",
+  "judge_amendment": "string_byte_20261112",
+  "recovered_from_original_record_sha256": "62c84572c215dfb425a681f2788c1b1d5d3567db848237292b872b419401d4c2"
+}
