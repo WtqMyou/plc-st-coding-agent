@@ -1,0 +1,2347 @@
+{
+  "job_id": "custom_minimax-m27/public-medium-03",
+  "pid": "public-medium-03",
+  "condition": "custom_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 21,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 85,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'LREAL'"
+          }
+        ],
+        "tests_total": 21,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_UNKNOWN_FUNC] 第85行 调用了未知函数/功能块 'LREAL'",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "';' expected instead of 'LREAL'",
+              "Expression expected instead of 'LREAL'",
+              "Compile complete -- 2 errors, 0 warnings",
+              "Build complete -- 2 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 18.60899999999674,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-03_42c5ad7449",
+            "source_sha256": "46f585c0fe8770c11445c44ea623bf281485127b4be76fdbbb9c08f11ff5dce0",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "46f585c0fe8770c11445c44ea623bf281485127b4be76fdbbb9c08f11ff5dce0",
+          "task_json_sha256": "43c671b780ac805094ae0f39eea801df5e1171ff266ac8e206a05d0541a36142",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\n';' expected instead of 'LREAL'\nExpression expected instead of 'LREAL'\nCompile complete -- 2 errors, 0 warnings\nBuild complete -- 2 errors, 0 warnings : No download possible\nAdditional code checks ...\nAdditional code checks complete -- 0 errors\nFunctional checks: 0/21; bounded status: not_run.\nLine 85 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 'LREAL'",
+      "timing": {
+        "static_seconds": 0.25,
+        "native_queue_seconds": 29.766,
+        "native_compile_seconds": 18.609
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB_MovingAverage\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger         : BOOL;\n    value           : LREAL;\n    windowSize      : INT;\n    reset           : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    average           : LREAL := 0.0;\n    windowSizeReached : BOOL  := FALSE;\n    error             : BOOL  := FALSE;\n    status            : WORD  := 16#0000;\nEND_VAR\n\nVAR\n    trigger_r     : R_TRIG;\n    tmp_buffer    : ARRAY[1..100] OF LREAL;\n    tmp_sum       : LREAL := 0.0;\n    tmp_count     : INT   := 0;\n    tmp_writeIdx  : INT   := 1;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\n  | Output/State   | Activation          | Retention/Hold       | Reset/Deactivation  | Priority   | Units/Bounds          |\n  |----------------|---------------------|----------------------|---------------------|------------|-----------------------|\n  | average        | cyclicExecution=TRUE| HOLD: retains value  | reset=TRUE sets 0.0 | Same-scan | LREAL; sliding mean   |\n  | (continued)    | OR trigger rising   | on same scan if no   | when window invalid | as trigger | 1..100 element window |\n  |                | edge (non-cyclic)   | new value processed  |                     |            |                       |\n  | windowSize     | Same as average     | HOLD: TRUE retained  | reset=TRUE sets     | Same-scan | BOOL; TRUE when       |\n  | Reached        |                     | when not updated     | FALSE               | as trigger | tmp_count>=windowSize |\n  | error          | windowSize<1 or     | HOLD: TRUE until     | reset=TRUE clears   | Precedes  | TRUE when windowSize  |\n  |                | windowSize>100      | valid window set     | (valid WS) or reset | processing | outside [1,100]       |\n  | status         | Same as error       | HOLD: 16#8200 until  | reset=TRUE clears   | Precedes  | 16#0000=OK;          |\n  |                |                     | valid window set     | (valid WS) or reset | processing | 16#8200=WS error      |\n  |----------------|---------------------|----------------------|---------------------|------------|-----------------------|\n  PUB001: Sliding arithmetic mean replaces oldest datum with newest on each read.\n  PUB002: cyclicExecution=TRUE updates average every scan cycle; trigger ignored.\n  PUB003: Rising edge on trigger (non-cyclic) reads one value and updates average.\n  PUB004: reset=TRUE (level) clears buffer/sum/count/index and sets outputs to idle.\n  PUB004: Invalid windowSize (<1 or >100) sets error=TRUE and status=16#8200.\n  PUB005: windowSizeReached=FALSE until tmp_count reaches windowSize.\n  PUB006: error=TRUE when windowSize validation fails; cleared on valid size.\n  PUB007: status=16#0000 (success) or 16#8200 (window size error 1..100 only).\n*)\n\ntrigger_r(CLK := trigger);\n\nIF reset THEN\n    tmp_count    := 0;\n    tmp_sum      := 0.0;\n    tmp_writeIdx := 1;\n    average           := 0.0;\n    windowSizeReached := FALSE;\n    error             := FALSE;\n    status            := 16#0000;\n    RETURN;\nEND_IF;\n\nIF windowSize < 1 OR windowSize > 100 THEN\n    error  := TRUE;\n    status := 16#8200;\n    RETURN;\nEND_IF;\n\nIF tmp_count > windowSize THEN\n    tmp_count    := 0;\n    tmp_sum      := 0.0;\n    tmp_writeIdx := 1;\nEND_IF;\n\nIF cyclicExecution OR trigger_r.Q THEN\n    IF tmp_count >= windowSize THEN\n        tmp_sum := tmp_sum - tmp_buffer[tmp_writeIdx];\n    ELSE\n        tmp_count := tmp_count + 1;\n    END_IF;\n\n    tmp_buffer[tmp_writeIdx] := value;\n    tmp_sum := tmp_sum + value;\n\n    tmp_writeIdx := (tmp_writeIdx MOD windowSize) + 1;\n\n    average := tmp_sum / LREAL(tmp_count);\n    windowSizeReached := (tmp_count >= windowSize);\n    error  := FALSE;\n    status := 16#0000;\nEND_IF;\n\nEND_FUNCTION_BLOCK\n\n(* CONTRACT_RULES [] *)",
+      "code_hash": "46f585c0fe8770c11445c44ea623bf281485127b4be76fdbbb9c08f11ff5dce0",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 22,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007"
+        ]
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 2057,
+      "completion_tokens": 4670,
+      "cost_cny": 0.034402682999999996,
+      "latency_s": 77.25,
+      "generation_seconds": 77.25,
+      "end_to_end_seconds": 125.875,
+      "format_edits": [],
+      "raw_source_sha256": "46f585c0fe8770c11445c44ea623bf281485127b4be76fdbbb9c08f11ff5dce0",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": true,
+      "tests_passed": 21,
+      "tests_total": 21,
+      "verification_status": "violated",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 21,
+        "tests_passed": 21,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "s1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 10.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 10.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 15.0,
+              "windowSizeReached": true
+            },
+            "actual": {
+              "average": 15.0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 25.0
+            },
+            "actual": {
+              "average": 25.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 30.0
+            },
+            "actual": {
+              "average": 30.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 35.0
+            },
+            "actual": {
+              "average": 35.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 35.0
+            },
+            "actual": {
+              "average": 35.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 50.0
+            },
+            "actual": {
+              "average": 50.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 33280
+            },
+            "actual": {
+              "error": true,
+              "status": 33280
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 33280
+            },
+            "actual": {
+              "error": true,
+              "status": 33280
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 0.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 0.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 8.0,
+              "windowSizeReached": true,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 8.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ring-end-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 10,
+              "windowSizeReached": false,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 10.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ring-end-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 10.1,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 10.1,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ring-end-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 10.3,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 10.3,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ring-end-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 50,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 50.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "idle-window-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 0.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 0.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "fixed-four-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 30.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 30.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "fixed-four-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 35.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 35.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "fixed-four-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 43.333333333333336,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 43.333333333333336,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "fixed-four-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 57.5,
+              "windowSizeReached": true,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 57.5,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 3919,
+          "traces": 60000,
+          "specs_total": 7,
+          "specs_hold": 0,
+          "specs_violated": 2,
+          "specs_inconclusive": 5,
+          "violations": [
+            {
+              "id": "S1",
+              "formula": "G((windowSize < 1 | windowSize > 100) -> error)",
+              "at": 1,
+              "explanation": "",
+              "trace": [
+                {
+                  "cyclicexecution": false,
+                  "trigger": false,
+                  "value": 10.0,
+                  "windowsize": 101,
+                  "reset": true,
+                  "average": 0.0,
+                  "windowsizereached": false,
+                  "error": false,
+                  "status": 0,
+                  "trigger_r": {
+                    "CLK": false,
+                    "Q": false,
+                    "_M": false
+                  },
+                  "tmp_buffer": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "tmp_sum": 0.0,
+                  "tmp_count": 0,
+                  "tmp_writeidx": 1
+                }
+              ]
+            },
+            {
+              "id": "S7",
+              "formula": "G((windowSize >= 1 AND windowSize <= 100) -> NOT error)",
+              "at": 2,
+              "explanation": "",
+              "trace": [
+                {
+                  "cyclicexecution": false,
+                  "trigger": false,
+                  "value": 10.0,
+                  "windowsize": 101,
+                  "reset": false,
+                  "average": 0.0,
+                  "windowsizereached": false,
+                  "error": true,
+                  "status": 33280,
+                  "trigger_r": {
+                    "CLK": false,
+                    "Q": false,
+                    "_M": false
+                  },
+                  "tmp_buffer": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "tmp_sum": 0.0,
+                  "tmp_count": 0,
+                  "tmp_writeidx": 1
+                },
+                {
+                  "cyclicexecution": false,
+                  "trigger": false,
+                  "value": 10.0,
+                  "windowsize": 2,
+                  "reset": false,
+                  "average": 0.0,
+                  "windowsizereached": false,
+                  "error": true,
+                  "status": 33280,
+                  "trigger_r": {
+                    "CLK": false,
+                    "Q": false,
+                    "_M": false
+                  },
+                  "tmp_buffer": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "tmp_sum": 0.0,
+                  "tmp_count": 0,
+                  "tmp_writeidx": 1
+                }
+              ]
+            }
+          ],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 19.937000000005355,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-03_92f428c95e",
+            "source_sha256": "1b47e8e1ccd037dd5af8f05a38d0e0c792e57f39ee540a9613d2bcf8d0841846",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "input_partition": {
+            "original_combinations": 480,
+            "classes": {},
+            "representative_combinations": 480
+          },
+          "search": {
+            "algorithm": "finite_window_product_bfs",
+            "stop_reason": "transition_limit",
+            "completed_depth": 2,
+            "current_depth": 3,
+            "elapsed_seconds": 12.625,
+            "edges_checked": 60000,
+            "frontier_states": 1532,
+            "product_states": 3919,
+            "states_explored": 3919,
+            "input_space_size": 480
+          },
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "9fe28a3be6dd723ee454356de11663e0850bcd8dc9e160b78f63c41bb7785ff7",
+          "source_sha256": "1b47e8e1ccd037dd5af8f05a38d0e0c792e57f39ee540a9613d2bcf8d0841846",
+          "problem_sha256": "c065e64aeca08ebf6b9aa81692ed04edae03ee932c75af7037d3cff74b19ee84",
+          "mc_timeout_seconds": 35,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {},
+          "cache_hit": false,
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "bounded",
+          "candidate_text_rewritten": false,
+          "task_json_sha256": "43c671b780ac805094ae0f39eea801df5e1171ff266ac8e206a05d0541a36142",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated",
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          }
+        }
+      },
+      "feedback": "Functional checks: 21/21; bounded status: violated.\nConfirmed bounded property violation: S1, position 1. Review the public contract; no private observer definitions are provided.\nConfirmed bounded property violation: S7, position 2. Review the public contract; no private observer definitions are provided.",
+      "timing": {
+        "static_seconds": 0.203,
+        "native_queue_seconds": 42.344,
+        "native_compile_seconds": 19.937,
+        "functional_seconds": 0.188,
+        "formal_queue_seconds": 0.0,
+        "bounded_seconds": 13.14
+      },
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB_MovingAverage\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger         : BOOL;\n    value           : LREAL;\n    windowSize      : INT;\n    reset           : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    average           : LREAL := 0.0;\n    windowSizeReached : BOOL  := FALSE;\n    error             : BOOL  := FALSE;\n    status            : WORD  := 16#0000;\nEND_VAR\n\nVAR\n    trigger_r     : R_TRIG;\n    tmp_buffer    : ARRAY[1..100] OF LREAL;\n    tmp_sum       : LREAL := 0.0;\n    tmp_count     : INT   := 0;\n    tmp_writeIdx  : INT   := 1;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\n  | Output/State   | Activation          | Retention/Hold       | Reset/Deactivation  | Priority   | Units/Bounds          |\n  |----------------|---------------------|----------------------|---------------------|------------|-----------------------|\n  | average        | cyclicExecution=TRUE| HOLD: retains value  | reset=TRUE sets 0.0 | Same-scan | LREAL; sliding mean   |\n  | (continued)    | OR trigger rising   | on same scan if no   | when window invalid | as trigger | 1..100 element window |\n  |                | edge (non-cyclic)   | new value processed  |                     |            |                       |\n  | windowSize     | Same as average     | HOLD: TRUE retained  | reset=TRUE sets     | Same-scan | BOOL; TRUE when       |\n  | Reached        |                     | when not updated     | FALSE               | as trigger | tmp_count>=windowSize |\n  | error          | windowSize<1 or     | HOLD: TRUE until     | reset=TRUE clears   | Precedes  | TRUE when windowSize  |\n  |                | windowSize>100      | valid window set     | (valid WS) or reset | processing | outside [1,100]       |\n  | status         | Same as error       | HOLD: 16#8200 until  | reset=TRUE clears   | Precedes  | 16#0000=OK;          |\n  |                |                     | valid window set     | (valid WS) or reset | processing | 16#8200=WS error      |\n  |----------------|---------------------|----------------------|---------------------|------------|-----------------------|\n  PUB001: Sliding arithmetic mean replaces oldest datum with newest on each read.\n  PUB002: cyclicExecution=TRUE updates average every scan cycle; trigger ignored.\n  PUB003: Rising edge on trigger (non-cyclic) reads one value and updates average.\n  PUB004: reset=TRUE (level) clears buffer/sum/count/index and sets outputs to idle.\n  PUB004: Invalid windowSize (<1 or >100) sets error=TRUE and status=16#8200.\n  PUB005: windowSizeReached=FALSE until tmp_count reaches windowSize.\n  PUB006: error=TRUE when windowSize validation fails; cleared on valid size.\n  PUB007: status=16#0000 (success) or 16#8200 (window size error 1..100 only).\n*)\n\ntrigger_r(CLK := trigger);\n\nIF reset THEN\n    tmp_count    := 0;\n    tmp_sum      := 0.0;\n    tmp_writeIdx := 1;\n    average           := 0.0;\n    windowSizeReached := FALSE;\n    error             := FALSE;\n    status            := 16#0000;\n    RETURN;\nEND_IF;\n\nIF windowSize < 1 OR windowSize > 100 THEN\n    error  := TRUE;\n    status := 16#8200;\n    RETURN;\nEND_IF;\n\nIF tmp_count > windowSize THEN\n    tmp_count    := 0;\n    tmp_sum      := 0.0;\n    tmp_writeIdx := 1;\nEND_IF;\n\nIF cyclicExecution OR trigger_r.Q THEN\n    IF tmp_count >= windowSize THEN\n        tmp_sum := tmp_sum - tmp_buffer[tmp_writeIdx];\n    ELSE\n        tmp_count := tmp_count + 1;\n    END_IF;\n\n    tmp_buffer[tmp_writeIdx] := value;\n    tmp_sum := tmp_sum + value;\n\n    tmp_writeIdx := (tmp_writeIdx MOD windowSize) + 1;\n\n    average := tmp_sum / tmp_count;\n    windowSizeReached := (tmp_count >= windowSize);\n    error  := FALSE;\n    status := 16#0000;\nEND_IF;\n\nEND_FUNCTION_BLOCK\n\n(* CONTRACT_RULES [] *)",
+      "code_hash": "1b47e8e1ccd037dd5af8f05a38d0e0c792e57f39ee540a9613d2bcf8d0841846",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 22,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007"
+        ]
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 3434,
+      "completion_tokens": 4179,
+      "cost_cny": 0.033428849999999996,
+      "latency_s": 71.0,
+      "generation_seconds": 71.0,
+      "end_to_end_seconds": 146.812,
+      "format_edits": [],
+      "raw_source_sha256": "1b47e8e1ccd037dd5af8f05a38d0e0c792e57f39ee540a9613d2bcf8d0841846",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": true,
+      "tests_passed": 21,
+      "tests_total": 21,
+      "verification_status": "violated",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 21,
+        "tests_passed": 21,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "s1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 10.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 10.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 15.0,
+              "windowSizeReached": true
+            },
+            "actual": {
+              "average": 15.0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 25.0
+            },
+            "actual": {
+              "average": 25.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 30.0
+            },
+            "actual": {
+              "average": 30.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 35.0
+            },
+            "actual": {
+              "average": 35.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 35.0
+            },
+            "actual": {
+              "average": 35.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 50.0
+            },
+            "actual": {
+              "average": 50.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 33280
+            },
+            "actual": {
+              "error": true,
+              "status": 33280
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 33280
+            },
+            "actual": {
+              "error": true,
+              "status": 33280
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 0.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 0.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 8.0,
+              "windowSizeReached": true,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 8.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ring-end-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 10,
+              "windowSizeReached": false,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 10.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ring-end-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 10.1,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 10.1,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ring-end-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 10.3,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 10.3,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ring-end-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 50,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 50.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "idle-window-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 0.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 0.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "fixed-four-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 30.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 30.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "fixed-four-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 35.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 35.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "fixed-four-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 43.333333333333336,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 43.333333333333336,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "fixed-four-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 57.5,
+              "windowSizeReached": true,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 57.5,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 3919,
+          "traces": 60000,
+          "specs_total": 7,
+          "specs_hold": 0,
+          "specs_violated": 2,
+          "specs_inconclusive": 5,
+          "violations": [
+            {
+              "id": "S1",
+              "formula": "G((windowSize < 1 | windowSize > 100) -> error)",
+              "at": 1,
+              "explanation": "",
+              "trace": [
+                {
+                  "cyclicexecution": false,
+                  "trigger": false,
+                  "value": 10.0,
+                  "windowsize": 101,
+                  "reset": true,
+                  "average": 0.0,
+                  "windowsizereached": false,
+                  "error": false,
+                  "status": 0,
+                  "trigger_r": {
+                    "CLK": false,
+                    "Q": false,
+                    "_M": false
+                  },
+                  "tmp_buffer": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "tmp_sum": 0.0,
+                  "tmp_count": 0,
+                  "tmp_writeidx": 1
+                }
+              ]
+            },
+            {
+              "id": "S7",
+              "formula": "G((windowSize >= 1 AND windowSize <= 100) -> NOT error)",
+              "at": 2,
+              "explanation": "",
+              "trace": [
+                {
+                  "cyclicexecution": false,
+                  "trigger": false,
+                  "value": 10.0,
+                  "windowsize": 101,
+                  "reset": false,
+                  "average": 0.0,
+                  "windowsizereached": false,
+                  "error": true,
+                  "status": 33280,
+                  "trigger_r": {
+                    "CLK": false,
+                    "Q": false,
+                    "_M": false
+                  },
+                  "tmp_buffer": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "tmp_sum": 0.0,
+                  "tmp_count": 0,
+                  "tmp_writeidx": 1
+                },
+                {
+                  "cyclicexecution": false,
+                  "trigger": false,
+                  "value": 10.0,
+                  "windowsize": 2,
+                  "reset": false,
+                  "average": 0.0,
+                  "windowsizereached": false,
+                  "error": true,
+                  "status": 33280,
+                  "trigger_r": {
+                    "CLK": false,
+                    "Q": false,
+                    "_M": false
+                  },
+                  "tmp_buffer": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "tmp_sum": 0.0,
+                  "tmp_count": 0,
+                  "tmp_writeidx": 1
+                }
+              ]
+            }
+          ],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 18.093999999997322,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-03_67fb4a31f7",
+            "source_sha256": "cca7699d6b2c84840a12932dff08d05046833c133a59c0fceea4dcaf9bb1e22f",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "input_partition": {
+            "original_combinations": 480,
+            "classes": {},
+            "representative_combinations": 480
+          },
+          "search": {
+            "algorithm": "finite_window_product_bfs",
+            "stop_reason": "transition_limit",
+            "completed_depth": 2,
+            "current_depth": 3,
+            "elapsed_seconds": 12.468000000008033,
+            "edges_checked": 60000,
+            "frontier_states": 1532,
+            "product_states": 3919,
+            "states_explored": 3919,
+            "input_space_size": 480
+          },
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "9fe28a3be6dd723ee454356de11663e0850bcd8dc9e160b78f63c41bb7785ff7",
+          "source_sha256": "cca7699d6b2c84840a12932dff08d05046833c133a59c0fceea4dcaf9bb1e22f",
+          "problem_sha256": "c065e64aeca08ebf6b9aa81692ed04edae03ee932c75af7037d3cff74b19ee84",
+          "mc_timeout_seconds": 35,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {},
+          "cache_hit": false,
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "bounded",
+          "candidate_text_rewritten": false,
+          "task_json_sha256": "43c671b780ac805094ae0f39eea801df5e1171ff266ac8e206a05d0541a36142",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated",
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          }
+        }
+      },
+      "feedback": "Functional checks: 21/21; bounded status: violated.\nConfirmed bounded property violation: S1, position 1. Review the public contract; no private observer definitions are provided.\nConfirmed bounded property violation: S7, position 2. Review the public contract; no private observer definitions are provided.",
+      "timing": {
+        "static_seconds": 0.172,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 18.094,
+        "functional_seconds": 0.203,
+        "formal_queue_seconds": 0.0,
+        "bounded_seconds": 12.937
+      },
+      "idx": 2,
+      "code": "FUNCTION_BLOCK FB_MovingAverage\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger         : BOOL;\n    value           : LREAL;\n    windowSize      : INT;\n    reset           : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    average           : LREAL := 0.0;\n    windowSizeReached : BOOL  := FALSE;\n    error             : BOOL  := FALSE;\n    status            : WORD  := 16#0000;\nEND_VAR\n\nVAR\n    trigger_r     : R_TRIG;\n    tmp_buffer    : ARRAY[1..100] OF LREAL;\n    tmp_sum       : LREAL := 0.0;\n    tmp_count     : INT   := 0;\n    tmp_writeIdx  : INT   := 1;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\n  | Output/State   | Activation          | Retention/Hold       | Reset/Deactivation  | Priority   | Units/Bounds          |\n  |----------------|---------------------|----------------------|---------------------|------------|-----------------------|\n  | average        | cyclicExecution=TRUE| HOLD: retains value  | reset=TRUE sets 0.0 | Same-scan | LREAL; sliding mean   |\n  | (continued)    | OR trigger rising   | on same scan if no   | when window invalid | as trigger | 1..100 element window |\n  |                | edge (non-cyclic)   | new value processed  |                     |            |                       |\n  | windowSize     | Same as average     | HOLD: TRUE retained  | reset=TRUE sets     | Same-scan | BOOL; TRUE when       |\n  | Reached        |                     | when not updated     | FALSE               | as trigger | tmp_count>=windowSize |\n  | error          | windowSize<1 or     | HOLD: TRUE until     | reset=TRUE clears   | Precedes  | TRUE when windowSize  |\n  |                | windowSize>100      | valid window set     | (valid WS) or reset | processing | outside [1,100]       |\n  | status         | Same as error       | HOLD: 16#8200 until  | reset=TRUE clears   | Precedes  | 16#0000=OK;          |\n  |                |                     | valid window set     | (valid WS) or reset | processing | 16#8200=WS error      |\n  |----------------|---------------------|----------------------|---------------------|------------|-----------------------|\n  PUB001: Sliding arithmetic mean replaces oldest datum with newest on each read.\n  PUB002: cyclicExecution=TRUE updates average every scan cycle; trigger ignored.\n  PUB003: Rising edge on trigger (non-cyclic) reads one value and updates average.\n  PUB004: reset=TRUE (level) clears buffer/sum/count/index and sets outputs to idle.\n  PUB004: Invalid windowSize (<1 or >100) sets error=TRUE and status=16#8200.\n  PUB005: windowSizeReached=FALSE until tmp_count reaches windowSize.\n  PUB006: error=TRUE when windowSize validation fails; cleared on valid size.\n  PUB007: status=16#0000 (success) or 16#8200 (window size error 1..100 only).\n*)\n\ntrigger_r(CLK := trigger);\n\nIF reset THEN\n    tmp_count    := 0;\n    tmp_sum      := 0.0;\n    tmp_writeIdx := 1;\n    average           := 0.0;\n    windowSizeReached := FALSE;\n    error             := FALSE;\n    status            := 16#0000;\n    RETURN;\nEND_IF;\n\nIF windowSize < 1 OR windowSize > 100 THEN\n    error             := TRUE;\n    status            := 16#8200;\n    windowSizeReached := FALSE;\n    RETURN;\nEND_IF;\n\nIF tmp_count > windowSize THEN\n    tmp_count    := 0;\n    tmp_sum      := 0.0;\n    tmp_writeIdx := 1;\nEND_IF;\n\nIF cyclicExecution OR trigger_r.Q THEN\n    IF tmp_count >= windowSize THEN\n        tmp_sum := tmp_sum - tmp_buffer[tmp_writeIdx];\n    ELSE\n        tmp_count := tmp_count + 1;\n    END_IF;\n\n    tmp_buffer[tmp_writeIdx] := value;\n    tmp_sum := tmp_sum + value;\n\n    tmp_writeIdx := (tmp_writeIdx MOD windowSize) + 1;\n\n    average := tmp_sum / tmp_count;\n    windowSizeReached := (tmp_count >= windowSize);\n    error  := FALSE;\n    status := 16#0000;\nEND_IF;\n\nEND_FUNCTION_BLOCK\n\n(* CONTRACT_RULES [] *)",
+      "code_hash": "cca7699d6b2c84840a12932dff08d05046833c133a59c0fceea4dcaf9bb1e22f",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 22,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007"
+        ]
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 3405,
+      "completion_tokens": 5275,
+      "cost_cny": 0.040653795,
+      "latency_s": 90.797,
+      "generation_seconds": 90.797,
+      "end_to_end_seconds": 122.203,
+      "format_edits": [],
+      "raw_source_sha256": "cca7699d6b2c84840a12932dff08d05046833c133a59c0fceea4dcaf9bb1e22f",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 17,
+      "tests_total": 21,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 21,
+        "tests_passed": 17,
+        "pass_rate": 0.8095,
+        "failure_summary": "s3: average 期望 25.0，实际 30.0",
+        "cases": [
+          {
+            "tc_id": "s1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 10.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 10.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 15.0,
+              "windowSizeReached": true
+            },
+            "actual": {
+              "average": 15.0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s3",
+            "passed": false,
+            "mode": "sequence",
+            "message": "average 期望 25.0，实际 30.0",
+            "expected": {
+              "average": 25.0
+            },
+            "actual": {
+              "average": 30.0
+            },
+            "hint": "s3（第三个样本 30：FIFO 淘汰最旧 10，平均=(20+30)/2=25）：average 期望 25.0，实际 30.0"
+          },
+          {
+            "tc_id": "s4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 30.0
+            },
+            "actual": {
+              "average": 30.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s5",
+            "passed": false,
+            "mode": "sequence",
+            "message": "average 期望 35.0，实际 40.0",
+            "expected": {
+              "average": 35.0
+            },
+            "actual": {
+              "average": 40.0
+            },
+            "hint": "s5（周期模式关、trigger 上升沿：本拍采一个样本，平均=(30+40)/2=35）：average 期望 35.0，实际 40.0"
+          },
+          {
+            "tc_id": "s6",
+            "passed": false,
+            "mode": "sequence",
+            "message": "average 期望 35.0，实际 40.0",
+            "expected": {
+              "average": 35.0
+            },
+            "actual": {
+              "average": 40.0
+            },
+            "hint": "s6（trigger 保持 TRUE 无新上升沿：不采样，平均保持 35（只认边沿））：average 期望 35.0，实际 40.0"
+          },
+          {
+            "tc_id": "s7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 50.0
+            },
+            "actual": {
+              "average": 50.0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "error": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 33280
+            },
+            "actual": {
+              "error": true,
+              "status": 33280
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 33280
+            },
+            "actual": {
+              "error": true,
+              "status": 33280
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 0.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 0.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "s12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 8.0,
+              "windowSizeReached": true,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 8.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ring-end-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 10,
+              "windowSizeReached": false,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 10.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ring-end-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 10.1,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 10.1,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ring-end-3",
+            "passed": false,
+            "mode": "sequence",
+            "message": "average 期望 10.3，实际 30.0",
+            "expected": {
+              "average": 10.3,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 30.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": "ring-end-3（写至第100槽和再次写入首槽；最后缩短至1。）：average 期望 10.3，实际 30.0"
+          },
+          {
+            "tc_id": "ring-end-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 50,
+              "windowSizeReached": true,
+              "status": 0,
+              "error": false
+            },
+            "actual": {
+              "average": 50.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "idle-window-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 0.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 0.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "fixed-four-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 30.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 30.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "fixed-four-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 35.0,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 35.0,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "fixed-four-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 43.333333333333336,
+              "windowSizeReached": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 43.333333333333336,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "fixed-four-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "average": 57.5,
+              "windowSizeReached": true,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "average": 57.5,
+              "error": false,
+              "status": 0,
+              "windowSizeReached": true
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 18.389999999999418,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-03_754b4788ae",
+            "source_sha256": "bb52ffa0640a807b6ce734c03a5cf6c371c91009041b0403fa4014d0732aa989",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          },
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "bb52ffa0640a807b6ce734c03a5cf6c371c91009041b0403fa4014d0732aa989",
+          "task_json_sha256": "43c671b780ac805094ae0f39eea801df5e1171ff266ac8e206a05d0541a36142",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 17/21; bounded status: not_run.\nComplete public input prefixes and observed executions (initial-state scope is explicit; no assertion values or test notes):\n[{\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"s1\", \"inputs\": {\"cyclicExecution\": true, \"trigger\": false, \"value\": 10.0, \"windowSize\": 2, \"reset\": false}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"s2\", \"inputs\": {\"cyclicExecution\": true, \"trigger\": false, \"value\": 20.0, \"windowSize\": 2, \"reset\": false}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"s3\", \"inputs\": {\"cyclicExecution\": true, \"trigger\": false, \"value\": 30.0, \"windowSize\": 2, \"reset\": false}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"s4\", \"inputs\": {\"cyclicExecution\": true, \"trigger\": false, \"value\": 30.0, \"windowSize\": 2, \"reset\": false}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"s5\", \"inputs\": {\"cyclicExecution\": false, \"trigger\": true, \"value\": 40.0, \"windowSize\": 2, \"reset\": false}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"s6\", \"inputs\": {\"cyclicExecution\": false, \"trigger\": true, \"value\": 50.0, \"windowSize\": 2, \"reset\": false}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}], \"checkpoints\": [{\"case\": \"s3\", \"check_outputs\": [\"average\"], \"observed_outputs\": {\"average\": 30.0}}, {\"case\": \"s5\", \"check_outputs\": [\"average\"], \"observed_outputs\": {\"average\": 40.0}}, {\"case\": \"s6\", \"check_outputs\": [\"average\"], \"observed_outputs\": {\"average\": 40.0}}], \"relevant_public_clauses\": [{\"id\": \"PUB001\", \"text\": \"Write a function block FB that calculates and updates a moving arithmetic mean. The moving arithmetic mean is a method of averaging over consecutive data points, where each new data point replaces the oldest data point, and then the average is recalculated.\"}, {\"id\": \"PUB002\", \"text\": \"1. When cyclicExecution is TRUE, a new data value is automatically read and the moving average average is updated every scan cycle.\"}]}, {\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"ring-end-1\", \"inputs\": {\"cyclicExecution\": true, \"trigger\": false, \"value\": 10, \"windowSize\": 100, \"reset\": false}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 99, \"scan_interval_ms\": null}, {\"case\": \"ring-end-2\", \"inputs\": {\"cyclicExecution\": true, \"trigger\": false, \"value\": 20, \"windowSize\": 100, \"reset\": false}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}, {\"case\": \"ring-end-3\", \"inputs\": {\"cyclicExecution\": true, \"trigger\": false, \"value\": 30, \"windowSize\": 100, \"reset\": false}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null}], \"checkpoints\": [{\"case\": \"ring-end-3\", \"check_outputs\": [\"average\", \"windowSizeReached\"], \"observed_outputs\": {\"average\": 30.0, \"error\": false, \"status\": 0, \"windowSizeReached\": false}}], \"relevant_public_clauses\": [{\"id\": \"PUB004\", \"text\": \"3. Provide a reset function reset, which resets the moving average calculation when the reset signal is TRUE. If the window size is less than 1 or greater than 100, output an error status and status code.\"}, {\"id\": \"PUB002\", \"text\": \"1. When cyclicExecution is TRUE, a new data value is automatically read and the moving average average is updated every scan cycle.\"}]}]",
+      "timing": {
+        "static_seconds": 0.157,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 18.39,
+        "functional_seconds": 0.188
+      },
+      "idx": 3,
+      "code": "FUNCTION_BLOCK FB_MovingAverage\nVAR_INPUT\n    cyclicExecution : BOOL;\n    trigger         : BOOL;\n    value           : LREAL;\n    windowSize      : INT;\n    reset           : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    average           : LREAL := 0.0;\n    windowSizeReached : BOOL  := FALSE;\n    error             : BOOL  := FALSE;\n    status            : WORD  := 16#0000;\nEND_VAR\n\nVAR\n    trigger_r     : R_TRIG;\n    tmp_buffer    : ARRAY[1..100] OF LREAL;\n    tmp_sum       : LREAL := 0.0;\n    tmp_count     : INT   := 0;\n    tmp_writeIdx  : INT   := 1;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\n  | Output/State   | Activation          | Retention/Hold       | Reset/Deactivation  | Priority   | Units/Bounds          |\n  |----------------|---------------------|----------------------|---------------------|------------|-----------------------|\n  | average        | cyclicExecution=TRUE| HOLD: retains value  | reset=TRUE sets 0.0 | Same-scan | LREAL; sliding mean   |\n  | (continued)    | OR trigger rising   | on same scan if no   | when window invalid | as trigger | 1..100 element window |\n  |                | edge (non-cyclic)   | new value processed  |                     |            |                       |\n  | windowSize     | Same as average     | HOLD: TRUE retained  | reset=TRUE sets     | Same-scan | BOOL; TRUE when       |\n  | Reached        |                     | when not updated     | FALSE               | as trigger | tmp_count>=windowSize |\n  | error          | windowSize<1 or     | HOLD: TRUE until     | reset=TRUE clears   | Precedes  | TRUE when windowSize  |\n  |                | windowSize>100      | valid window set     | (valid WS) or reset | processing | outside [1,100]       |\n  | status         | Same as error       | HOLD: 16#8200 until  | reset=TRUE clears   | Precedes  | 16#0000=OK;          |\n  |                |                     | valid window set     | (valid WS) or reset | processing | 16#8200=WS error      |\n  |----------------|---------------------|----------------------|---------------------|------------|-----------------------|\n  PUB001: Sliding arithmetic mean replaces oldest datum with newest on each read.\n  PUB002: cyclicExecution=TRUE updates average every scan cycle; trigger ignored.\n  PUB003: Rising edge on trigger (non-cyclic) reads one value and updates average.\n  PUB004: reset=TRUE (level) clears buffer/sum/count/index and sets outputs to idle.\n  PUB004: Invalid windowSize (<1 or >100) sets error=TRUE and status=16#8200.\n  PUB005: windowSizeReached=FALSE until tmp_count reaches windowSize.\n  PUB006: error=TRUE when windowSize validation fails; cleared on valid size.\n  PUB007: status=16#0000 (success) or 16#8200 (window size error 1..100 only).\n\n  BOUNDED REPAIR: When windowSize shrinks below current tmp_count, reset state\n  to ensure buffer validity and bounded counter. Without this, tmp_count can\n  exceed the new windowSize causing: (a) array bounds risk on tmp_buffer access\n  when tmp_writeIdx wraps past the new smaller window, (b) average divides by\n  incorrect count, violating the sliding-window contract. Fix: detect shrink and\n  reset tmp_count, tmp_sum, tmp_writeIdx before processing.\n*)\n\ntrigger_r(CLK := trigger);\n\nIF reset THEN\n    tmp_count    := 0;\n    tmp_sum      := 0.0;\n    tmp_writeIdx := 1;\n    average           := 0.0;\n    windowSizeReached := FALSE;\n    error             := FALSE;\n    status            := 16#0000;\n    RETURN;\nEND_IF;\n\nIF windowSize < 1 OR windowSize > 100 THEN\n    error  := TRUE;\n    status := 16#8200;\n    RETURN;\nEND_IF;\n\nIF tmp_count >= windowSize THEN\n    tmp_count    := 0;\n    tmp_sum      := 0.0;\n    tmp_writeIdx := 1;\nEND_IF;\n\nIF cyclicExecution OR trigger_r.Q THEN\n    IF tmp_count >= windowSize THEN\n        tmp_sum := tmp_sum - tmp_buffer[tmp_writeIdx];\n    ELSE\n        tmp_count := tmp_count + 1;\n    END_IF;\n\n    tmp_buffer[tmp_writeIdx] := value;\n    tmp_sum := tmp_sum + value;\n\n    tmp_writeIdx := (tmp_writeIdx MOD windowSize) + 1;\n\n    average := tmp_sum / tmp_count;\n    windowSizeReached := (tmp_count >= windowSize);\n    error  := FALSE;\n    status := 16#0000;\nEND_IF;\n\nEND_FUNCTION_BLOCK\n\n(* CONTRACT_RULES [] *)",
+      "code_hash": "bb52ffa0640a807b6ce734c03a5cf6c371c91009041b0403fa4014d0732aa989",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 29,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007"
+        ]
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 3435,
+      "completion_tokens": 6908,
+      "cost_cny": 0.051540153,
+      "latency_s": 123.172,
+      "generation_seconds": 123.172,
+      "end_to_end_seconds": 141.907,
+      "format_edits": [],
+      "raw_source_sha256": "bb52ffa0640a807b6ce734c03a5cf6c371c91009041b0403fa4014d0732aa989",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "maximum_four_candidates",
+  "tests_total": 21,
+  "study_plan_sha256": "ceee87bda23fdec86f82c35ccba0ed7fb16e190de62d91cf12c3a3776cd1a77c",
+  "started_at": "2026-11-13T05:57:35.192461+08:00",
+  "wall_seconds": 537.032,
+  "finished_at": "2026-11-13T06:06:32.098514+08:00"
+}
