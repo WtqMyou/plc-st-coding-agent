@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794473955,
+    "id": "resp_0217944739533319714750b4c92df19b7d86c8470c87ebfbeb418",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179447395542200000000000000000000ffffac183bf74649cc",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need answer only ST code per user. Need implement FUNCTION_BLOCK FB interface exactly. Need satisfy all properties, avoid divide by zero, hold prev if count<=0, !enable, !avgEnable. Sum wider type DINT/LINT, output REAL. Count >8 use first 8. Note S4/S6 latches specifics: when enable and valid count compute average prefix; and count<=0 hold, !enable hold, !avgEnable hold. Order priority? Conditions: enable false holds irrespective avgEnable. avgEnable false holds when enable true? Yes S5. count <=0 hold. count >8 clamp to 8. Need compute maybe within function. Variables: count_capped maybe INT := 0; sum LINT :=0; idx INT. Need no divisor zero. Since condition count>0 and clamped >=? clamp count to 8. Could code:\n\nIF NOT enable OR NOT avgEnable OR count <=0 THEN\n    avgOut := avgOut; (* hold; self-assignment okay but prev semantics perhaps just no assignment *)\nELSE\n    sum := LINT#0;\n    IF count < 8 THEN\n       sampleCount := count;\n    ELSE\n       sampleCount := 8;\n    END_IF;\n    FOR idx := 1 TO sampleCount DO\n       sum := sum + INT_TO_LINT(values[idx]);\n    END_FOR;\n    avgOut := LINT_TO_REAL(sum) / INT_TO_REAL(sampleCount);\nEND_IF;\n\nNeed ensure CODESYS ST syntax. LINT_TO_REAL exists. Could use LNUM? LINT. Need strict no local reserved s/r. Use p perhaps? Instruction avoid CODESYS reserved local identifiers s and r. Our identifiers safe? sum, sampleCount, idx, avgOut. Is `sum` reserved? likely not. `count` reserved? input. Maybe `index`. Use i? one-letter variable disallowed by coding guidelines but code task? It says don't use one-letter variable names unless requested. Could use `idx` two letters. Fine.\n\nBut need consider formal S1 says count<=0 => avgOut=prev(avgOut) same cycle. In ST, output variable reads last written from previous cycle if not assigned. If conditional block excludes assignment, avgOut remains previous value automatically. Explicit `avgOut := avgOut;` may generate? In CODESYS reading output and writing is okay, but self assign preserves. Better no assignment in hold branch, output naturally retains. But possible compiler optimized? static output maintains previous value between scans if not assigned. Should be okay.\n\nPotential S4 says in enable and count legal avg. S6 formulas count >=8 average first 8. Good.\n\nSum of 8 INT max 32767 * 8=262136 fits DINT/LINT. Use LINT.\n\nNeed output only one fenced code block no prose. Could include named TYPE? Not needed.\n\nNeed consider `FOR idx := 1 TO sampleCount BY 1 DO` CODESYS. End with END_FOR; CASE proper.\n\nPotential `INT_TO_REAL` denominator? S6 says divide by floating constant 8.0. We use INT_TO_REAL(sampleCount), gives exact 1.0..8.0. But requirement exact input. Could perhaps use REAL constant. `INT_TO_REAL(sampleCount)` is standard and precise. However S6 LTL may treat conversion? likely okay. But \"results equal arithmetic average\" EXACT under reals? Floats can produce. Since sum LINT converted REAL and divided by REAL; sum max 262136 exact in REAL. Fine.\n\nCould also compute average via `LINT_TO_REAL(sum) / LINT_TO_REAL(sampleCount)`. But division REAL.\n\nNeed ensure all IF/CASE/... semicolon. Syntax:\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n    enable : BOOL;\n    values : ARRAY[1..8] OF INT;\n    count : INT;\n    avgEnable : BOOL;\nEND_VAR\nVAR_OUTPUT\n    avgOut : REAL;\nEND_VAR\nVAR\n    sampleCount : INT;\n    total : LINT;\n    idx : INT;\nEND_VAR\n\nIF enable AND avgEnable AND count > 0 THEN\n  IF count > 8 THEN\n    sampleCount := 8;\n  ELSE\n    sampleCount := count;\n  END_IF;\n\n  total := 0; \n  FOR idx := 1 TO sampleCount DO\n     total := total + INT_TO_LINT(values[idx]);\n  END_FOR;\n\n  avgOut := LINT_TO_REAL(total) / INT_TO_REAL(sampleCount);\nEND_IF;\n\nNo else. This holds output if conditions false. Is `count >8` evaluate safe: expression `enable AND avgEnable AND count > 0` short-circuit? CODESYS likely all evaluated but no side effects, count <=0 false later, then no branch. `IF count > 8` etc.\n\nPotential sampleCount default maybe 0 but not used when invalid.\n\nDoes output hold if count negative? yes condition false, no write. Good.\n\nNeed ensure non non-NaN. Real division finite; fine.\n\nShould we use `DINT` instead of LINT? LINT fine. Need INT_TO_LINT function maybe available CODESYS. CODESYS has `INT_TO_LINT`. Yes. LINT_TO_REAL standard. If CODESYS target older? 3.5 supports LINT. Should be okay.\n\nPotential problem CODESYS FOR upper bound INT sampleCount. `sampleCount` INT, idx INT. Fine.\n\nPotential \"Use exact input/output types directions\" yes.\n\nNeed maybe include POU type name FB. The user task demands FB not PROGRAM. Good.\n\nReturn single fenced st block. No prose."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    enable : BOOL;\n    values : ARRAY[1..8] OF INT;\n    count : INT;\n    avgEnable : BOOL;\nEND_VAR\nVAR_OUTPUT\n    avgOut : REAL;\nEND_VAR\nVAR\n    sampleCount : INT;\n    total : LINT;\n    idx : INT;\nEND_VAR\n\nIF enable AND avgEnable AND (count > 0) THEN\n    IF count > 8 THEN\n        sampleCount := 8;\n    ELSE\n        sampleCount := count;\n    END_IF;\n\n    total := LINT#0;\n\n    FOR idx := 1 TO sampleCount BY 1 DO\n        total := total + INT_TO_LINT(values[idx]);\n    END_FOR;\n\n    avgOut := LINT_TO_REAL(total) / INT_TO_REAL(sampleCount);\nEND_IF;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179447397204100000000000000000000ffffac183bf753e6b7",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 8581,
+      "output_tokens": 1410,
+      "total_tokens": 9991,
+      "input_tokens_details": {
+        "cached_tokens": 4096
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 1211
+      },
+      "cost": "¥0.062934"
+    }
+  }
+}
