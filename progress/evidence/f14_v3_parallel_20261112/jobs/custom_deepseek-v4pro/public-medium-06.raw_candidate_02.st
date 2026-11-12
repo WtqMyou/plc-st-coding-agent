@@ -1,0 +1,78 @@
+FUNCTION_BLOCK SlabThicknessAlarm
+VAR_INPUT
+    THICKNESS_FAULT : BOOL;
+    THICKNESS_SIGNAL_VALID : BOOL;
+    CUTTING_RUN : BOOL;
+    FaultTimestamp : DINT;
+    CycleTime : TIME;
+END_VAR
+VAR_OUTPUT
+    THICKNESS_ALARM : BOOL := FALSE;
+    Slab_Fault_Counter : UINT := 0;
+    Slab_Runtime_Accumulator : LTIME;
+    Slab_Fault_History : ARRAY[0..4] OF DINT;
+END_VAR
+VAR
+    lastValidFault : BOOL := FALSE;
+    holdTimer : TIME := T#0MS;
+    initDone : BOOL := FALSE;
+    i : INT;
+END_VAR
+
+// Power‑up initialisation: zero all outputs and clear holding state
+IF NOT initDone THEN
+    THICKNESS_ALARM := FALSE;
+    Slab_Fault_Counter := 0;
+    Slab_Runtime_Accumulator := LTIME#0S;
+    FOR i := 0 TO 4 DO
+        Slab_Fault_History[i] := 0;
+    END_FOR;
+    lastValidFault := FALSE;
+    holdTimer := T#0MS;
+    initDone := TRUE;
+END_IF;
+
+// Handle invalid signal: alarm off, no accumulation or logging
+IF NOT THICKNESS_SIGNAL_VALID THEN
+    THICKNESS_ALARM := FALSE;
+    holdTimer := T#0MS;
+    lastValidFault := FALSE;
+ELSE
+    // Valid signal path
+    // Detect rising edge of valid fault
+    IF THICKNESS_FAULT AND NOT lastValidFault THEN
+        Slab_Fault_Counter := Slab_Fault_Counter + UINT#1;
+        // Shift history
+        FOR i := 4 TO 1 BY -1 DO
+            Slab_Fault_History[i] := Slab_Fault_History[i - 1];
+        END_FOR;
+        Slab_Fault_History[0] := FaultTimestamp;
+        holdTimer := T#500MS;
+    END_IF;
+
+    // Decrement hold timer
+    IF holdTimer > T#0MS THEN
+        IF holdTimer >= CycleTime THEN
+            holdTimer := holdTimer - CycleTime;
+        ELSE
+            holdTimer := T#0MS;
+        END_IF;
+    END_IF;
+
+    // Alarm condition: fault active or hold timer running
+    IF THICKNESS_FAULT OR (holdTimer > T#0MS) THEN
+        THICKNESS_ALARM := TRUE;
+    ELSE
+        THICKNESS_ALARM := FALSE;
+    END_IF;
+
+    // Accumulate runtime only when cutting, signal valid, no fault
+    IF CUTTING_RUN AND NOT THICKNESS_FAULT THEN
+        Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + TIME_TO_LTIME(CycleTime);
+    END_IF;
+
+    // Update last valid fault state for next scan
+    lastValidFault := THICKNESS_FAULT;
+END_IF;
+
+END_FUNCTION_BLOCK
