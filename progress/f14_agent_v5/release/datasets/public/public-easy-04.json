@@ -1,0 +1,494 @@
+{
+  "pid": "public-easy-04",
+  "source": "public",
+  "difficulty": "easy",
+  "title": "Jam Pump Debouncing and Runtime Maintenance",
+  "requirements": "Control a jam transfer pump on a food production line, including viscosity-signal debouncing, emergency-stop priority, runtime accumulation and a maintenance-due indication.\n\n1. Accept the viscosity condition only after VISCOSITY_OK has remained TRUE for DebounceTime. Invalidate the condition immediately when the input becomes FALSE.\n2. Allow VFD_RUN to be TRUE only when PASTE_E_STOP_NC is TRUE and the viscosity condition is valid. An emergency stop immediately disables the run output and clears any incomplete debounce timing.\n3. Accumulate PUMP_RUNTIME_ACC using the actual invocation interval CycleTime only while VFD_RUN is TRUE. Preserve the accumulated time while the pump is stopped.\n4. Set PUMP_MAINT_DUE when accumulated runtime reaches 500 hours. This indication is informational and must not affect pump operation or the safety permissive.\n5. At power-up, initialize the run output to OFF, accumulated runtime to zero and the maintenance indication to FALSE.",
+  "variables": [
+    {
+      "name": "VISCOSITY_OK",
+      "data_type": "BOOL",
+      "description": "Raw signal indicating that viscosity is within the permitted range.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "PASTE_E_STOP_NC",
+      "data_type": "BOOL",
+      "description": "Normally closed emergency-stop circuit; TRUE permits operation and FALSE means emergency stop.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "DebounceTime",
+      "data_type": "TIME",
+      "description": "Required continuous valid duration for the viscosity signal; must be positive.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "CycleTime",
+      "data_type": "TIME",
+      "description": "Actual elapsed interval represented by this invocation; must be positive.",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "VFD_RUN",
+      "data_type": "BOOL",
+      "description": "Pump variable-frequency-drive run command.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "PUMP_MAINT_DUE",
+      "data_type": "BOOL",
+      "description": "Maintenance indication when accumulated runtime reaches 500 hours.",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "PUMP_RUNTIME_ACC",
+      "data_type": "LTIME",
+      "description": "Accumulated enabled runtime, using a long-duration time type.",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "当急停回路断开（PASTE_E_STOP_NC=FALSE）时，VFD_RUN 必须为 FALSE。",
+      "ltl": "G(NOT PASTE_E_STOP_NC -> NOT VFD_RUN)",
+      "kind": "safety",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S2",
+      "text": "当粘度原始信号为 FALSE 时，去抖条件立即失效，VFD_RUN 必须为 FALSE。",
+      "ltl": "G(NOT VISCOSITY_OK -> NOT VFD_RUN)",
+      "kind": "safety",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S3",
+      "text": "累计运行达到500小时时维护指示有效。LTIME轨迹值以纳秒记录。",
+      "ltl": "G(PUMP_MAINT_DUE <-> (PUMP_RUNTIME_ACC >= 1800000000000000))",
+      "kind": "data",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S4",
+      "text": "当 VFD_RUN 为 FALSE 时，累计运行时间必须与上一拍相同（停机保持，不清零也不增加）。",
+      "ltl": "G(NOT VFD_RUN -> PUMP_RUNTIME_ACC = prev(PUMP_RUNTIME_ACC))",
+      "kind": "sequencing",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S5",
+      "text": "运行拍按实际CycleTime累计时长，TIME输入以毫秒、LTIME输出以纳秒记录。",
+      "ltl": "G(VFD_RUN -> PUMP_RUNTIME_ACC = prev(PUMP_RUNTIME_ACC) + CycleTime * 1000000)",
+      "kind": "data",
+      "verified_by": "timed_simulation"
+    },
+    {
+      "sid": "S6",
+      "text": "按实际持续时长和 DebounceTime 去抖；急停、粘度信号中断后重新计时。由不同周期的时间轨迹覆盖。",
+      "ltl": "",
+      "kind": "safety",
+      "verified_by": "timed_simulation"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "time-pump-1",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": false,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 200,
+        "CycleTime": 1
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 0,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-2",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 200,
+        "CycleTime": 1
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 0,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-3",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 200,
+        "CycleTime": 98
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 0,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 98,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-4",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 200,
+        "CycleTime": 102
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 102000000,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 102,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-5",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 200,
+        "CycleTime": 11
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 113000000,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 11,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-6",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": false,
+        "PASTE_E_STOP_NC": false,
+        "DebounceTime": 200,
+        "CycleTime": 30
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 113000000,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 30,
+      "note": "黏度原始信号断开，已完成的去抖也失效。"
+    },
+    {
+      "tc_id": "time-pump-7",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 15,
+        "CycleTime": 1
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 113000000,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-8",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 15,
+        "CycleTime": 9
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 113000000,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 9,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-8-stop",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": false,
+        "DebounceTime": 15,
+        "CycleTime": 1
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 113000000,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": "去抖只进行了10毫秒，未达15毫秒时触发急停。"
+    },
+    {
+      "tc_id": "time-pump-8-resume",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 15,
+        "CycleTime": 10
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 113000000,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 10,
+      "note": "急停释放的首拍仍未运行，先前未完成的去抖已清除。"
+    },
+    {
+      "tc_id": "time-pump-9",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 15,
+        "CycleTime": 15
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 128000000,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 15,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-10",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": false,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 15,
+        "CycleTime": 1
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 128000000,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-11",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 20,
+        "CycleTime": 1
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 128000000,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-12",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 20,
+        "CycleTime": 20
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 148000000,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 20,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-13",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 20,
+        "CycleTime": 3600000
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 1796400148000000,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 499,
+      "scan_interval_ms": 3600000,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-14",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 20,
+        "CycleTime": 3599851
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 1799999999000000,
+        "PUMP_MAINT_DUE": false
+      },
+      "cycles": 1,
+      "scan_interval_ms": 3599851,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-15",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 20,
+        "CycleTime": 1
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 1800000000000000,
+        "PUMP_MAINT_DUE": true
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-16",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": false,
+        "DebounceTime": 20,
+        "CycleTime": 17
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 1800000000000000,
+        "PUMP_MAINT_DUE": true
+      },
+      "cycles": 1,
+      "scan_interval_ms": 17,
+      "note": "黏度保持有效时单独施加急停，运行输出立即关闭。"
+    },
+    {
+      "tc_id": "time-pump-17",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": false,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 20,
+        "CycleTime": 1
+      },
+      "expected": {
+        "VFD_RUN": false,
+        "PUMP_RUNTIME_ACC": 1800000000000000,
+        "PUMP_MAINT_DUE": true
+      },
+      "cycles": 1,
+      "scan_interval_ms": 1,
+      "note": ""
+    },
+    {
+      "tc_id": "time-pump-18",
+      "group": "variable-period",
+      "mode": "sequence",
+      "inputs": {
+        "VISCOSITY_OK": true,
+        "PASTE_E_STOP_NC": true,
+        "DebounceTime": 20,
+        "CycleTime": 20
+      },
+      "expected": {
+        "VFD_RUN": true,
+        "PUMP_RUNTIME_ACC": 1800000020000000,
+        "PUMP_MAINT_DUE": true
+      },
+      "cycles": 2,
+      "scan_interval_ms": 20,
+      "note": "先观察到黏度从低到高，下一次调用到达20毫秒，恢复运行。"
+    }
+  ],
+  "provenance": {
+    "source_record": "sources/index.json#public-easy-04",
+    "release_contract": "STBench-F1.4"
+  },
+  "language": "en",
+  "raw_text": "# Jam Pump Debouncing and Runtime Maintenance\n\n- **Difficulty:** Easy (easy)\n\n## Requirements\n\nControl a jam transfer pump on a food production line, including viscosity-signal debouncing, emergency-stop priority, runtime accumulation and a maintenance-due indication.\n\n1. Accept the viscosity condition only after VISCOSITY_OK has remained TRUE for DebounceTime. Invalidate the condition immediately when the input becomes FALSE.\n2. Allow VFD_RUN to be TRUE only when PASTE_E_STOP_NC is TRUE and the viscosity condition is valid. An emergency stop immediately disables the run output and clears any incomplete debounce timing.\n3. Accumulate PUMP_RUNTIME_ACC using the actual invocation interval CycleTime only while VFD_RUN is TRUE. Preserve the accumulated time while the pump is stopped.\n4. Set PUMP_MAINT_DUE when accumulated runtime reaches 500 hours. This indication is informational and must not affect pump operation or the safety permissive.\n5. At power-up, initialize the run output to OFF, accumulated runtime to zero and the maintenance indication to FALSE.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `VISCOSITY_OK` | `BOOL` | Raw signal indicating that viscosity is within the permitted range. |\n| Input | `PASTE_E_STOP_NC` | `BOOL` | Normally closed emergency-stop circuit; TRUE permits operation and FALSE means emergency stop. |\n| Input | `DebounceTime` | `TIME` | Required continuous valid duration for the viscosity signal; must be positive. |\n| Input | `CycleTime` | `TIME` | Actual elapsed interval represented by this invocation; must be positive. |\n| Output | `VFD_RUN` | `BOOL` | Pump variable-frequency-drive run command. |\n| Output | `PUMP_MAINT_DUE` | `BOOL` | Maintenance indication when accumulated runtime reaches 500 hours. |\n| Output | `PUMP_RUNTIME_ACC` | `LTIME` | Accumulated enabled runtime, using a long-duration time type. |",
+  "case_mode": "sequence",
+  "mc_max_depth": 8,
+  "mc_max_traces": 60000
+}
