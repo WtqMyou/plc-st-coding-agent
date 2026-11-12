@@ -1,0 +1,489 @@
+{
+  "job_id": "custom_deepseek-v4pro/public-hard-04",
+  "pid": "public-hard-04",
+  "condition": "custom_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 17,
+            "code": "E_EXPECT",
+            "message": "期望 ';'，实际是 'TO'"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "c52625afa8db493acc87979b07db3b93b7d452f141e7b15d829fb3524a269e45",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 17 [E_EXPECT]: 期望 ';'，实际是 'TO'\nLine 0 [E_NO_POU]: 未找到可执行 POU",
+      "timing": {
+        "static_seconds": 0.141
+      },
+      "idx": 0,
+      "code": "(* ENGINEERING_CONTRACT\n  PUB001/PUB002: rising edges of enqueue/dequeue are detected by R_TRIG instances each scan.\n  PUB003: reset TRUE clears count/head/tail and returns before processing enq/deq requests.\n  PUB004: elementCount equals stored count, range 0..capacity; capacity from buffer array length.\n  PUB005: rejected full enqueue sets status 16#8002; rejected empty dequeue sets status 16#8001.\n  PUB006: first invocation initializes empty state; head/tail/count are internal only.\n  PUB007-PUB011: VARIANT buffer/item are accessed via __VARINFO and raw byte copy.\n  Unspecified: simultaneous enqueue+dequeue is processed dequeue first, then enqueue.\n  Unspecified: invalid buffer metadata leaves the block uninitialized with status 16#0000.\n*)\n(* CONTRACT_RULES [] *)\n\nTYPE VAR_INFO :\nSTRUCT\n    udiSize : UDINT;\n    udiAlignment : UDINT;\n    pbyData : POINTER TO BYTE;\n    udiTypeClass : UDINT;\n    udiTypeSubClass : UDINT;\n    udiArrayLength : UDINT;\n    sName : STRING(255);\nEND_STRUCT\nEND_TYPE;\n\nFUNCTION_BLOCK FB_FIFO\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    item : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    rtEnq : R_TRIG;\n    rtDeq : R_TRIG;\n\n    init : BOOL := FALSE;\n    capacity : DINT := 0;\n    count : DINT := 0;\n    head : UDINT := 0;\n    tail : UDINT := 0;\n\n    elemSize : UDINT := 0;\n    pBuf : POINTER TO BYTE;\n    pItem : POINTER TO BYTE;\n\n    infoBuf : VAR_INFO;\n    infoItem : VAR_INFO;\n\n    i : UDINT;\n    pSrc : POINTER TO BYTE;\n    pDst : POINTER TO BYTE;\n\n    tmpEnq : BOOL;\n    tmpDeq : BOOL;\nEND_VAR\n\nrtEnq(CLK := enqueue);\nrtDeq(CLK := dequeue);\ntmpEnq := rtEnq.Q;\ntmpDeq := rtDeq.Q;\n\nelementCount := 0;\nstatus := 16#0000;\n\nIF NOT init THEN\n    __VARINFO(ADR(buffer), ADR(infoBuf));\n    __VARINFO(ADR(item), ADR(infoItem));\n    \n    IF infoBuf.udiArrayLength > 0 THEN\n        capacity := TO_DINT(infoBuf.udiArrayLength);\n        elemSize := infoItem.udiSize;\n        IF elemSize = 0 THEN\n            elemSize := 1;\n        END_IF;\n        pBuf := infoBuf.pbyData;\n        pItem := infoItem.pbyData;\n        head := 0;\n        tail := 0;\n        count := 0;\n        init := TRUE;\n    ELSE\n        elementCount := 0;\n        status := 16#0000;\n        RETURN;\n    END_IF;\nEND_IF;\n\nIF reset THEN\n    head := 0;\n    tail := 0;\n    count := 0;\n    elementCount := 0;\n    status := 16#0000;\n    RETURN;\nEND_IF;\n\nIF tmpDeq THEN\n    IF count > 0 THEN\n        pSrc := pBuf + (head * elemSize);\n        pDst := pItem;\n        FOR i := UDINT#0 TO elemSize - UDINT#1 DO\n            pDst[i] := pSrc[i];\n        END_FOR;\n        head := (head + UDINT#1) MOD TO_UDINT(capacity);\n        count := count - 1;\n    ELSE\n        status := 16#8001;\n    END_IF;\nEND_IF;\n\nIF tmpEnq THEN\n    IF count < capacity THEN\n        pDst := pBuf + (tail * elemSize);\n        pSrc := pItem;\n        FOR i := UDINT#0 TO elemSize - UDINT#1 DO\n            pDst[i] := pSrc[i];\n        END_FOR;\n        tail := (tail + UDINT#1) MOD TO_UDINT(capacity);\n        count := count + 1;\n    ELSE\n        IF status = 16#0000 THEN\n            status := 16#8002;\n        END_IF;\n    END_IF;\nEND_IF;\n\nelementCount := count;",
+      "code_hash": "c52625afa8db493acc87979b07db3b93b7d452f141e7b15d829fb3524a269e45",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 10,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007",
+          "PUB011"
+        ]
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 2398,
+      "completion_tokens": 15532,
+      "cost_cny": 0.34834734,
+      "latency_s": 155.906,
+      "generation_seconds": 155.906,
+      "end_to_end_seconds": 156.047,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 1007,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2082,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2320,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2327,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2453,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2654,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2786,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2793,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3001,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3174,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3185,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3192,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "9fcd9e9b22410610444f15091c6ff60e0774b4d428c66c119048ef2105542ef9",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 97,
+            "code": "E_BAD_STMT",
+            "message": "无法解析的语句，遇到 '^'"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "fae89f88b6719cbd149cb943ff5089c813d307bd1007c59ca285967fbbd2cbf5",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 97 [E_BAD_STMT]: 无法解析的语句，遇到 '^'\nLine 0 [E_NO_POU]: 未找到可执行 POU",
+      "timing": {
+        "static_seconds": 0.203
+      },
+      "idx": 1,
+      "code": "(* ENGINEERING_CONTRACT\n  PUB001/PUB002: rising edges of enqueue/dequeue are detected by R_TRIG instances each scan.\n  PUB003: reset TRUE clears count/head/tail and returns before processing enq/deq requests.\n  PUB004: elementCount equals stored count, range 0..capacity; capacity from buffer array length.\n  PUB005: rejected full enqueue sets status 16#8002; rejected empty dequeue sets status 16#8001.\n  PUB006: first invocation initializes empty state; head/tail/count are internal only.\n  PUB007-PUB011: VARIANT buffer/item are accessed via __VARINFO and raw byte copy.\n  Unspecified: simultaneous enqueue+dequeue is processed dequeue first, then enqueue.\n  Unspecified: invalid buffer metadata leaves the block uninitialized with status 16#0000.\n*)\n(* CONTRACT_RULES [] *)\n\nFUNCTION_BLOCK FB_FIFO\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    item : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    rtEnq : R_TRIG;\n    rtDeq : R_TRIG;\n\n    init : BOOL := FALSE;\n    capacity : DINT := 0;\n    count : DINT := 0;\n    head : UDINT := 0;\n    tail : UDINT := 0;\n\n    elemSize : UDINT := 0;\n    pBuf : POINTER TO BYTE;\n    pItem : POINTER TO BYTE;\n\n    infoBuf : __SYSTEM.VAR_INFO;\n    infoItem : __SYSTEM.VAR_INFO;\n\n    i : UDINT;\n    pSrc : POINTER TO BYTE;\n    pDst : POINTER TO BYTE;\n\n    tmpEnq : BOOL;\n    tmpDeq : BOOL;\nEND_VAR\n\nrtEnq(CLK := enqueue);\nrtDeq(CLK := dequeue);\ntmpEnq := rtEnq.Q;\ntmpDeq := rtDeq.Q;\n\nelementCount := 0;\nstatus := 16#0000;\n\nIF NOT init THEN\n    __VARINFO(ADR(buffer), ADR(infoBuf));\n    __VARINFO(ADR(item), ADR(infoItem));\n    \n    IF infoBuf.udiArrayLength > 0 THEN\n        capacity := TO_DINT(infoBuf.udiArrayLength);\n        elemSize := infoItem.udiSize;\n        IF elemSize = 0 THEN\n            elemSize := 1;\n        END_IF;\n        pBuf := infoBuf.pbyData;\n        pItem := infoItem.pbyData;\n        head := 0;\n        tail := 0;\n        count := 0;\n        init := TRUE;\n    ELSE\n        elementCount := 0;\n        status := 16#0000;\n        RETURN;\n    END_IF;\nEND_IF;\n\nIF reset THEN\n    head := 0;\n    tail := 0;\n    count := 0;\n    elementCount := 0;\n    status := 16#0000;\n    RETURN;\nEND_IF;\n\nIF tmpDeq THEN\n    IF count > 0 THEN\n        pSrc := pBuf + (head * elemSize);\n        pDst := pItem;\n        FOR i := UDINT#0 TO elemSize - UDINT#1 DO\n            pDst^ := pSrc^;\n            pDst := pDst + 1;\n            pSrc := pSrc + 1;\n        END_FOR;\n        head := (head + UDINT#1) MOD TO_UDINT(capacity);\n        count := count - 1;\n    ELSE\n        status := 16#8001;\n    END_IF;\nEND_IF;\n\nIF tmpEnq THEN\n    IF count < capacity THEN\n        pDst := pBuf + (tail * elemSize);\n        pSrc := pItem;\n        FOR i := UDINT#0 TO elemSize - UDINT#1 DO\n            pDst^ := pSrc^;\n            pDst := pDst + 1;\n            pSrc := pSrc + 1;\n        END_FOR;\n        tail := (tail + UDINT#1) MOD TO_UDINT(capacity);\n        count := count + 1;\n    ELSE\n        IF status = 16#0000 THEN\n            status := 16#8002;\n        END_IF;\n    END_IF;\nEND_IF;\n\nelementCount := count;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "fae89f88b6719cbd149cb943ff5089c813d307bd1007c59ca285967fbbd2cbf5",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 10,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007",
+          "PUB011"
+        ]
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 3797,
+      "completion_tokens": 13793,
+      "cost_cny": 0.32120136,
+      "latency_s": 171.562,
+      "generation_seconds": 171.562,
+      "end_to_end_seconds": 171.765,
+      "format_edits": [],
+      "raw_source_sha256": "fae89f88b6719cbd149cb943ff5089c813d307bd1007c59ca285967fbbd2cbf5",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 17,
+            "code": "E_EXPECT",
+            "message": "期望 ';'，实际是 'TO'"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "8ca57c4d5d623497c39c0d68f0290cc59d9e97cb05072e716185c4aa484da112",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 17 [E_EXPECT]: 期望 ';'，实际是 'TO'\nLine 0 [E_NO_POU]: 未找到可执行 POU",
+      "timing": {
+        "static_seconds": 0.218
+      },
+      "idx": 2,
+      "code": "(* ENGINEERING_CONTRACT\n  PUB001/PUB002: rising edges of enqueue/dequeue are detected by R_TRIG instances each scan.\n  PUB003: reset TRUE clears count/head/tail and returns before processing enq/deq requests.\n  PUB004: elementCount equals stored count, range 0..capacity; capacity from buffer array length.\n  PUB005: rejected full enqueue sets status 16#8002; rejected empty dequeue sets status 16#8001.\n  PUB006: first invocation initializes empty state; head/tail/count are internal only.\n  PUB007-PUB011: VARIANT buffer/item are accessed via __VARINFO and raw byte copy.\n  Unspecified: simultaneous enqueue+dequeue is processed dequeue first, then enqueue.\n  Unspecified: invalid buffer metadata leaves the block uninitialized with status 16#0000.\n*)\n(* CONTRACT_RULES [] *)\n\nTYPE VAR_INFO :\nSTRUCT\n    udiSize : UDINT;\n    udiAlignment : UDINT;\n    pbyData : POINTER TO BYTE;\n    udiTypeClass : UDINT;\n    udiTypeSubClass : UDINT;\n    udiArrayLength : UDINT;\n    sName : STRING(255);\nEND_STRUCT\nEND_TYPE;\n\nFUNCTION_BLOCK FB_FIFO\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    item : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    rtEnq : R_TRIG;\n    rtDeq : R_TRIG;\n\n    init : BOOL := FALSE;\n    capacity : DINT := 0;\n    count : DINT := 0;\n    head : UDINT := 0;\n    tail : UDINT := 0;\n\n    elemSize : UDINT := 0;\n    pBuf : POINTER TO BYTE;\n    pItem : POINTER TO BYTE;\n\n    infoBuf : VAR_INFO;\n    infoItem : VAR_INFO;\n\n    i : UDINT;\n    pSrc : POINTER TO BYTE;\n    pDst : POINTER TO BYTE;\n\n    tmpEnq : BOOL;\n    tmpDeq : BOOL;\nEND_VAR\n\nrtEnq(CLK := enqueue);\nrtDeq(CLK := dequeue);\ntmpEnq := rtEnq.Q;\ntmpDeq := rtDeq.Q;\n\nelementCount := 0;\nstatus := 16#0000;\n\nIF NOT init THEN\n    __VARINFO(ADR(buffer), ADR(infoBuf));\n    __VARINFO(ADR(item), ADR(infoItem));\n    \n    IF infoBuf.udiArrayLength > 0 THEN\n        capacity := TO_DINT(infoBuf.udiArrayLength);\n        elemSize := infoItem.udiSize;\n        IF elemSize = 0 THEN\n            elemSize := 1;\n        END_IF;\n        pBuf := infoBuf.pbyData;\n        pItem := infoItem.pbyData;\n        head := 0;\n        tail := 0;\n        count := 0;\n        init := TRUE;\n    ELSE\n        elementCount := 0;\n        status := 16#0000;\n        RETURN;\n    END_IF;\nEND_IF;\n\nIF reset THEN\n    head := 0;\n    tail := 0;\n    count := 0;\n    elementCount := 0;\n    status := 16#0000;\n    RETURN;\nEND_IF;\n\nIF tmpDeq THEN\n    IF count > 0 THEN\n        pSrc := pBuf + (head * elemSize);\n        pDst := pItem;\n        FOR i := UDINT#0 TO (elemSize - UDINT#1) DO\n            pDst[i] := pSrc[i];\n        END_FOR;\n        head := (head + UDINT#1) MOD TO_UDINT(capacity);\n        count := count - 1;\n    ELSE\n        status := 16#8001;\n    END_IF;\nEND_IF;\n\nIF tmpEnq THEN\n    IF count < capacity THEN\n        pDst := pBuf + (tail * elemSize);\n        pSrc := pItem;\n        FOR i := UDINT#0 TO (elemSize - UDINT#1) DO\n            pDst[i] := pSrc[i];\n        END_FOR;\n        tail := (tail + UDINT#1) MOD TO_UDINT(capacity);\n        count := count + 1;\n    ELSE\n        IF status = 16#0000 THEN\n            status := 16#8002;\n        END_IF;\n    END_IF;\nEND_IF;\n\nelementCount := count;\nEND_FUNCTION_BLOCK",
+      "code_hash": "8ca57c4d5d623497c39c0d68f0290cc59d9e97cb05072e716185c4aa484da112",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 10,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007",
+          "PUB011"
+        ]
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 3828,
+      "completion_tokens": 2109,
+      "cost_cny": 0.07220204999999999,
+      "latency_s": 26.25,
+      "generation_seconds": 26.25,
+      "end_to_end_seconds": 26.468,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 1007,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "6dc09fc994da30232ed65052cce9083c8b94dcb9f4c96b374f62bd69c50631f1",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 17,
+            "code": "E_EXPECT",
+            "message": "期望 ';'，实际是 'TO'"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "a5e2152bb232e44f9add6d5b8baf0399084949836218f048bb9cd3ba0875f118",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 17 [E_EXPECT]: 期望 ';'，实际是 'TO'\nLine 0 [E_NO_POU]: 未找到可执行 POU",
+      "timing": {
+        "static_seconds": 0.188
+      },
+      "idx": 3,
+      "code": "(* ENGINEERING_CONTRACT\n  PUB001/PUB002: rising edges of enqueue/dequeue are detected by R_TRIG instances each scan.\n  PUB003: reset TRUE clears count/head/tail and returns before processing enq/deq requests.\n  PUB004: elementCount equals stored count, range 0..capacity; capacity from buffer array length.\n  PUB005: rejected full enqueue sets status 16#8002; rejected empty dequeue sets status 16#8001.\n  PUB006: first invocation initializes empty state; head/tail/count are internal only.\n  PUB007-PUB011: VARIANT buffer/item are accessed via __VARINFO and raw byte copy.\n  Unspecified: simultaneous enqueue+dequeue is processed dequeue first, then enqueue.\n  Unspecified: invalid buffer metadata leaves the block uninitialized with status 16#0000.\n*)\n(* CONTRACT_RULES [] *)\n\nTYPE VAR_INFO :\nSTRUCT\n    udiSize : UDINT;\n    udiAlignment : UDINT;\n    pbyData : POINTER TO BYTE;\n    udiTypeClass : UDINT;\n    udiTypeSubClass : UDINT;\n    udiArrayLength : UDINT;\n    sName : STRING(255);\nEND_STRUCT\nEND_TYPE;\n\nFUNCTION_BLOCK FB_FIFO\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    item : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    rtEnq : R_TRIG;\n    rtDeq : R_TRIG;\n\n    init : BOOL := FALSE;\n    capacity : DINT := 0;\n    count : DINT := 0;\n    head : UDINT := 0;\n    tail : UDINT := 0;\n\n    elemSize : UDINT := 0;\n    pBuf : POINTER TO BYTE;\n    pItem : POINTER TO BYTE;\n\n    infoBuf : VAR_INFO;\n    infoItem : VAR_INFO;\n\n    i : UDINT;\n    pSrc : POINTER TO BYTE;\n    pDst : POINTER TO BYTE;\n\n    tmpEnq : BOOL;\n    tmpDeq : BOOL;\nEND_VAR\n\nrtEnq(CLK := enqueue);\nrtDeq(CLK := dequeue);\ntmpEnq := rtEnq.Q;\ntmpDeq := rtDeq.Q;\n\nelementCount := 0;\nstatus := 16#0000;\n\nIF NOT init THEN\n    __VARINFO(ADR(buffer), ADR(infoBuf));\n    __VARINFO(ADR(item), ADR(infoItem));\n    \n    IF infoBuf.udiArrayLength > 0 THEN\n        capacity := TO_DINT(infoBuf.udiArrayLength);\n        elemSize := infoItem.udiSize;\n        IF elemSize = 0 THEN\n            elemSize := 1;\n        END_IF;\n        pBuf := infoBuf.pbyData;\n        pItem := infoItem.pbyData;\n        head := 0;\n        tail := 0;\n        count := 0;\n        init := TRUE;\n    ELSE\n        elementCount := 0;\n        status := 16#0000;\n        RETURN;\n    END_IF;\nEND_IF;\n\nIF reset THEN\n    head := 0;\n    tail := 0;\n    count := 0;\n    elementCount := 0;\n    status := 16#0000;\n    RETURN;\nEND_IF;\n\nIF tmpDeq THEN\n    IF count > 0 THEN\n        pSrc := pBuf + (head * elemSize);\n        pDst := pItem;\n        FOR i := 0 TO elemSize - 1 DO\n            pDst[i] := pSrc[i];\n        END_FOR;\n        head := (head + 1) MOD TO_UDINT(capacity);\n        count := count - 1;\n    ELSE\n        status := 16#8001;\n    END_IF;\nEND_IF;\n\nIF tmpEnq THEN\n    IF count < capacity THEN\n        pDst := pBuf + (tail * elemSize);\n        pSrc := pItem;\n        FOR i := 0 TO elemSize - 1 DO\n            pDst[i] := pSrc[i];\n        END_FOR;\n        tail := (tail + 1) MOD TO_UDINT(capacity);\n        count := count + 1;\n    ELSE\n        IF status = 16#0000 THEN\n            status := 16#8002;\n        END_IF;\n    END_IF;\nEND_IF;\n\nelementCount := count;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "a5e2152bb232e44f9add6d5b8baf0399084949836218f048bb9cd3ba0875f118",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 10,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007",
+          "PUB011"
+        ]
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 3859,
+      "completion_tokens": 5044,
+      "cost_cny": 0.13502600999999997,
+      "latency_s": 59.703,
+      "generation_seconds": 59.703,
+      "end_to_end_seconds": 59.891,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 1007,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "30716e7c627abb9672886ceade4e240733329a7a115bf2c71b4d469b8128156e",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "maximum_four_candidates",
+  "tests_total": 31,
+  "study_plan_sha256": "ceee87bda23fdec86f82c35ccba0ed7fb16e190de62d91cf12c3a3776cd1a77c",
+  "started_at": "2026-11-13T05:37:51.970348+08:00",
+  "wall_seconds": 414.406,
+  "finished_at": "2026-11-13T05:44:46.253978+08:00"
+}
