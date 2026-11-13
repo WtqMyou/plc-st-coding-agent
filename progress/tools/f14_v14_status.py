@@ -45,7 +45,7 @@ def report(cfg,plan):
     for row in rows:lines.append(f"| {row['label']} | {row['completed']} | {row['first_functional']}→{row['final_functional']} | {row['groups']['public']['functional']} | {row['groups']['self_built']['functional']} | {row['native_passed']} | {row['assertions_passed']} | {row['requests']} |")
     lines+=['',f"项目累计计入{ledger['spent_cny']:.6f}元，上限{s.TOTAL}元；本批新增{summary['new_accounted_cny']:.6f}元。",
         f"完整最坏新增预留{plan['worst_reservation_cny']:.6f}元，最坏累计{plan['worst_cumulative_cny']:.6f}元。预留不是实际账单。",
-        '预算状态：'+('可容纳完整计划' if plan['funding_sufficient'] else '超过420元已授权上限，尚未发送新付费请求'),'',
+        '预算状态：'+('可容纳完整计划' if plan['funding_sufficient'] else '超过当前已授权上限，尚未发送新付费请求'),'',
         '形式检查单列：'+json.dumps({r['label']:dict(statuses=r['formal_statuses'],not_executed=r['formal_not_executed']) for r in rows},ensure_ascii=False),
         '原VARIANT FIFO功能保留，原生分母34；未知费用、身份变化及公共工具错误时停止并保留现场，不自动补发。','更新：'+summary['updated_at']]
     text='\n'.join(lines)+'\n';s.atomic_json(root/'status.json',summary);(root/'实验状态.md').write_text(text,encoding='utf-8')

@@ -30,7 +30,7 @@ def prepare():
         assert Path(cfg['budget_ledger_path']).read_bytes()==(root/'ledger_before_study.json').read_bytes(),'Ledger changed during preparation'
         archive=root/'preparation_history'/s.sha(root/'study_plan.json');archive.mkdir(parents=True,exist_ok=True)
         for name in ('study_plan.json','prepared.json','authorization_proof.json','validation.json'):
-            (archive/name).write_bytes((root/name).read_bytes())
+            if not (archive/name).exists():(archive/name).write_bytes((root/name).read_bytes())
     before=Path(cfg['budget_ledger_path']).read_bytes();ledger=json.loads(before)
     assert (ledger['spent_cny'],len(ledger['events']),ledger['limit_cny'])==(s.BASELINE,s.HISTORY,420)
     validation=s.load(root/'validation.json');assert validation['passed']

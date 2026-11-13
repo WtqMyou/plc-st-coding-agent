@@ -11,7 +11,7 @@ from f14_v14_io import atomic_json
 from stbench.providers.base import ProviderError
 
 KIND='f14_v14_remaining_20261113'
-TOTAL=420
+TOTAL=480
 BASELINE=182.627595
 HISTORY=1702
 
