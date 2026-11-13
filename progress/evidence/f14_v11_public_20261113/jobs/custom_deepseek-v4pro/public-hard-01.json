@@ -1,0 +1,886 @@
+{
+  "job_id": "custom_deepseek-v4pro/public-hard-01",
+  "pid": "public-hard-01",
+  "condition": "custom_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 29,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 197,
+            "code": "E_MISSING_END_POU",
+            "message": "FUNCTION_BLOCK MaterialProportioningControl 缺少结束关键字"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 29,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "7b5d3e47bfcd75cd961e69f89055c154df169048d443b18b8221896b16bf46c0",
+          "task_json_sha256": "ddd5d9e65991f009c963bb0984d7ca10e3c847015e4e33b61e8a650585700027",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/29; bounded status: not_run.\nLine 197 [E_MISSING_END_POU]: FUNCTION_BLOCK MaterialProportioningControl 缺少结束关键字\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n1: TYPE AutoState : (ST_IDLE, ST_OPEN_A, ST_OPEN_B, ST_OPEN_C, ST_MIXING);\n2: END_TYPE;\n196:     END_IF;\n197: END_IF;",
+      "timing": {
+        "static_seconds": 0.25
+      },
+      "idx": 0,
+      "code": "TYPE AutoState : (ST_IDLE, ST_OPEN_A, ST_OPEN_B, ST_OPEN_C, ST_MIXING);\nEND_TYPE;\n\nFUNCTION_BLOCK MaterialProportioningControl\nVAR_INPUT\n    estop : BOOL;\n    opeMode : BOOL;\n    valveAStart : BOOL;\n    valveBStart : BOOL;\n    valveCStart : BOOL;\n    valveDStart : BOOL;\n    mixMotorStart : BOOL;\n    autoStart : BOOL;\n    processMode : BOOL;\n    levelSensor : INT;\n    mixMotorComplete : BOOL;\nEND_VAR\nVAR_OUTPUT\n    valveARun : BOOL;\n    valveBRun : BOOL;\n    valveCRun : BOOL;\n    valveDRun : BOOL;\n    mixMotorRun : BOOL;\nEND_VAR\nVAR\n    trigA : R_TRIG;\n    trigB : R_TRIG;\n    trigC : R_TRIG;\n    trigD : R_TRIG;\n    trigMix : R_TRIG;\n    trigAuto : R_TRIG;\n\n    manualA : BOOL := FALSE;\n    manualB : BOOL := FALSE;\n    manualC : BOOL := FALSE;\n    manualD : BOOL := FALSE;\n    manualMixer : BOOL := FALSE;\n\n    autoActive : BOOL := FALSE;\n    autoState : AutoState := ST_IDLE;\n    finalDCommand : BOOL := FALSE;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\nManual outputs: set/toggled on rising edge of each start input while opeMode=FALSE.\nManual outputs retain until next rising edge of same input or estop=FALSE.\nAutomatic sequence outputs: activated by autoStart rising edge while opeMode=TRUE and not already active.\nState thresholds: levelSensor >= 50 (A->B), >= 80 (B->C or B->mix), >= 100 (C->mix).\nprocessMode is evaluated at the 80 cm transition only.\nMixer stops and valve D opens on mixMotorComplete=TRUE while mixing.\nvalveDRun remains held by finalDCommand after automatic process ends until next autoStart or estop.\nPriority: estop=FALSE forces all outputs FALSE and resets all manual/automatic state.\nSame-scan: autoStart sets ST_OPEN_A and outputs without immediate threshold transition; other transitions are one state per scan.\nUnits: levelSensor cm. PUB001-PUB015.\n*)\n\n(* CONTRACT_RULES [] *)\n\n// Rising-edge detection is updated every scan, including during emergency stop.\ntrigA(CLK := valveAStart);\ntrigB(CLK := valveBStart);\ntrigC(CLK := valveCStart);\ntrigD(CLK := valveDStart);\ntrigMix(CLK := mixMotorStart);\ntrigAuto(CLK := autoStart);\n\nIF NOT estop THEN\n    // Emergency stop: stop everything immediately and reset all retained state.\n    valveARun := FALSE;\n    valveBRun := FALSE;\n    valveCRun := FALSE;\n    valveDRun := FALSE;\n    mixMotorRun := FALSE;\n\n    manualA := FALSE;\n    manualB := FALSE;\n    manualC := FALSE;\n    manualD := FALSE;\n    manualMixer := FALSE;\n\n    autoActive := FALSE;\n    autoState := ST_IDLE;\n    finalDCommand := FALSE;\n\n    RETURN;\nEND_IF;\n\nIF NOT opeMode THEN\n    // Manual operation mode.\n    IF trigA.Q THEN\n        manualA := NOT manualA;\n    END_IF;\n    IF trigB.Q THEN\n        manualB := NOT manualB;\n    END_IF;\n    IF trigC.Q THEN\n        manualC := NOT manualC;\n    END_IF;\n    IF trigD.Q THEN\n        manualD := NOT manualD;\n    END_IF;\n    IF trigMix.Q THEN\n        manualMixer := NOT manualMixer;\n    END_IF;\n\n    valveARun := manualA;\n    valveBRun := manualB;\n    valveCRun := manualC;\n    valveDRun := manualD;\n    mixMotorRun := manualMixer;\n\nELSE\n    // Automatic operation mode.\n    IF trigAuto.Q AND NOT autoActive THEN\n        // Start new automatic process: open valve A first.\n        autoActive := TRUE;\n        autoState := ST_OPEN_A;\n        finalDCommand := FALSE;\n\n        valveARun := TRUE;\n        valveBRun := FALSE;\n        valveCRun := FALSE;\n        valveDRun := FALSE;\n        mixMotorRun := FALSE;\n    ELSE\n        CASE autoState OF\n            ST_IDLE:\n                valveARun := FALSE;\n                valveBRun := FALSE;\n                valveCRun := FALSE;\n                valveDRun := finalDCommand;\n                mixMotorRun := FALSE;\n\n            ST_OPEN_A:\n                valveARun := TRUE;\n                valveBRun := FALSE;\n                valveCRun := FALSE;\n                valveDRun := FALSE;\n                mixMotorRun := FALSE;\n\n                IF levelSensor >= 50 THEN\n                    autoState := ST_OPEN_B;\n                    valveARun := FALSE;\n                    valveBRun := TRUE;\n                END_IF;\n\n            ST_OPEN_B:\n                valveARun := FALSE;\n                valveBRun := TRUE;\n                valveCRun := FALSE;\n                valveDRun := FALSE;\n                mixMotorRun := FALSE;\n\n                IF levelSensor >= 80 THEN\n                    IF NOT processMode THEN\n                        // processMode = FALSE: close B, start mixer.\n                        autoState := ST_MIXING;\n                        valveBRun := FALSE;\n                        mixMotorRun := TRUE;\n                    ELSE\n                        // processMode = TRUE: close B, open C.\n                        autoState := ST_OPEN_C;\n                        valveBRun := FALSE;\n                        valveCRun := TRUE;\n                    END_IF;\n                END_IF;\n\n            ST_OPEN_C:\n                valveARun := FALSE;\n                valveBRun := FALSE;\n                valveCRun := TRUE;\n                valveDRun := FALSE;\n                mixMotorRun := FALSE;\n\n                IF levelSensor >= 100 THEN\n                    autoState := ST_MIXING;\n                    valveCRun := FALSE;\n                    mixMotorRun := TRUE;\n                END_IF;\n\n            ST_MIXING:\n                valveARun := FALSE;\n                valveBRun := FALSE;\n                valveCRun := FALSE;\n                valveDRun := FALSE;\n                mixMotorRun := TRUE;\n\n                IF mixMotorComplete THEN\n                    mixMotorRun := FALSE;\n                    valveDRun := TRUE;\n                    finalDCommand := TRUE;\n                    autoActive := FALSE;\n                    autoState := ST_IDLE;\n                END_IF;\n        END_CASE;\n    END_IF;\nEND_IF;",
+      "code_hash": "7b5d3e47bfcd75cd961e69f89055c154df169048d443b18b8221896b16bf46c0",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 12,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB015"
+        ]
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 3010,
+      "completion_tokens": 12617,
+      "cost_cny": 0.29052171,
+      "latency_s": 177.656,
+      "generation_seconds": 177.656,
+      "end_to_end_seconds": 177.906,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 80,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2492,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "e79b25040efab9d536b729820682ed3691298950d587f3057a314dfbc2fc0e1d",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": true,
+      "tests_passed": 29,
+      "tests_total": 29,
+      "verification_status": "truncated",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 29,
+        "tests_passed": 29,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "H01",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H02",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H03",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H04",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H05",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": true,
+              "valveDRun": true,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "mixMotorRun": true,
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": true,
+              "valveDRun": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H06",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H07",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H08",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H09",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "mixMotorRun": true,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "mixMotorRun": true,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "H14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": true,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": true,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "mixMotorRun": true,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-not-done",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": true
+            },
+            "actual": {
+              "mixMotorRun": true,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-manual-hold-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-manual-hold-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": true,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-mix-idle",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-idle-interlock-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-idle-interlock-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-idle-interlock-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false,
+              "mixMotorRun": false
+            },
+            "actual": {
+              "mixMotorRun": false,
+              "valveARun": false,
+              "valveBRun": false,
+              "valveCRun": false,
+              "valveDRun": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 646,
+          "traces": 50131,
+          "specs_total": 13,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 13,
+          "violations": [],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 28.078000000008615,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-01_74ee5241bd",
+            "source_sha256": "be7fdf9b2daafa4062ad8c2dfa1f0c5b416ad4a6bfce5c5c763bc321cf9d32e3",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "input_partition": {
+            "original_combinations": 10240,
+            "classes": {
+              "levelsensor": [
+                [
+                  0,
+                  49
+                ],
+                [
+                  60,
+                  50,
+                  79
+                ],
+                [
+                  85,
+                  80,
+                  99
+                ],
+                [
+                  105,
+                  100
+                ]
+              ]
+            },
+            "representative_combinations": 4096
+          },
+          "search": {
+            "algorithm": "finite_window_product_bfs",
+            "stop_reason": "time_limit",
+            "completed_depth": 1,
+            "current_depth": 2,
+            "elapsed_seconds": 30.0,
+            "edges_checked": 50131,
+            "frontier_states": 245,
+            "product_states": 3134,
+            "states_explored": 646,
+            "input_space_size": 4096
+          },
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "9fe28a3be6dd723ee454356de11663e0850bcd8dc9e160b78f63c41bb7785ff7",
+          "source_sha256": "be7fdf9b2daafa4062ad8c2dfa1f0c5b416ad4a6bfce5c5c763bc321cf9d32e3",
+          "problem_sha256": "ea8095672f89d225e89860d35cbf17b292d84f2197492a903d63c5571737d62b",
+          "mc_timeout_seconds": 35,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {},
+          "cache_hit": false,
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "bounded",
+          "candidate_text_rewritten": false,
+          "task_json_sha256": "ddd5d9e65991f009c963bb0984d7ca10e3c847015e4e33b61e8a650585700027",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated",
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          }
+        }
+      },
+      "feedback": "Functional checks: 29/29; bounded status: truncated.",
+      "timing": {
+        "static_seconds": 0.719,
+        "native_queue_seconds": 24.063,
+        "native_compile_seconds": 28.078,
+        "functional_seconds": 0.265,
+        "formal_queue_seconds": 0.0,
+        "bounded_seconds": 30.625
+      },
+      "idx": 1,
+      "code": "TYPE AutoState : (ST_IDLE, ST_OPEN_A, ST_OPEN_B, ST_OPEN_C, ST_MIXING);\nEND_TYPE;\n\nFUNCTION_BLOCK MaterialProportioningControl\nVAR_INPUT\n    estop : BOOL;\n    opeMode : BOOL;\n    valveAStart : BOOL;\n    valveBStart : BOOL;\n    valveCStart : BOOL;\n    valveDStart : BOOL;\n    mixMotorStart : BOOL;\n    autoStart : BOOL;\n    processMode : BOOL;\n    levelSensor : INT;\n    mixMotorComplete : BOOL;\nEND_VAR\nVAR_OUTPUT\n    valveARun : BOOL;\n    valveBRun : BOOL;\n    valveCRun : BOOL;\n    valveDRun : BOOL;\n    mixMotorRun : BOOL;\nEND_VAR\nVAR\n    trigA : R_TRIG;\n    trigB : R_TRIG;\n    trigC : R_TRIG;\n    trigD : R_TRIG;\n    trigMix : R_TRIG;\n    trigAuto : R_TRIG;\n\n    manualA : BOOL := FALSE;\n    manualB : BOOL := FALSE;\n    manualC : BOOL := FALSE;\n    manualD : BOOL := FALSE;\n    manualMixer : BOOL := FALSE;\n\n    autoActive : BOOL := FALSE;\n    autoState : AutoState := ST_IDLE;\n    finalDCommand : BOOL := FALSE;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\nManual outputs: set/toggled on rising edge of each start input while opeMode=FALSE.\nManual outputs retain until next rising edge of same input or estop=FALSE.\nAutomatic sequence outputs: activated by autoStart rising edge while opeMode=TRUE and not already active.\nState thresholds: levelSensor >= 50 (A->B), >= 80 (B->C or B->mix), >= 100 (C->mix).\nprocessMode is evaluated at the 80 cm transition only.\nMixer stops and valve D opens on mixMotorComplete=TRUE while mixing.\nvalveDRun remains held by finalDCommand after automatic process ends until next autoStart or estop.\nPriority: estop=FALSE forces all outputs FALSE and resets all manual/automatic state.\nSame-scan: autoStart sets ST_OPEN_A and outputs without immediate threshold transition; other transitions are one state per scan.\nUnits: levelSensor cm. PUB001-PUB015.\n*)\n\n(* CONTRACT_RULES [] *)\n\n// Rising-edge detection is updated every scan, including during emergency stop.\ntrigA(CLK := valveAStart);\ntrigB(CLK := valveBStart);\ntrigC(CLK := valveCStart);\ntrigD(CLK := valveDStart);\ntrigMix(CLK := mixMotorStart);\ntrigAuto(CLK := autoStart);\n\nIF NOT estop THEN\n    // Emergency stop: stop everything immediately and reset all retained state.\n    valveARun := FALSE;\n    valveBRun := FALSE;\n    valveCRun := FALSE;\n    valveDRun := FALSE;\n    mixMotorRun := FALSE;\n\n    manualA := FALSE;\n    manualB := FALSE;\n    manualC := FALSE;\n    manualD := FALSE;\n    manualMixer := FALSE;\n\n    autoActive := FALSE;\n    autoState := ST_IDLE;\n    finalDCommand := FALSE;\n\n    RETURN;\nEND_IF;\n\nIF NOT opeMode THEN\n    // Manual operation mode.\n    IF trigA.Q THEN\n        manualA := NOT manualA;\n    END_IF;\n    IF trigB.Q THEN\n        manualB := NOT manualB;\n    END_IF;\n    IF trigC.Q THEN\n        manualC := NOT manualC;\n    END_IF;\n    IF trigD.Q THEN\n        manualD := NOT manualD;\n    END_IF;\n    IF trigMix.Q THEN\n        manualMixer := NOT manualMixer;\n    END_IF;\n\n    valveARun := manualA;\n    valveBRun := manualB;\n    valveCRun := manualC;\n    valveDRun := manualD;\n    mixMotorRun := manualMixer;\n\nELSE\n    // Automatic operation mode.\n    IF trigAuto.Q AND NOT autoActive THEN\n        // Start new automatic process: open valve A first.\n        autoActive := TRUE;\n        autoState := ST_OPEN_A;\n        finalDCommand := FALSE;\n\n        valveARun := TRUE;\n        valveBRun := FALSE;\n        valveCRun := FALSE;\n        valveDRun := FALSE;\n        mixMotorRun := FALSE;\n    ELSE\n        CASE autoState OF\n            ST_IDLE:\n                valveARun := FALSE;\n                valveBRun := FALSE;\n                valveCRun := FALSE;\n                valveDRun := finalDCommand;\n                mixMotorRun := FALSE;\n\n            ST_OPEN_A:\n                valveARun := TRUE;\n                valveBRun := FALSE;\n                valveCRun := FALSE;\n                valveDRun := FALSE;\n                mixMotorRun := FALSE;\n\n                IF levelSensor >= 50 THEN\n                    autoState := ST_OPEN_B;\n                    valveARun := FALSE;\n                    valveBRun := TRUE;\n                END_IF;\n\n            ST_OPEN_B:\n                valveARun := FALSE;\n                valveBRun := TRUE;\n                valveCRun := FALSE;\n                valveDRun := FALSE;\n                mixMotorRun := FALSE;\n\n                IF levelSensor >= 80 THEN\n                    IF NOT processMode THEN\n                        // processMode = FALSE: close B, start mixer.\n                        autoState := ST_MIXING;\n                        valveBRun := FALSE;\n                        mixMotorRun := TRUE;\n                    ELSE\n                        // processMode = TRUE: close B, open C.\n                        autoState := ST_OPEN_C;\n                        valveBRun := FALSE;\n                        valveCRun := TRUE;\n                    END_IF;\n                END_IF;\n\n            ST_OPEN_C:\n                valveARun := FALSE;\n                valveBRun := FALSE;\n                valveCRun := TRUE;\n                valveDRun := FALSE;\n                mixMotorRun := FALSE;\n\n                IF levelSensor >= 100 THEN\n                    autoState := ST_MIXING;\n                    valveCRun := FALSE;\n                    mixMotorRun := TRUE;\n                END_IF;\n\n            ST_MIXING:\n                valveARun := FALSE;\n                valveBRun := FALSE;\n                valveCRun := FALSE;\n                valveDRun := FALSE;\n                mixMotorRun := TRUE;\n\n                IF mixMotorComplete THEN\n                    mixMotorRun := FALSE;\n                    valveDRun := TRUE;\n                    finalDCommand := TRUE;\n                    autoActive := FALSE;\n                    autoState := ST_IDLE;\n                END_IF;\n        END_CASE;\n    END_IF;\nEND_IF;\nEND_FUNCTION_BLOCK",
+      "code_hash": "be7fdf9b2daafa4062ad8c2dfa1f0c5b416ad4a6bfce5c5c763bc321cf9d32e3",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 12,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB015"
+        ]
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 5018,
+      "completion_tokens": 1688,
+      "cost_cny": 0.07168301999999999,
+      "latency_s": 17.343,
+      "generation_seconds": 17.343,
+      "end_to_end_seconds": 101.093,
+      "format_edits": [],
+      "raw_source_sha256": "be7fdf9b2daafa4062ad8c2dfa1f0c5b416ad4a6bfce5c5c763bc321cf9d32e3",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "functional_pass_formal_truncated",
+  "tests_total": 29,
+  "study_plan_sha256": "ad44abcb7bc1484bd393497f301198527a0666c9cb5597c89aa0f7c287e1b833",
+  "started_at": "2026-11-13T11:55:39.257528+08:00",
+  "wall_seconds": 279.203,
+  "finished_at": "2026-11-13T12:00:18.316073+08:00"
+}

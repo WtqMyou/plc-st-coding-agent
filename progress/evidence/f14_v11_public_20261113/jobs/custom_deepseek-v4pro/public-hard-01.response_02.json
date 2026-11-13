@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794542321,
+    "id": "resp_021794542320686bdd5db804b0f31a919b8f9d8940b3f7fbb1ca8",
+    "max_output_tokens": 24576,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179454232178000000000000000000000ffffac15c78db87a5b",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need repair syntax: missing END_FUNCTION_BLOCK. The supplied code dropped end. Need return complete block. Preserve algorithm. Let's reconstruct full ST with end keyword. Need ensure all declarations included. The code provided ends at line 197 END_IF; but missing END_FUNCTION_BLOCK after. We need output complete fenced block. Include contract comments etc. Also maybe FUNCTION_BLOCK header with all inputs outputs vars. We need ensure original interface exact. Keep same code and add END_FUNCTION_BLOCK. Also maybe TYPE AutoState included. We must include complete self-contained ST block. No BEGIN wrapper. Let's output.\n\nNeed ensure semicolons? All IF END_IF have semicolons yes. CASE END_CASE semicolon. Function block closing END_FUNCTION_BLOCK no semicolon? In ST, END_FUNCTION_BLOCK no semicolon? Usually no semicolon after. We just add line.\n\nAlso check function block has no end FUNCTION_BLOCK previously. Add at end.\n\nPotential issue: `CASE autoState OF` can be nested inside IF ELSIF ELSE; balanced. Need ensure END_CASE before END_IF. yes.\n\nLet's produce minimal repaired candidate with original contract comments. Ensure fenced st block."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```iecst\nTYPE AutoState : (ST_IDLE, ST_OPEN_A, ST_OPEN_B, ST_OPEN_C, ST_MIXING);\nEND_TYPE;\n\nFUNCTION_BLOCK MaterialProportioningControl\nVAR_INPUT\n    estop : BOOL;\n    opeMode : BOOL;\n    valveAStart : BOOL;\n    valveBStart : BOOL;\n    valveCStart : BOOL;\n    valveDStart : BOOL;\n    mixMotorStart : BOOL;\n    autoStart : BOOL;\n    processMode : BOOL;\n    levelSensor : INT;\n    mixMotorComplete : BOOL;\nEND_VAR\nVAR_OUTPUT\n    valveARun : BOOL;\n    valveBRun : BOOL;\n    valveCRun : BOOL;\n    valveDRun : BOOL;\n    mixMotorRun : BOOL;\nEND_VAR\nVAR\n    trigA : R_TRIG;\n    trigB : R_TRIG;\n    trigC : R_TRIG;\n    trigD : R_TRIG;\n    trigMix : R_TRIG;\n    trigAuto : R_TRIG;\n\n    manualA : BOOL := FALSE;\n    manualB : BOOL := FALSE;\n    manualC : BOOL := FALSE;\n    manualD : BOOL := FALSE;\n    manualMixer : BOOL := FALSE;\n\n    autoActive : BOOL := FALSE;\n    autoState : AutoState := ST_IDLE;\n    finalDCommand : BOOL := FALSE;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\nManual outputs: set/toggled on rising edge of each start input while opeMode=FALSE.\nManual outputs retain until next rising edge of same input or estop=FALSE.\nAutomatic sequence outputs: activated by autoStart rising edge while opeMode=TRUE and not already active.\nState thresholds: levelSensor >= 50 (A->B), >= 80 (B->C or B->mix), >= 100 (C->mix).\nprocessMode is evaluated at the 80 cm transition only.\nMixer stops and valve D opens on mixMotorComplete=TRUE while mixing.\nvalveDRun remains held by finalDCommand after automatic process ends until next autoStart or estop.\nPriority: estop=FALSE forces all outputs FALSE and resets all manual/automatic state.\nSame-scan: autoStart sets ST_OPEN_A and outputs without immediate threshold transition; other transitions are one state per scan.\nUnits: levelSensor cm. PUB001-PUB015.\n*)\n\n(* CONTRACT_RULES [] *)\n\n// Rising-edge detection is updated every scan, including during emergency stop.\ntrigA(CLK := valveAStart);\ntrigB(CLK := valveBStart);\ntrigC(CLK := valveCStart);\ntrigD(CLK := valveDStart);\ntrigMix(CLK := mixMotorStart);\ntrigAuto(CLK := autoStart);\n\nIF NOT estop THEN\n    // Emergency stop: stop everything immediately and reset all retained state.\n    valveARun := FALSE;\n    valveBRun := FALSE;\n    valveCRun := FALSE;\n    valveDRun := FALSE;\n    mixMotorRun := FALSE;\n\n    manualA := FALSE;\n    manualB := FALSE;\n    manualC := FALSE;\n    manualD := FALSE;\n    manualMixer := FALSE;\n\n    autoActive := FALSE;\n    autoState := ST_IDLE;\n    finalDCommand := FALSE;\n\n    RETURN;\nEND_IF;\n\nIF NOT opeMode THEN\n    // Manual operation mode.\n    IF trigA.Q THEN\n        manualA := NOT manualA;\n    END_IF;\n    IF trigB.Q THEN\n        manualB := NOT manualB;\n    END_IF;\n    IF trigC.Q THEN\n        manualC := NOT manualC;\n    END_IF;\n    IF trigD.Q THEN\n        manualD := NOT manualD;\n    END_IF;\n    IF trigMix.Q THEN\n        manualMixer := NOT manualMixer;\n    END_IF;\n\n    valveARun := manualA;\n    valveBRun := manualB;\n    valveCRun := manualC;\n    valveDRun := manualD;\n    mixMotorRun := manualMixer;\n\nELSE\n    // Automatic operation mode.\n    IF trigAuto.Q AND NOT autoActive THEN\n        // Start new automatic process: open valve A first.\n        autoActive := TRUE;\n        autoState := ST_OPEN_A;\n        finalDCommand := FALSE;\n\n        valveARun := TRUE;\n        valveBRun := FALSE;\n        valveCRun := FALSE;\n        valveDRun := FALSE;\n        mixMotorRun := FALSE;\n    ELSE\n        CASE autoState OF\n            ST_IDLE:\n                valveARun := FALSE;\n                valveBRun := FALSE;\n                valveCRun := FALSE;\n                valveDRun := finalDCommand;\n                mixMotorRun := FALSE;\n\n            ST_OPEN_A:\n                valveARun := TRUE;\n                valveBRun := FALSE;\n                valveCRun := FALSE;\n                valveDRun := FALSE;\n                mixMotorRun := FALSE;\n\n                IF levelSensor >= 50 THEN\n                    autoState := ST_OPEN_B;\n                    valveARun := FALSE;\n                    valveBRun := TRUE;\n                END_IF;\n\n            ST_OPEN_B:\n                valveARun := FALSE;\n                valveBRun := TRUE;\n                valveCRun := FALSE;\n                valveDRun := FALSE;\n                mixMotorRun := FALSE;\n\n                IF levelSensor >= 80 THEN\n                    IF NOT processMode THEN\n                        // processMode = FALSE: close B, start mixer.\n                        autoState := ST_MIXING;\n                        valveBRun := FALSE;\n                        mixMotorRun := TRUE;\n                    ELSE\n                        // processMode = TRUE: close B, open C.\n                        autoState := ST_OPEN_C;\n                        valveBRun := FALSE;\n                        valveCRun := TRUE;\n                    END_IF;\n                END_IF;\n\n            ST_OPEN_C:\n                valveARun := FALSE;\n                valveBRun := FALSE;\n                valveCRun := TRUE;\n                valveDRun := FALSE;\n                mixMotorRun := FALSE;\n\n                IF levelSensor >= 100 THEN\n                    autoState := ST_MIXING;\n                    valveCRun := FALSE;\n                    mixMotorRun := TRUE;\n                END_IF;\n\n            ST_MIXING:\n                valveARun := FALSE;\n                valveBRun := FALSE;\n                valveCRun := FALSE;\n                valveDRun := FALSE;\n                mixMotorRun := TRUE;\n\n                IF mixMotorComplete THEN\n                    mixMotorRun := FALSE;\n                    valveDRun := TRUE;\n                    finalDCommand := TRUE;\n                    autoActive := FALSE;\n                    autoState := ST_IDLE;\n                END_IF;\n        END_CASE;\n    END_IF;\nEND_IF;\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179454232569200000000000000000000ffffac15c78d6ac7b9",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 5018,
+      "output_tokens": 1688,
+      "total_tokens": 6706,
+      "input_tokens_details": {
+        "cached_tokens": 2048
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 260
+      },
+      "cost": "¥0.057608"
+    }
+  }
+}

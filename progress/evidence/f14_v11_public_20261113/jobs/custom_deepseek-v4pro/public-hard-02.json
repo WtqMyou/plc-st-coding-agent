@@ -1,0 +1,1868 @@
+{
+  "job_id": "custom_deepseek-v4pro/public-hard-02",
+  "pid": "public-hard-02",
+  "condition": "custom_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 124,
+            "code": "E_MISSING_END_POU",
+            "message": "FUNCTION_BLOCK FlexibleProcessingControl 缺少结束关键字"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "4ed40581006345df5c2ae90e1830379b84d4d9dc15283e5f123b9811d5ccc854",
+          "task_json_sha256": "47f1f7f15b5a7b65c1a8755bbc127ad732785956ffffde888cf40e1ef5877196",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 124 [E_MISSING_END_POU]: FUNCTION_BLOCK FlexibleProcessingControl 缺少结束关键字\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n1: TYPE ProcessControl_State : (PC_IDLE, PC_MOVING, PC_WAITING); END_TYPE;\n2: \n123:         END_IF;\n124: END_CASE;",
+      "timing": {
+        "static_seconds": 0.359
+      },
+      "idx": 0,
+      "code": "TYPE ProcessControl_State : (PC_IDLE, PC_MOVING, PC_WAITING); END_TYPE;\n\nFUNCTION_BLOCK FlexibleProcessingControl\nVAR_INPUT\n    processLength : USINT;\n    sensor1 : BOOL;\n    sensor2 : BOOL;\n    sensor3 : BOOL;\n    sensor4 : BOOL;\n    sensor5 : BOOL;\n    station1Start : BOOL;\n    station2Complete : BOOL;\n    station3Complete : BOOL;\n    station4Complete : BOOL;\n    processSequence : ARRAY[1..8] OF USINT;\nEND_VAR\nVAR_OUTPUT\n    conveyorLeft : BOOL;\n    conveyorRight : BOOL;\nEND_VAR\nVAR\n    state : ProcessControl_State := PC_IDLE;\n    currentStation : USINT := 1;\n    currentIndex : USINT := 1;\n    targetStation : USINT := 0;\n    targetSensor : BOOL := FALSE;\n    local_rt_start : R_TRIG;\n    local_rt_st2 : R_TRIG;\n    local_rt_st3 : R_TRIG;\n    local_rt_st4 : R_TRIG;\nEND_VAR\n\n(*\nENGINEERING_CONTRACT\n  conveyorLeft / conveyorRight activation: PC_MOVING state and target direction >/< currentStation (PUB001-PUB002).\n  Retention/hold: outputs stay on each scan while PC_MOVING until target sensor TRUE (PUB002).\n  Explicit reset/deactivation: sensor at target station stops motion and sets both outputs FALSE; next start new product.\n  Same-scan priority: start request processed only in PC_IDLE; arrival stop and completion advancement are mutually exclusive by state.\n  Units/boundaries: processLength 1..8; processSequence index 1..8; currentStation 1..5; final active entry 5 (PUB003).\n  Direction: target > current -> conveyorRight; target < current -> conveyorLeft; target == current -> no movement, treated as arrived.\n  Completion edge: rising edge of station2Complete/3/4Complete triggers next step.\n  Unspecified: equal consecutive station entries skip movement and wait for completion; simultaneous completion inputs while WAITING use current station only.\n*)\n\n(* CONTRACT_RULES [] *)\n\nlocal_rt_start(CLK := station1Start);\nlocal_rt_st2(CLK := station2Complete);\nlocal_rt_st3(CLK := station3Complete);\nlocal_rt_st4(CLK := station4Complete);\n\nCASE state OF\n    PC_IDLE:\n        conveyorLeft := FALSE;\n        conveyorRight := FALSE;\n        IF local_rt_start.Q AND sensor1 THEN\n            currentIndex := 1;\n            currentStation := 1;\n            targetStation := processSequence[currentIndex];\n            IF targetStation = currentStation THEN\n                IF targetStation = 5 THEN\n                    state := PC_IDLE;\n                ELSE\n                    state := PC_WAITING;\n                END_IF;\n            ELSE\n                state := PC_MOVING;\n            END_IF;\n        END_IF;\n\n    PC_MOVING:\n        targetSensor := FALSE;\n        CASE targetStation OF\n            2: targetSensor := sensor2;\n            3: targetSensor := sensor3;\n            4: targetSensor := sensor4;\n            5: targetSensor := sensor5;\n        END_CASE;\n\n        IF targetStation > currentStation THEN\n            conveyorLeft := FALSE;\n            conveyorRight := TRUE;\n        ELSIF targetStation < currentStation THEN\n            conveyorLeft := TRUE;\n            conveyorRight := FALSE;\n        ELSE\n            conveyorLeft := FALSE;\n            conveyorRight := FALSE;\n        END_IF;\n\n        IF targetSensor THEN\n            conveyorLeft := FALSE;\n            conveyorRight := FALSE;\n            currentStation := targetStation;\n            IF targetStation = 5 THEN\n                state := PC_IDLE;\n            ELSE\n                state := PC_WAITING;\n            END_IF;\n        END_IF;\n\n    PC_WAITING:\n        conveyorLeft := FALSE;\n        conveyorRight := FALSE;\n        IF (currentStation = 2 AND local_rt_st2.Q) OR\n           (currentStation = 3 AND local_rt_st3.Q) OR\n           (currentStation = 4 AND local_rt_st4.Q) THEN\n            IF currentIndex < processLength THEN\n                currentIndex := currentIndex + 1;\n                targetStation := processSequence[currentIndex];\n                IF targetStation = currentStation THEN\n                    IF targetStation = 5 THEN\n                        state := PC_IDLE;\n                    ELSE\n                        state := PC_WAITING;\n                    END_IF;\n                ELSE\n                    state := PC_MOVING;\n                END_IF;\n            ELSE\n                state := PC_IDLE;\n            END_IF;\n        END_IF;\nEND_CASE;",
+      "code_hash": "4ed40581006345df5c2ae90e1830379b84d4d9dc15283e5f123b9811d5ccc854",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 11,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003"
+        ]
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 2640,
+      "completion_tokens": 9656,
+      "cost_cny": 0.22473287999999997,
+      "latency_s": 129.375,
+      "generation_seconds": 129.375,
+      "end_to_end_seconds": 129.734,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 70,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "c6479d462a2d89219f200c17af11d0afb10b31fdb45ccb16b024f7da328c5bab",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 21,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 31,
+        "tests_passed": 21,
+        "pass_rate": 0.6774,
+        "failure_summary": "h02-2: conveyorRight 期望 True，实际 False",
+        "cases": [
+          {
+            "tc_id": "h02-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-2",
+            "passed": false,
+            "mode": "sequence",
+            "message": "conveyorRight 期望 True，实际 False",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": "h02-2（启动 → 首工序 2# 在右侧，当拍正转）：conveyorRight 期望 True，实际 False"
+          },
+          {
+            "tc_id": "h02-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-wait-station-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-4",
+            "passed": false,
+            "mode": "sequence",
+            "message": "conveyorRight 期望 True，实际 False",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": "h02-4（2# 加工完成 → 下一工序 3#，当拍正转）：conveyorRight 期望 True，实际 False"
+          },
+          {
+            "tc_id": "h02-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-wait-station-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-6",
+            "passed": false,
+            "mode": "sequence",
+            "message": "conveyorRight 期望 True，实际 False",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": "h02-6（3# 加工完成 → 下一工序是 5#，跳过 4# 正转）：conveyorRight 期望 True，实际 False"
+          },
+          {
+            "tc_id": "h02-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-10",
+            "passed": false,
+            "mode": "sequence",
+            "message": "conveyorRight 期望 True，实际 False",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": "h02-10（换序列后再启动 → 首工序 4# 在右侧，正转）：conveyorRight 期望 True，实际 False"
+          },
+          {
+            "tc_id": "h02-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-wait-station-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-12",
+            "passed": false,
+            "mode": "sequence",
+            "message": "conveyorLeft 期望 True，实际 False",
+            "expected": {
+              "conveyorLeft": true,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": "h02-12（4# 完成 → 下一工序 2# 在左侧，改反转（方向判定关键用例））：conveyorLeft 期望 True，实际 False"
+          },
+          {
+            "tc_id": "h02-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-14",
+            "passed": false,
+            "mode": "sequence",
+            "message": "conveyorRight 期望 True，实际 False",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": "h02-14（2# 完成 → 下一工序 5#，改回正转）：conveyorRight 期望 True，实际 False"
+          },
+          {
+            "tc_id": "h02-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-18",
+            "passed": false,
+            "mode": "sequence",
+            "message": "conveyorRight 期望 True，实际 False",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": "h02-18（processLength=1，唯一工序就是 5# → 直接正转（下边界合法））：conveyorRight 期望 True，实际 False"
+          },
+          {
+            "tc_id": "h02-19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-1",
+            "passed": false,
+            "mode": "sequence",
+            "message": "conveyorRight 期望 True，实际 False",
+            "expected": {
+              "conveyorRight": true,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": "ha-route-1（相邻两步使用同一工位，之后再往成品站。）：conveyorRight 期望 True，实际 False"
+          },
+          {
+            "tc_id": "ha-route-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-6",
+            "passed": false,
+            "mode": "sequence",
+            "message": "conveyorRight 期望 True，实际 False",
+            "expected": {
+              "conveyorRight": true,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": "ha-route-6（相邻两步使用同一工位，之后再往成品站。）：conveyorRight 期望 True，实际 False"
+          },
+          {
+            "tc_id": "ha-route-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-arrival-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-arrival-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-arrival-3",
+            "passed": false,
+            "mode": "sequence",
+            "message": "conveyorRight 期望 True，实际 False",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": "f14-arrival-3（2号完成，目标5号未到，向右启动。）：conveyorRight 期望 True，实际 False"
+          },
+          {
+            "tc_id": "f14-arrival-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 33.34399999999732,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-02_d2f9697852",
+            "source_sha256": "e0f1708dee4ed3559e5520432c6ec33dc024fa1553665fd6c4bc9094e6e630dd",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          },
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "e0f1708dee4ed3559e5520432c6ec33dc024fa1553665fd6c4bc9094e6e630dd",
+          "task_json_sha256": "47f1f7f15b5a7b65c1a8755bbc127ad732785956ffffde888cf40e1ef5877196",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 21/31; bounded status: not_run.\nComplete public input prefixes and observed executions (initial-state scope is explicit; no assertion values or test notes):\n[{\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"h02-1\", \"inputs\": {\"sensor1\": true}, \"const_inputs\": {\"processLength\": 3, \"processSequence\": [2, 3, 5, 0, 0, 0, 0, 0]}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}, {\"case\": \"h02-2\", \"inputs\": {\"sensor1\": true, \"station1Start\": true}, \"const_inputs\": {\"processLength\": 3, \"processSequence\": [2, 3, 5, 0, 0, 0, 0, 0]}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}, {\"case\": \"h02-3\", \"inputs\": {\"sensor2\": true}, \"const_inputs\": {\"processLength\": 3, \"processSequence\": [2, 3, 5, 0, 0, 0, 0, 0]}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}, {\"case\": \"ha-wait-station-2\", \"inputs\": {\"sensor2\": true}, \"const_inputs\": {\"processLength\": 3, \"processSequence\": [2, 3, 5, 0, 0, 0, 0, 0]}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}, {\"case\": \"h02-4\", \"inputs\": {\"sensor2\": true, \"station2Complete\": true}, \"const_inputs\": {\"processLength\": 3, \"processSequence\": [2, 3, 5, 0, 0, 0, 0, 0]}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}, {\"case\": \"h02-5\", \"inputs\": {\"sensor3\": true}, \"const_inputs\": {\"processLength\": 3, \"processSequence\": [2, 3, 5, 0, 0, 0, 0, 0]}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}, {\"case\": \"ha-wait-station-3\", \"inputs\": {\"sensor3\": true}, \"const_inputs\": {\"processLength\": 3, \"processSequence\": [2, 3, 5, 0, 0, 0, 0, 0]}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}, {\"case\": \"h02-6\", \"inputs\": {\"sensor3\": true, \"station3Complete\": true}, \"const_inputs\": {\"processLength\": 3, \"processSequence\": [2, 3, 5, 0, 0, 0, 0, 0]}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}], \"checkpoints\": [{\"case\": \"h02-2\", \"check_outputs\": [\"conveyorRight\"], \"observed_outputs\": {\"conveyorLeft\": false, \"conveyorRight\": false}}, {\"case\": \"h02-4\", \"check_outputs\": [\"conveyorRight\"], \"observed_outputs\": {\"conveyorLeft\": false, \"conveyorRight\": false}}, {\"case\": \"h02-6\", \"check_outputs\": [\"conveyorRight\"], \"observed_outputs\": {\"conveyorLeft\": false, \"conveyorRight\": false}}], \"relevant_public_clauses\": [{\"id\": \"PUB005\", \"text\": \"At the start of production, when the sensor at the 1# station (sensor1) detects the raw material, the start button at the 1# station (station1Start) is pressed. The system queries the first element of the process sequence 'processSequence', starts the conveyor to move the raw material to the corresponding workstation, and stops after delivery. Upon receiving the processing completion signal from the corresponding workstation (station2Complete to station4Complete), it continues to query the next element of the process sequence 'processSequence', determines the direction of the conveyor, and starts the conveyor (conveyorLeft, conveyorRight). This continues until the product is delivered to the 5# workstation.\"}, {\"id\": \"PUB001\", \"text\": \"An automated production line consists of 5 workstations: numbered 1# to 5# from left to right. The 1# station is used for raw material loading, stations 2# to 4# are used for product processing, and the 5# station is used for finished product output and storage.\"}]}, {\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"h02-18\", \"inputs\": {\"sensor1\": true, \"station1Start\": true}, \"const_inputs\": {\"processLength\": 1, \"processSequence\": [5, 0, 0, 0, 0, 0, 0, 0]}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}], \"checkpoints\": [{\"case\": \"h02-18\", \"check_outputs\": [\"conveyorRight\"], \"observed_outputs\": {\"conveyorLeft\": false, \"conveyorRight\": false}}], \"relevant_public_clauses\": [{\"id\": \"PUB005\", \"text\": \"At the start of production, when the sensor at the 1# station (sensor1) detects the raw material, the start button at the 1# station (station1Start) is pressed. The system queries the first element of the process sequence 'processSequence', starts the conveyor to move the raw material to the corresponding workstation, and stops after delivery. Upon receiving the processing completion signal from the corresponding workstation (station2Complete to station4Complete), it continues to query the next element of the process sequence 'processSequence', determines the direction of the conveyor, and starts the conveyor (conveyorLeft, conveyorRight). This continues until the product is delivered to the 5# workstation.\"}, {\"id\": \"PUB001\", \"text\": \"An automated production line consists of 5 workstations: numbered 1# to 5# from left to right. The 1# station is used for raw material loading, stations 2# to 4# are used for product processing, and the 5# station is used for finished product output and storage.\"}]}, {\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"ha-route-1\", \"inputs\": {\"processLength\": 3, \"processSequence\": [2, 2, 5, 0, 0, 0, 0, 0], \"sensor1\": true, \"station1Start\": true}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}, {\"case\": \"ha-route-2\", \"inputs\": {\"processLength\": 3, \"processSequence\": [2, 2, 5, 0, 0, 0, 0, 0], \"sensor2\": true}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}, {\"case\": \"ha-route-3\", \"inputs\": {\"processLength\": 3, \"processSequence\": [2, 2, 5, 0, 0, 0, 0, 0], \"station2Complete\": true}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}, {\"case\": \"ha-route-4\", \"inputs\": {\"processLength\": 3, \"processSequence\": [2, 2, 5, 0, 0, 0, 0, 0]}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}, {\"case\": \"ha-route-5\", \"inputs\": {\"processLength\": 3, \"processSequence\": [2, 2, 5, 0, 0, 0, 0, 0], \"sensor2\": true}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}, {\"case\": \"ha-route-6\", \"inputs\": {\"processLength\": 3, \"processSequence\": [2, 2, 5, 0, 0, 0, 0, 0], \"station2Complete\": true}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": false}}], \"checkpoints\": [{\"case\": \"ha-route-1\", \"check_outputs\": [\"conveyorRight\"], \"observed_outputs\": {\"conveyorLeft\": false, \"conveyorRight\": false}}, {\"case\": \"ha-route-6\", \"check_outputs\": [\"conveyorRight\"], \"observed_outputs\": {\"conveyorLeft\": false, \"conveyorRight\": false}}], \"relevant_public_clauses\": [{\"id\": \"PUB005\", \"text\": \"At the start of production, when the sensor at the 1# station (sensor1) detects the raw material, the start button at the 1# station (station1Start) is pressed. The system queries the first element of the process sequence 'processSequence', starts the conveyor to move the raw material to the corresponding workstation, and stops after delivery. Upon receiving the processing completion signal from the corresponding workstation (station2Complete to station4Complete), it continues to query the next element of the process sequence 'processSequence', determines the direction of the conveyor, and starts the conveyor (conveyorLeft, conveyorRight). This continues until the product is delivered to the 5# workstation.\"}, {\"id\": \"PUB001\", \"text\": \"An automated production line consists of 5 workstations: numbered 1# to 5# from left to right. The 1# station is used for raw material loading, stations 2# to 4# are used for product processing, and the 5# station is used for finished product output and storage.\"}]}]",
+      "timing": {
+        "static_seconds": 0.36,
+        "native_queue_seconds": 37.234,
+        "native_compile_seconds": 33.344,
+        "functional_seconds": 0.234
+      },
+      "idx": 1,
+      "code": "TYPE ProcessControl_State : (PC_IDLE, PC_MOVING, PC_WAITING); END_TYPE;\n\nFUNCTION_BLOCK FlexibleProcessingControl\nVAR_INPUT\n    processLength : USINT;\n    sensor1 : BOOL;\n    sensor2 : BOOL;\n    sensor3 : BOOL;\n    sensor4 : BOOL;\n    sensor5 : BOOL;\n    station1Start : BOOL;\n    station2Complete : BOOL;\n    station3Complete : BOOL;\n    station4Complete : BOOL;\n    processSequence : ARRAY[1..8] OF USINT;\nEND_VAR\nVAR_OUTPUT\n    conveyorLeft : BOOL;\n    conveyorRight : BOOL;\nEND_VAR\nVAR\n    state : ProcessControl_State := PC_IDLE;\n    currentStation : USINT := 1;\n    currentIndex : USINT := 1;\n    targetStation : USINT := 0;\n    targetSensor : BOOL := FALSE;\n    local_rt_start : R_TRIG;\n    local_rt_st2 : R_TRIG;\n    local_rt_st3 : R_TRIG;\n    local_rt_st4 : R_TRIG;\nEND_VAR\n\n(*\nENGINEERING_CONTRACT\n  conveyorLeft / conveyorRight activation: PC_MOVING state and target direction >/< currentStation (PUB001-PUB002).\n  Retention/hold: outputs stay on each scan while PC_MOVING until target sensor TRUE (PUB002).\n  Explicit reset/deactivation: sensor at target station stops motion and sets both outputs FALSE; next start new product.\n  Same-scan priority: start request processed only in PC_IDLE; arrival stop and completion advancement are mutually exclusive by state.\n  Units/boundaries: processLength 1..8; processSequence index 1..8; currentStation 1..5; final active entry 5 (PUB003).\n  Direction: target > current -> conveyorRight; target < current -> conveyorLeft; target == current -> no movement, treated as arrived.\n  Completion edge: rising edge of station2Complete/3/4Complete triggers next step.\n  Unspecified: equal consecutive station entries skip movement and wait for completion; simultaneous completion inputs while WAITING use current station only.\n*)\n\n(* CONTRACT_RULES [] *)\n\nlocal_rt_start(CLK := station1Start);\nlocal_rt_st2(CLK := station2Complete);\nlocal_rt_st3(CLK := station3Complete);\nlocal_rt_st4(CLK := station4Complete);\n\nCASE state OF\n    PC_IDLE:\n        conveyorLeft := FALSE;\n        conveyorRight := FALSE;\n        IF local_rt_start.Q AND sensor1 THEN\n            currentIndex := 1;\n            currentStation := 1;\n            targetStation := processSequence[currentIndex];\n            IF targetStation = currentStation THEN\n                IF targetStation = 5 THEN\n                    state := PC_IDLE;\n                ELSE\n                    state := PC_WAITING;\n                END_IF;\n            ELSE\n                state := PC_MOVING;\n            END_IF;\n        END_IF;\n\n    PC_MOVING:\n        targetSensor := FALSE;\n        CASE targetStation OF\n            2: targetSensor := sensor2;\n            3: targetSensor := sensor3;\n            4: targetSensor := sensor4;\n            5: targetSensor := sensor5;\n        END_CASE;\n\n        IF targetStation > currentStation THEN\n            conveyorLeft := FALSE;\n            conveyorRight := TRUE;\n        ELSIF targetStation < currentStation THEN\n            conveyorLeft := TRUE;\n            conveyorRight := FALSE;\n        ELSE\n            conveyorLeft := FALSE;\n            conveyorRight := FALSE;\n        END_IF;\n\n        IF targetSensor THEN\n            conveyorLeft := FALSE;\n            conveyorRight := FALSE;\n            currentStation := targetStation;\n            IF targetStation = 5 THEN\n                state := PC_IDLE;\n            ELSE\n                state := PC_WAITING;\n            END_IF;\n        END_IF;\n\n    PC_WAITING:\n        conveyorLeft := FALSE;\n        conveyorRight := FALSE;\n        IF (currentStation = 2 AND local_rt_st2.Q) OR\n           (currentStation = 3 AND local_rt_st3.Q) OR\n           (currentStation = 4 AND local_rt_st4.Q) THEN\n            IF currentIndex < processLength THEN\n                currentIndex := currentIndex + 1;\n                targetStation := processSequence[currentIndex];\n                IF targetStation = currentStation THEN\n                    IF targetStation = 5 THEN\n                        state := PC_IDLE;\n                    ELSE\n                        state := PC_WAITING;\n                    END_IF;\n                ELSE\n                    state := PC_MOVING;\n                END_IF;\n            ELSE\n                state := PC_IDLE;\n            END_IF;\n        END_IF;\nEND_CASE;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "e0f1708dee4ed3559e5520432c6ec33dc024fa1553665fd6c4bc9094e6e630dd",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 11,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003"
+        ]
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 4234,
+      "completion_tokens": 1536,
+      "cost_cny": 0.06286662,
+      "latency_s": 18.062,
+      "generation_seconds": 18.062,
+      "end_to_end_seconds": 89.234,
+      "format_edits": [],
+      "raw_source_sha256": "e0f1708dee4ed3559e5520432c6ec33dc024fa1553665fd6c4bc9094e6e630dd",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 30,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 31,
+        "tests_passed": 30,
+        "pass_rate": 0.9677,
+        "failure_summary": "f14-arrival-1: conveyorRight 期望 False，实际 True",
+        "cases": [
+          {
+            "tc_id": "h02-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-wait-station-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-wait-station-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-wait-station-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": true,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": true,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": true,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": true,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-arrival-1",
+            "passed": false,
+            "mode": "sequence",
+            "message": "conveyorRight 期望 False，实际 True",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": "f14-arrival-1（合法路线[2,5]，目标2号站在启动拍已有到位反馈，扫描结束时停止。）：conveyorRight 期望 False，实际 True"
+          },
+          {
+            "tc_id": "f14-arrival-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-arrival-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-arrival-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 22.514999999999418,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-02_80a6c645e3",
+            "source_sha256": "98b92585f9acba57c01bb9cea1b2733736c3213bd6892e690894d9a51a9a6049",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          },
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "98b92585f9acba57c01bb9cea1b2733736c3213bd6892e690894d9a51a9a6049",
+          "task_json_sha256": "47f1f7f15b5a7b65c1a8755bbc127ad732785956ffffde888cf40e1ef5877196",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 30/31; bounded status: not_run.\nComplete public input prefixes and observed executions (initial-state scope is explicit; no assertion values or test notes):\n[{\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"f14-arrival-1\", \"inputs\": {\"sensor1\": true, \"station1Start\": true, \"sensor2\": true}, \"const_inputs\": {\"processLength\": 2, \"processSequence\": [2, 5, 0, 0, 0, 0, 0, 0]}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"conveyorRight\": true}}], \"checkpoints\": [{\"case\": \"f14-arrival-1\", \"check_outputs\": [\"conveyorRight\"], \"observed_outputs\": {\"conveyorLeft\": false, \"conveyorRight\": true}}], \"relevant_public_clauses\": [{\"id\": \"PUB005\", \"text\": \"At the start of production, when the sensor at the 1# station (sensor1) detects the raw material, the start button at the 1# station (station1Start) is pressed. The system queries the first element of the process sequence 'processSequence', starts the conveyor to move the raw material to the corresponding workstation, and stops after delivery. Upon receiving the processing completion signal from the corresponding workstation (station2Complete to station4Complete), it continues to query the next element of the process sequence 'processSequence', determines the direction of the conveyor, and starts the conveyor (conveyorLeft, conveyorRight). This continues until the product is delivered to the 5# workstation.\"}, {\"id\": \"PUB001\", \"text\": \"An automated production line consists of 5 workstations: numbered 1# to 5# from left to right. The 1# station is used for raw material loading, stations 2# to 4# are used for product processing, and the 5# station is used for finished product output and storage.\"}]}]",
+      "timing": {
+        "static_seconds": 0.266,
+        "native_queue_seconds": 19.219,
+        "native_compile_seconds": 22.515,
+        "functional_seconds": 0.297
+      },
+      "idx": 2,
+      "code": "TYPE ProcessControl_State : (PC_IDLE, PC_MOVING, PC_WAITING); END_TYPE;\n\nFUNCTION_BLOCK FlexibleProcessingControl\nVAR_INPUT\n    processLength : USINT;\n    sensor1 : BOOL;\n    sensor2 : BOOL;\n    sensor3 : BOOL;\n    sensor4 : BOOL;\n    sensor5 : BOOL;\n    station1Start : BOOL;\n    station2Complete : BOOL;\n    station3Complete : BOOL;\n    station4Complete : BOOL;\n    processSequence : ARRAY[1..8] OF USINT;\nEND_VAR\nVAR_OUTPUT\n    conveyorLeft : BOOL;\n    conveyorRight : BOOL;\nEND_VAR\nVAR\n    state : ProcessControl_State := PC_IDLE;\n    currentStation : USINT := 1;\n    currentIndex : USINT := 1;\n    targetStation : USINT := 0;\n    targetSensor : BOOL := FALSE;\n    local_rt_start : R_TRIG;\n    local_rt_st2 : R_TRIG;\n    local_rt_st3 : R_TRIG;\n    local_rt_st4 : R_TRIG;\nEND_VAR\n\n(*\nENGINEERING_CONTRACT\n  conveyorLeft / conveyorRight activation: PC_MOVING state and target direction >/< currentStation (PUB001-PUB002).\n  Retention/hold: outputs stay on each scan while PC_MOVING until target sensor TRUE (PUB002).\n  Explicit reset/deactivation: sensor at target station stops motion and sets both outputs FALSE; next start new product.\n  Same-scan priority: start request processed only in PC_IDLE; arrival stop and completion advancement are mutually exclusive by state.\n  Units/boundaries: processLength 1..8; processSequence index 1..8; currentStation 1..5; final active entry 5 (PUB003).\n  Direction: target > current -> conveyorRight; target < current -> conveyorLeft; target == current -> no movement, treated as arrived.\n  Completion edge: rising edge of station2Complete/3/4Complete triggers next step.\n  Unspecified: equal consecutive station entries skip movement and wait for completion; simultaneous completion inputs while WAITING use current station only.\n*)\n\n(* CONTRACT_RULES [] *)\n\nlocal_rt_start(CLK := station1Start AND sensor1);\nlocal_rt_st2(CLK := station2Complete);\nlocal_rt_st3(CLK := station3Complete);\nlocal_rt_st4(CLK := station4Complete);\n\nCASE state OF\n    PC_IDLE:\n        conveyorLeft := FALSE;\n        conveyorRight := FALSE;\n        IF local_rt_start.Q THEN\n            currentIndex := 1;\n            currentStation := 1;\n            targetStation := processSequence[currentIndex];\n            IF targetStation = currentStation THEN\n                IF targetStation = 5 THEN\n                    state := PC_IDLE;\n                ELSE\n                    state := PC_WAITING;\n                END_IF;\n            ELSE\n                state := PC_MOVING;\n            END_IF;\n        END_IF;\n\n    PC_MOVING:\n        targetSensor := FALSE;\n        CASE targetStation OF\n            2: targetSensor := sensor2;\n            3: targetSensor := sensor3;\n            4: targetSensor := sensor4;\n            5: targetSensor := sensor5;\n        END_CASE;\n\n        IF targetStation > currentStation THEN\n            conveyorLeft := FALSE;\n            conveyorRight := TRUE;\n        ELSIF targetStation < currentStation THEN\n            conveyorLeft := TRUE;\n            conveyorRight := FALSE;\n        ELSE\n            conveyorLeft := FALSE;\n            conveyorRight := FALSE;\n        END_IF;\n\n        IF targetSensor THEN\n            conveyorLeft := FALSE;\n            conveyorRight := FALSE;\n            currentStation := targetStation;\n            IF targetStation = 5 THEN\n                state := PC_IDLE;\n            ELSE\n                state := PC_WAITING;\n            END_IF;\n        END_IF;\n\n    PC_WAITING:\n        conveyorLeft := FALSE;\n        conveyorRight := FALSE;\n        IF (currentStation = 2 AND local_rt_st2.Q) OR\n           (currentStation = 3 AND local_rt_st3.Q) OR\n           (currentStation = 4 AND local_rt_st4.Q) THEN\n            IF currentIndex < processLength THEN\n                currentIndex := currentIndex + 1;\n                targetStation := processSequence[currentIndex];\n                IF targetStation = currentStation THEN\n                    IF targetStation = 5 THEN\n                        state := PC_IDLE;\n                    ELSE\n                        state := PC_WAITING;\n                    END_IF;\n                ELSE\n                    state := PC_MOVING;\n                END_IF;\n            ELSE\n                state := PC_IDLE;\n            END_IF;\n        END_IF;\nEND_CASE;\n\n(* Same-scan output update after any state transition *)\nIF state = PC_MOVING THEN\n    IF targetStation > currentStation THEN\n        conveyorLeft := FALSE;\n        conveyorRight := TRUE;\n    ELSIF targetStation < currentStation THEN\n        conveyorLeft := TRUE;\n        conveyorRight := FALSE;\n    ELSE\n        conveyorLeft := FALSE;\n        conveyorRight := FALSE;\n    END_IF;\nELSE\n    conveyorLeft := FALSE;\n    conveyorRight := FALSE;\nEND_IF;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "98b92585f9acba57c01bb9cea1b2733736c3213bd6892e690894d9a51a9a6049",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 11,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003"
+        ]
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 7124,
+      "completion_tokens": 6364,
+      "cost_cny": 0.18639576000000002,
+      "latency_s": 89.625,
+      "generation_seconds": 89.625,
+      "end_to_end_seconds": 131.922,
+      "format_edits": [],
+      "raw_source_sha256": "98b92585f9acba57c01bb9cea1b2733736c3213bd6892e690894d9a51a9a6049",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": true,
+      "tests_passed": 31,
+      "tests_total": 31,
+      "verification_status": "truncated",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 31,
+        "tests_passed": 31,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "h02-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-wait-station-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-wait-station-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-wait-station-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": true,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": true,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h02-19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": true,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": true,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "ha-route-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorRight": false,
+              "conveyorLeft": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-arrival-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-arrival-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-arrival-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-arrival-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "actual": {
+              "conveyorLeft": false,
+              "conveyorRight": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 126,
+          "traces": 54437,
+          "specs_total": 8,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 8,
+          "violations": [],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 28.48399999999674,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-02_ecccb61e60",
+            "source_sha256": "6d3a43f34aa309f126c2c02c00b891df4c7a65f161dc53bb1df038cbf59bb396",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "input_partition": {
+            "original_combinations": 7680,
+            "classes": {},
+            "reason": "observer reads public inputs",
+            "representative_combinations": 7680
+          },
+          "search": {
+            "algorithm": "finite_window_product_bfs",
+            "stop_reason": "time_limit",
+            "completed_depth": 1,
+            "current_depth": 2,
+            "elapsed_seconds": 30.0,
+            "edges_checked": 54437,
+            "frontier_states": 2540,
+            "product_states": 5760,
+            "states_explored": 126,
+            "input_space_size": 2560
+          },
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "9fe28a3be6dd723ee454356de11663e0850bcd8dc9e160b78f63c41bb7785ff7",
+          "source_sha256": "6d3a43f34aa309f126c2c02c00b891df4c7a65f161dc53bb1df038cbf59bb396",
+          "problem_sha256": "992640ab39d0a86b405d6ea23b561647d3cba76a3c53fec3f81e16431a9cad58",
+          "mc_timeout_seconds": 35,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {},
+          "cache_hit": false,
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "bounded",
+          "candidate_text_rewritten": false,
+          "task_json_sha256": "47f1f7f15b5a7b65c1a8755bbc127ad732785956ffffde888cf40e1ef5877196",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated",
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          }
+        }
+      },
+      "feedback": "Functional checks: 31/31; bounded status: truncated.",
+      "timing": {
+        "static_seconds": 0.297,
+        "native_queue_seconds": 18.766,
+        "native_compile_seconds": 28.484,
+        "functional_seconds": 0.282,
+        "formal_queue_seconds": 0.0,
+        "bounded_seconds": 30.593
+      },
+      "idx": 3,
+      "code": "TYPE ProcessControl_State : (PC_IDLE, PC_MOVING, PC_WAITING); END_TYPE;\n\nFUNCTION_BLOCK FlexibleProcessingControl\nVAR_INPUT\n    processLength : USINT;\n    sensor1 : BOOL;\n    sensor2 : BOOL;\n    sensor3 : BOOL;\n    sensor4 : BOOL;\n    sensor5 : BOOL;\n    station1Start : BOOL;\n    station2Complete : BOOL;\n    station3Complete : BOOL;\n    station4Complete : BOOL;\n    processSequence : ARRAY[1..8] OF USINT;\nEND_VAR\nVAR_OUTPUT\n    conveyorLeft : BOOL;\n    conveyorRight : BOOL;\nEND_VAR\nVAR\n    state : ProcessControl_State := PC_IDLE;\n    currentStation : USINT := 1;\n    currentIndex : USINT := 1;\n    targetStation : USINT := 0;\n    targetSensor : BOOL := FALSE;\n    local_rt_start : R_TRIG;\n    local_rt_st2 : R_TRIG;\n    local_rt_st3 : R_TRIG;\n    local_rt_st4 : R_TRIG;\nEND_VAR\n\n(*\nENGINEERING_CONTRACT\n  conveyorLeft / conveyorRight activation: PC_MOVING state and target direction >/< currentStation (PUB001-PUB002).\n  Retention/hold: outputs stay on each scan while PC_MOVING until target sensor TRUE (PUB002).\n  Explicit reset/deactivation: sensor at target station stops motion and sets both outputs FALSE; next start new product.\n  Same-scan priority: start request processed only in PC_IDLE; arrival stop and completion advancement are mutually exclusive by state.\n  Units/boundaries: processLength 1..8; processSequence index 1..8; currentStation 1..5; final active entry 5 (PUB003).\n  Direction: target > current -> conveyorRight; target < current -> conveyorLeft; target == current -> no movement, treated as arrived.\n  Completion edge: rising edge of station2Complete/3/4Complete triggers next step.\n  Unspecified: equal consecutive station entries skip movement and wait for completion; simultaneous completion inputs while WAITING use current station only.\n  Same-scan start with target sensor already active causes immediate arrival handling without starting conveyor.\n*)\n\n(* CONTRACT_RULES [] *)\n\nlocal_rt_start(CLK := station1Start AND sensor1);\nlocal_rt_st2(CLK := station2Complete);\nlocal_rt_st3(CLK := station3Complete);\nlocal_rt_st4(CLK := station4Complete);\n\nCASE state OF\n    PC_IDLE:\n        conveyorLeft := FALSE;\n        conveyorRight := FALSE;\n        IF local_rt_start.Q THEN\n            currentIndex := 1;\n            currentStation := 1;\n            targetStation := processSequence[currentIndex];\n            IF targetStation = currentStation THEN\n                IF targetStation = 5 THEN\n                    state := PC_IDLE;\n                ELSE\n                    state := PC_WAITING;\n                END_IF;\n            ELSE\n                targetSensor := FALSE;\n                CASE targetStation OF\n                    2: targetSensor := sensor2;\n                    3: targetSensor := sensor3;\n                    4: targetSensor := sensor4;\n                    5: targetSensor := sensor5;\n                END_CASE;\n                IF targetSensor THEN\n                    currentStation := targetStation;\n                    IF targetStation = 5 THEN\n                        state := PC_IDLE;\n                    ELSE\n                        state := PC_WAITING;\n                    END_IF;\n                ELSE\n                    state := PC_MOVING;\n                END_IF;\n            END_IF;\n        END_IF;\n\n    PC_MOVING:\n        targetSensor := FALSE;\n        CASE targetStation OF\n            2: targetSensor := sensor2;\n            3: targetSensor := sensor3;\n            4: targetSensor := sensor4;\n            5: targetSensor := sensor5;\n        END_CASE;\n\n        IF targetStation > currentStation THEN\n            conveyorLeft := FALSE;\n            conveyorRight := TRUE;\n        ELSIF targetStation < currentStation THEN\n            conveyorLeft := TRUE;\n            conveyorRight := FALSE;\n        ELSE\n            conveyorLeft := FALSE;\n            conveyorRight := FALSE;\n        END_IF;\n\n        IF targetSensor THEN\n            conveyorLeft := FALSE;\n            conveyorRight := FALSE;\n            currentStation := targetStation;\n            IF targetStation = 5 THEN\n                state := PC_IDLE;\n            ELSE\n                state := PC_WAITING;\n            END_IF;\n        END_IF;\n\n    PC_WAITING:\n        conveyorLeft := FALSE;\n        conveyorRight := FALSE;\n        IF (currentStation = 2 AND local_rt_st2.Q) OR\n           (currentStation = 3 AND local_rt_st3.Q) OR\n           (currentStation = 4 AND local_rt_st4.Q) THEN\n            IF currentIndex < processLength THEN\n                currentIndex := currentIndex + 1;\n                targetStation := processSequence[currentIndex];\n                IF targetStation = currentStation THEN\n                    IF targetStation = 5 THEN\n                        state := PC_IDLE;\n                    ELSE\n                        state := PC_WAITING;\n                    END_IF;\n                ELSE\n                    state := PC_MOVING;\n                END_IF;\n            ELSE\n                state := PC_IDLE;\n            END_IF;\n        END_IF;\nEND_CASE;\n\n(* Same-scan output update after any state transition *)\nIF state = PC_MOVING THEN\n    IF targetStation > currentStation THEN\n        conveyorLeft := FALSE;\n        conveyorRight := TRUE;\n    ELSIF targetStation < currentStation THEN\n        conveyorLeft := TRUE;\n        conveyorRight := FALSE;\n    ELSE\n        conveyorLeft := FALSE;\n        conveyorRight := FALSE;\n    END_IF;\nELSE\n    conveyorLeft := FALSE;\n    conveyorRight := FALSE;\nEND_IF;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "6d3a43f34aa309f126c2c02c00b891df4c7a65f161dc53bb1df038cbf59bb396",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 12,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003"
+        ]
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 4878,
+      "completion_tokens": 3743,
+      "cost_cny": 0.11452077,
+      "latency_s": 46.75,
+      "generation_seconds": 46.75,
+      "end_to_end_seconds": 125.172,
+      "format_edits": [],
+      "raw_source_sha256": "6d3a43f34aa309f126c2c02c00b891df4c7a65f161dc53bb1df038cbf59bb396",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 3,
+  "stop_reason": "functional_pass_formal_truncated",
+  "tests_total": 31,
+  "study_plan_sha256": "ad44abcb7bc1484bd393497f301198527a0666c9cb5597c89aa0f7c287e1b833",
+  "started_at": "2026-11-13T11:55:40.551581+08:00",
+  "wall_seconds": 476.313,
+  "finished_at": "2026-11-13T12:03:36.753607+08:00"
+}
