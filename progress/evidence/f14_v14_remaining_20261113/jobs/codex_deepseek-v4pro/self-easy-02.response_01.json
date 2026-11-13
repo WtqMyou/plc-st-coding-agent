@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794560408,
+    "id": "resp_021794560405566c280e9bf492d190027beb8b799de3808d63515",
+    "max_output_tokens": 24576,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179456040800400000000000000000000ffffac1767ad9eecd2",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need answer only code block. Need design FB meeting requirements. Need include engineering contract comment and CONTRACT_RULES JSON. Need implement ST CODESYS 3.5.\n\nWe need understand semantics. Inputs tankLevel, outletFlow, inletPermit, resetBtn outputs pumpRun alarmHigh alarmLow outletValveOpen. Initial both alarms and previous button FALSE (via VAR initialized).\n\nNeed rising reset detection: resetBtn TRUE and prevResetBtn FALSE. Update alarms each scan:\n- high if tankLevel >= 85.0 -> set. else if rising reset -> clear, else hold alarmHigh.\n- low if tankLevel <= 15.0 -> set. else if rising reset -> clear, else hold.\nSince same reset rising can clear both independent if safe. Dangerous same scan overrides clearing due set condition first. Need outputs after alarms update. pumpRun = inletPermit AND NOT alarmHigh AND NOT alarmLow. outletValveOpen = NOT alarmLow. Button prev updated at end of scan? If update after alarms, current scan uses prev previous. Requirement reset rising same cycle; initial prev false. We store local prevResetBtn := resetBtn after computation. On next scan. fine. Need no edge trigger function perhaps use var.\n\nNeed comment. Let's craft concise. The prompt says use one fenced st block no prose outside. Include comments inside fenced. Engineering contract up to 12 lines. Contract rules JSON.\n\nNeed satisfy formal LTL. Let's check initial first scan prevResetBtn FALSE. If resetBtn TRUE first scan and condition false (normal), rising detected and clears any alarm initialized false. alarmHigh false. Equivalent? fine. If tankLevel high first scan set high despite reset. good.\n\noutletValveOpen: low alarm latched close; otherwise open. N10 S4 says outletValveOpen <-> !alarmLow. yes.\n\noutletFlow reserved no impact.\n\nPotential conflict with \"initial two alarms and previous button false\" via VAR initialization: alarm outputs? Function block outputs aren't retained?? In CODESYS output variables are declared in VAR_OUTPUT, values assigned every cycle; but \"initial\" means state? Alarm previous value needs VAR static for retention because output assignment computed each call. We have local highLatched/lowLatched stored in VAR instead of reading output. Could alarmHigh output itself be retained? In CODESYS function block output is memory, if not assigned it retains, but we need local. We'll declare local_alarmHigh_state/local_alarmLow_state BOOL := FALSE; local_prevResetBtn := FALSE. Then assign outputs. Use tmp_risingReset. Need avoid reserved s/r names. Good.\n\nNeed perhaps not use R_TRIG due required edge and CODESYS supported. Could use local prev. We'll use helper state.\n\nLet's formulate."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nFUNCTION_BLOCK FB\n\n(* ENGINEERING_CONTRACT\n   alarms: latch immediately on their own danger condition, retain until a new\n           resetBtn rising edge occurs while the condition is gone; dangerous\n           condition has priority on the same scan.\n   reset edge: detected from resetBtn TRUE and previous scan resetBtn FALSE;\n                prevResetBtn is updated at the end of every scan.\n   pumpRun: combinational after alarm update; TRUE iff inletPermit AND no alarm.\n   outletValveOpen: combinational; TRUE iff low alarm is FALSE.\n   tankLevel units: percent; thresholds are >= 85.0 for high and <= 15.0 for low.\n   outletFlow: observed only, does not affect outputs.\n*)\n\nVAR_INPUT\n    tankLevel : REAL;    (* 0..100 % *)\n    outletFlow : REAL;   (* m3/h, reserved observation input *)\n    inletPermit : BOOL;\n    resetBtn : BOOL;\nEND_VAR\n\nVAR_OUTPUT\n    pumpRun : BOOL;\n    alarmHigh : BOOL;\n    alarmLow : BOOL;\n    outletValveOpen : BOOL;\nEND_VAR\n\nVAR\n    local_prevResetBtn : BOOL := FALSE;\n    local_risingReset : BOOL;\n    tmp_highState : BOOL := FALSE;\n    tmp_lowState : BOOL := FALSE;\nEND_VAR\n\n(* CONTRACT_RULES [] *)\n\nlocal_risingReset := resetBtn AND NOT local_prevResetBtn;\n\n(* High alarm: danger condition sets and latches. *)\nIF tankLevel >= 85.0 THEN\n    tmp_highState := TRUE;\nELSIF local_risingReset THEN\n    tmp_highState := FALSE;\nEND_IF;\n\n(* Low alarm: danger condition sets and latches. *)\nIF tankLevel <= 15.0 THEN\n    tmp_lowState := TRUE;\nELSIF local_risingReset THEN\n    tmp_lowState := FALSE;\nEND_IF;\n\nalarmHigh := tmp_highState;\nalarmLow := tmp_lowState;\n\npumpRun := inletPermit AND NOT alarmHigh AND NOT alarmLow;\noutletValveOpen := NOT alarmLow;\n\nlocal_prevResetBtn := resetBtn;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179456041866500000000000000000000ffffac1767ad8c39e9",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 11245,
+      "output_tokens": 1061,
+      "total_tokens": 12306,
+      "input_tokens_details": {
+        "cached_tokens": 4096
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 580
+      },
+      "cost": "¥0.074432"
+    }
+  }
+}
