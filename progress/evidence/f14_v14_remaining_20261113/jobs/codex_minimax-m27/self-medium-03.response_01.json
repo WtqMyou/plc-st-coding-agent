@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-hz5dri-1794572210670125086",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\n// ENGINEERING_CONTRACT\n// Pub IDs | Activation           | Retention                 | Explicit Reset           | Same-scan Priority | Units\n// --------|----------------------|---------------------------|--------------------------|--------------------|------\n// motorUp | Rising openBtn in    | Run until openLimit or    | obstacle->stop, reset->  | obstacle > limits  | BOOL\n//         | IDLE, no obstacle,   | obstacle, stays latched   | stop, other outputs off  | > new start        |\n//         | closeBtn=FALSE,      | during fault              |                          |                    |\n//         | !openLimit           |                           |                          |                    |\n// --------|----------------------|---------------------------|--------------------------|--------------------|------\n// motorDown| Rising closeBtn in  | Run until closeLimit or   | obstacle->stop, reset->  | obstacle > limits  | BOOL\n//         | IDLE, no obstacle,   | obstacle, stays latched   | stop, other outputs off  | > new start        |\n//         | openBtn=FALSE,       | during fault              |                          |                    |\n//         | !closeLimit          |                           |                          |                    |\n// --------|----------------------|---------------------------|--------------------------|--------------------|------\n// errorFlag| obstacle in any     | Latch until valid reset   | reset: no obstacle AND   | always highest     | BOOL\n//         | state                | (requires no obstacle     | rising bothBtns          | priority           |\n//         |                      | AND rising bothBtns)      |                          |                    |\n// --------|----------------------|---------------------------|--------------------------|--------------------|------\n// CONTRACT_RULES [{\"kind\":\"hold_until_reset\",\"output\":\"errorFlag\",\"set_input\":\"obstacle\",\"reset_input\":\"risingBothBtn\"}]\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n    openBtn    : BOOL;\n    closeBtn   : BOOL;\n    openLimit  : BOOL;\n    closeLimit : BOOL;\n    obstacle   : BOOL;\nEND_VAR\nVAR_OUTPUT\n    motorUp    : BOOL;\n    motorDown  : BOOL;\n    errorFlag  : BOOL;\nEND_VAR\nVAR\n    state        : INT; // 0=IDLE, 1=OPENING, 2=CLOSING, 3=FAULT\n    prevOpenBtn  : BOOL;\n    prevCloseBtn : BOOL;\n    prevObstacle : BOOL;\n    prevErrorFlag: BOOL;\n    bothHeldPrev : BOOL;\nEND_VAR\nVAR\n    risingOpenBtn  : BOOL;\n    risingCloseBtn : BOOL;\n    risingBothBtn  : BOOL;\nEND_VAR\n\n    // Rising edge detection\n    risingOpenBtn  := openBtn AND NOT prevOpenBtn;\n    risingCloseBtn := closeBtn AND NOT prevCloseBtn;\n    risingBothBtn  := (openBtn AND closeBtn) AND NOT bothHeldPrev;\n\n    // ---- Priority 1: Obstacle handling ----\n    IF obstacle THEN\n        motorUp   := FALSE;\n        motorDown := FALSE;\n        errorFlag := TRUE;\n        state     := 3; // FAULT\n        GOTO scan_end;\n    END_IF\n\n    // ---- Priority 2: Fault state latching ----\n    IF state = 3 THEN\n        // Latched: motors off, wait for valid reset\n        motorUp   := FALSE;\n        motorDown := FALSE;\n        // Valid reset: no obstacle AND rising both buttons\n        IF risingBothBtn THEN\n            errorFlag := FALSE;\n            state     := 0; // IDLE\n        ELSE\n            errorFlag := TRUE;\n        END_IF\n        GOTO scan_end;\n    END_IF\n\n    // ---- Normal operation: IDLE, OPENING, CLOSING ----\n    CASE state OF\n        0: // IDLE\n            motorUp   := FALSE;\n            motorDown := FALSE;\n            // Start opening: rising openBtn, closeBtn=FALSE, no obstacle, not at limit\n            IF risingOpenBtn AND NOT closeBtn AND NOT openLimit THEN\n                motorUp  := TRUE;\n                motorDown:= FALSE;\n                state    := 1; // OPENING\n            // Start closing: rising closeBtn, openBtn=FALSE, no obstacle, not at limit\n            ELSIF risingCloseBtn AND NOT openBtn AND NOT closeLimit THEN\n                motorUp   := FALSE;\n                motorDown := TRUE;\n                state     := 2; // CLOSING\n            END_IF;\n\n        1: // OPENING\n            motorUp   := TRUE;\n            motorDown := FALSE;\n            // Stop at open limit\n            IF openLimit THEN\n                motorUp  := FALSE;\n                motorDown:= FALSE;\n                state    := 0; // IDLE\n            END_IF;\n\n        2: // CLOSING\n            motorUp   := FALSE;\n            motorDown := TRUE;\n            // Stop at close limit\n            IF closeLimit THEN\n                motorUp  := FALSE;\n                motorDown:= FALSE;\n                state    := 0; // IDLE\n            END_IF;\n    END_CASE;\n\nscan_end:\n    // Update previous inputs for next scan\n    prevOpenBtn   := openBtn;\n    prevCloseBtn  := closeBtn;\n    prevObstacle  := obstacle;\n    prevErrorFlag := errorFlag;\n    bothHeldPrev  := openBtn AND closeBtn;\n\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "The user wants me to implement a gate motor control function block in Structured Text (ST) for CODESYS 3.5. Let me analyze the requirements:\n\n**States:**\n- IDLE\n- OPENING\n- CLOSING\n- FAULT\n\n**Rules:**\n1. No obstacle in IDLE: only start opening on rising edge of openBtn, closeBtn=FALSE, not at open limit. Similarly for closing. Both buttons pressed simultaneously doesn't start. Command given on same scan as button press. Motor keeps running when button released. Direction buttons ignored during movement.\n2. No obstacle: stop and return to IDLE when reaching the direction's limit switch. The other direction's limit doesn't affect movement. Motors are mutually exclusive at all times.\n3. In any state, obstacle detected: stop both directions immediately in same scan and enter FAULT, set errorFlag=TRUE. This takes priority over limits, movement, and reset.\n4. FAULT latches errorFlag and stops motors. Clear requires: no obstacle + both buttons pressed simultaneously (new rising edge from not-both-pressed to both-pressed). With obstacle, holding both buttons doesn't auto-reset on obstacle removal. Reset returns to IDLE, motors stop on reset scan, then follows rule 1 to restart.\n\n**Inputs:** openBtn, closeBtn, openLimit, closeLimit, obstacle\n**Outputs:** motorUp, motorDown, errorFlag\n\nLet me implement this carefully:\n\n```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    openBtn : BOOL;\n    closeBtn : BOOL;\n    openLimit : BOOL;\n    closeLimit : BOOL;\n    obstacle : BOOL;\nEND_VAR\nVAR_OUTPUT\n    motorUp : BOOL := FALSE;\n    motorDown : BOOL := FALSE;\n    errorFlag : BOOL := FALSE;\nEND_VAR\nVAR\n    state : INT; // 0=IDLE, 1=OPENING, 2=CLOSING, 3=FAULT\n    prevOpenBtn : BOOL := FALSE;\n    prevCloseBtn : BOOL := FALSE;\n    prevObstacle : BOOL := FALSE;\n    prevErrorFlag : BOOL := FALSE;\nEND_VAR\n\n// Detect rising edges\nVAR\n    risingOpenBtn : BOOL;\n    risingCloseBtn : BOOL;\n    risingBoth : BOOL;\nEND_VAR\n\n// Implementation logic for each scan cycle, checking for rising edges on the buttons and obstacle conditions to determine state transitions and motor control outputs.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "The user wants me to implement a gate motor control function block in Structured Text (ST) for CODESYS 3.5. Let me analyze the requirements:\n\n**States:**\n- IDLE\n- OPENING\n- CLOSING\n- FAULT\n\n**Rules:**\n1. No obstacle in IDLE: only start opening on rising edge of openBtn, closeBtn=FALSE, not at open limit. Similarly for closing. Both buttons pressed simultaneously doesn't start. Command given on same scan as button press. Motor keeps running when button released. Direction buttons ignored during movement.\n2. No obstacle: stop and return to IDLE when reaching the direction's limit switch. The other direction's limit doesn't affect movement. Motors are mutually exclusive at all times.\n3. In any state, obstacle detected: stop both directions immediately in same scan and enter FAULT, set errorFlag=TRUE. This takes priority over limits, movement, and reset.\n4. FAULT latches errorFlag and stops motors. Clear requires: no obstacle + both buttons pressed simultaneously (new rising edge from not-both-pressed to both-pressed). With obstacle, holding both buttons doesn't auto-reset on obstacle removal. Reset returns to IDLE, motors stop on reset scan, then follows rule 1 to restart.\n\n**Inputs:** openBtn, closeBtn, openLimit, closeLimit, obstacle\n**Outputs:** motorUp, motorDown, errorFlag\n\nLet me implement this carefully:\n\n```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    openBtn : BOOL;\n    closeBtn : BOOL;\n    openLimit : BOOL;\n    closeLimit : BOOL;\n    obstacle : BOOL;\nEND_VAR\nVAR_OUTPUT\n    motorUp : BOOL := FALSE;\n    motorDown : BOOL := FALSE;\n    errorFlag : BOOL := FALSE;\nEND_VAR\nVAR\n    state : INT; // 0=IDLE, 1=OPENING, 2=CLOSING, 3=FAULT\n    prevOpenBtn : BOOL := FALSE;\n    prevCloseBtn : BOOL := FALSE;\n    prevObstacle : BOOL := FALSE;\n    prevErrorFlag : BOOL := FALSE;\nEND_VAR\n\n// Detect rising edges\nVAR\n    risingOpenBtn : BOOL;\n    risingCloseBtn : BOOL;\n    risingBoth : BOOL;\nEND_VAR\n\n// Implementation logic for each scan cycle, checking for rising edges on the buttons and obstacle conditions to determine state transitions and motor control outputs.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794572211,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 10887,
+      "completion_tokens": 1607,
+      "total_tokens": 12494,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.028726"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
