@@ -1,0 +1,4098 @@
+{
+  "job_id": "custom_deepseek-v4pro/public-hard-03",
+  "pid": "public-hard-03",
+  "condition": "custom_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 21,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 162,
+            "code": "E_MISSING_END_POU",
+            "message": "FUNCTION_BLOCK RecipeManagement 缺少结束关键字"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 21,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "56738a48bd7fe3357c000842670988b66d61cc83da12dd97d9a9b2165ad04f21",
+          "task_json_sha256": "0fbf2994aa007860d772b5ca1710e80ded91d699a19fcf318285378ecce9c108",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/21; bounded status: not_run.\nLine 162 [E_MISSING_END_POU]: FUNCTION_BLOCK RecipeManagement 缺少结束关键字\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n1: TYPE ST_Recipe :\n2: STRUCT\n161:     END_IF;\n162: END_IF;",
+      "timing": {
+        "static_seconds": 0.281
+      },
+      "idx": 0,
+      "code": "TYPE ST_Recipe :\nSTRUCT\n    recipeID : INT;\n    ingredientType : INT;\n    ingredientRatio : REAL;\n    productionTemperature : REAL;\nEND_STRUCT\nEND_TYPE;\n\nFUNCTION_BLOCK RecipeManagement\nVAR_INPUT\n    addRecipe : BOOL;\n    deleteRecipe : BOOL;\n    modifyRecipe : BOOL;\n    queryRecipe : BOOL;\n    recipeIn : ST_Recipe;\nEND_VAR\nVAR_OUTPUT\n    recipeAdded : BOOL;\n    recipeDeleted : BOOL;\n    recipeModified : BOOL;\n    recipeQueryResult : ST_Recipe;\n    error : BOOL;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    recipe : ARRAY[1..10] OF ST_Recipe;\nEND_VAR\nVAR\n    tmp_i : INT;\n    tmp_idx : INT;\n    tmp_empty : INT;\n    tmp_duplicate : BOOL;\n    tmp_count : INT;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\n   Pub outputs recipeAdded/Deleted/Modified are one-scan success pulses; no latch.\n   error/status are combinational: FALSE/0 on success or idle, TRUE/code on specified failure.\n   recipe array persists in IN_OUT slots. Add uses first empty slot; delete clears ID only; modify replaces whole recipe.\n   Query/delete/modify search only non-zero recipeID; add duplicate check includes recipeID 0 as empty-slot duplicate.\n   Multiple simultaneous request inputs are unspecified; implementation reports error=TRUE, status=16#8000 and performs none.\n   Boundary: recipeID 0 is never a queryable/deletable/modifiable identifier.\n*)\n(* CONTRACT_RULES [] *)\n\nrecipeAdded := FALSE;\nrecipeDeleted := FALSE;\nrecipeModified := FALSE;\nerror := FALSE;\nstatus := 0;\nrecipeQueryResult.recipeID := 0;\nrecipeQueryResult.ingredientType := 0;\nrecipeQueryResult.ingredientRatio := 0.0;\nrecipeQueryResult.productionTemperature := 0.0;\n\ntmp_count := 0;\nIF addRecipe THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF deleteRecipe THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF modifyRecipe THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF queryRecipe THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\n\nIF tmp_count > 1 THEN\n    error := TRUE;\n    status := 16#8000;\n    RETURN;\nEND_IF;\n\nIF addRecipe THEN\n    tmp_duplicate := FALSE;\n    FOR tmp_i := 1 TO 10 DO\n        IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n            tmp_duplicate := TRUE;\n            EXIT;\n        END_IF;\n    END_FOR;\n\n    IF tmp_duplicate THEN\n        error := TRUE;\n        status := 16#8002;\n    ELSE\n        tmp_empty := 0;\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = 0 THEN\n                tmp_empty := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n\n        IF tmp_empty = 0 THEN\n            error := TRUE;\n            status := 16#8003;\n        ELSE\n            recipe[tmp_empty] := recipeIn;\n            recipeAdded := TRUE;\n        END_IF;\n    END_IF;\n\nELSIF deleteRecipe THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8004;\n    ELSE\n        recipe[tmp_idx].recipeID := 0;\n        recipeDeleted := TRUE;\n    END_IF;\n\nELSIF modifyRecipe THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8005;\n    ELSE\n        recipe[tmp_idx] := recipeIn;\n        recipeModified := TRUE;\n    END_IF;\n\nELSIF queryRecipe THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8001;\n    ELSE\n        recipeQueryResult := recipe[tmp_idx];\n    END_IF;\nEND_IF;",
+      "code_hash": "56738a48bd7fe3357c000842670988b66d61cc83da12dd97d9a9b2165ad04f21",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 8,
+        "cited_public_clauses": []
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 3507,
+      "completion_tokens": 8550,
+      "cost_cny": 0.20730626999999996,
+      "latency_s": 112.282,
+      "generation_seconds": 112.282,
+      "end_to_end_seconds": 112.563,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 151,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "8b32850823b627c2dbc99ee851e126e18d84bfa0e033950db467fe230a4a88d2",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": true,
+      "tests_passed": 21,
+      "tests_total": 21,
+      "verification_status": "violated",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 21,
+        "tests_passed": 21,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "h03-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "error": false,
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 1,
+                  "ingredientRatio": 10.0,
+                  "productionTemperature": 105.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ],
+              "recipeAdded": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 1,
+                "ingredientRatio": 10.0,
+                "productionTemperature": 105.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 1,
+                "ingredientRatio": 10.0,
+                "productionTemperature": 105.0
+              },
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 2
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 1,
+                  "ingredientRatio": 10.0,
+                  "productionTemperature": 105.0
+                },
+                {
+                  "recipeID": 2,
+                  "ingredientType": 2,
+                  "ingredientRatio": 20.0,
+                  "productionTemperature": 110.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ],
+              "recipeAdded": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 2,
+                "ingredientRatio": 20.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "recipeQueryResult": {
+                "recipeID": 2,
+                "ingredientType": 2,
+                "ingredientRatio": 20.0,
+                "productionTemperature": 110.0
+              },
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32770,
+              "recipeAdded": false
+            },
+            "actual": {
+              "error": true,
+              "recipeAdded": false,
+              "status": 32770
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeDeleted": true
+            },
+            "actual": {
+              "error": false,
+              "recipeDeleted": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 3
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 1,
+                  "ingredientRatio": 10.0,
+                  "productionTemperature": 105.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 3,
+                  "ingredientRatio": 30.0,
+                  "productionTemperature": 115.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ],
+              "recipeAdded": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeModified": true
+            },
+            "actual": {
+              "error": false,
+              "recipeModified": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 33,
+                "ingredientRatio": 3.3,
+                "productionTemperature": 210.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 33,
+                "ingredientRatio": 3.3,
+                "productionTemperature": 210.0
+              },
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32771,
+              "recipeAdded": false
+            },
+            "actual": {
+              "error": true,
+              "recipeAdded": false,
+              "status": 32771
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeDeleted": true
+            },
+            "actual": {
+              "error": false,
+              "recipeDeleted": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 2
+                },
+                {
+                  "recipeID": 3
+                },
+                {
+                  "recipeID": 4
+                },
+                {
+                  "recipeID": 11
+                },
+                {
+                  "recipeID": 6
+                },
+                {
+                  "recipeID": 7
+                },
+                {
+                  "recipeID": 8
+                },
+                {
+                  "recipeID": 9
+                },
+                {
+                  "recipeID": 10
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 2,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 4,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 11,
+                  "ingredientType": 11,
+                  "ingredientRatio": 110.0,
+                  "productionTemperature": 155.0
+                },
+                {
+                  "recipeID": 6,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 7,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 8,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 9,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 10,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ],
+              "recipeAdded": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32772
+            },
+            "actual": {
+              "error": true,
+              "status": 32772
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32773
+            },
+            "actual": {
+              "error": true,
+              "status": 32773
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "error": false,
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-add-deleteRecipe",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "$any": [
+                {
+                  "error": true
+                },
+                {
+                  "recipeAdded": true,
+                  "recipeDeleted": true
+                }
+              ]
+            },
+            "actual": {
+              "error": true,
+              "recipeAdded": false,
+              "recipeDeleted": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-add-modifyRecipe",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "$any": [
+                {
+                  "error": true
+                },
+                {
+                  "recipeAdded": true,
+                  "recipeModified": true
+                }
+              ]
+            },
+            "actual": {
+              "error": true,
+              "recipeAdded": false,
+              "recipeModified": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 1133,
+          "traces": 51507,
+          "specs_total": 11,
+          "specs_hold": 0,
+          "specs_violated": 6,
+          "specs_inconclusive": 5,
+          "violations": [
+            {
+              "id": "S2",
+              "formula": "G(error -> status = 32769 OR status = 32770 OR status = 32771 OR status = 32772 OR status = 32773)",
+              "at": 1,
+              "explanation": "",
+              "trace": [
+                {
+                  "addrecipe": false,
+                  "deleterecipe": true,
+                  "modifyrecipe": true,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": false,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": true,
+                  "status": 32768,
+                  "recipe": [
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "tmp_i": 0,
+                  "tmp_idx": 0,
+                  "tmp_empty": 0,
+                  "tmp_duplicate": false,
+                  "tmp_count": 2
+                }
+              ]
+            },
+            {
+              "id": "S7",
+              "formula": "G(((NOT rising(queryRecipe) AND NOT rising(addRecipe) AND NOT rising(deleteRecipe) AND NOT rising(modifyRecipe)) -> (NOT recipeAdded AND NOT recipeDeleted AND NOT recipeModified AND NOT error AND status = 0)))",
+              "at": 2,
+              "explanation": "",
+              "trace": [
+                {
+                  "addrecipe": false,
+                  "deleterecipe": false,
+                  "modifyrecipe": true,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": false,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": true,
+                  "status": 32773,
+                  "recipe": [
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "tmp_i": 10,
+                  "tmp_idx": 0,
+                  "tmp_empty": 0,
+                  "tmp_duplicate": false,
+                  "tmp_count": 1
+                },
+                {
+                  "addrecipe": false,
+                  "deleterecipe": false,
+                  "modifyrecipe": true,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": false,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": true,
+                  "status": 32773,
+                  "recipe": [
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "tmp_i": 10,
+                  "tmp_idx": 0,
+                  "tmp_empty": 0,
+                  "tmp_duplicate": false,
+                  "tmp_count": 1
+                }
+              ]
+            },
+            {
+              "id": "S10",
+              "formula": "G(((rising(deleteRecipe) AND NOT rising(queryRecipe) AND NOT rising(addRecipe) AND NOT rising(modifyRecipe)) -> (NOT ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID)) AND (recipeDeleted -> (NOT error AND status = 0)) AND (NOT recipeDeleted -> (error AND status = 32772)))))",
+              "at": 2,
+              "explanation": "",
+              "trace": [
+                {
+                  "addrecipe": false,
+                  "deleterecipe": false,
+                  "modifyrecipe": true,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": false,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": true,
+                  "status": 32773,
+                  "recipe": [
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "tmp_i": 10,
+                  "tmp_idx": 0,
+                  "tmp_empty": 0,
+                  "tmp_duplicate": false,
+                  "tmp_count": 1
+                },
+                {
+                  "addrecipe": false,
+                  "deleterecipe": true,
+                  "modifyrecipe": true,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": false,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": true,
+                  "status": 32768,
+                  "recipe": [
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "tmp_i": 10,
+                  "tmp_idx": 0,
+                  "tmp_empty": 0,
+                  "tmp_duplicate": false,
+                  "tmp_count": 2
+                }
+              ]
+            },
+            {
+              "id": "S8",
+              "formula": "G(((rising(queryRecipe) AND NOT rising(addRecipe) AND NOT rising(deleteRecipe) AND NOT rising(modifyRecipe)) -> ((NOT ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID)) -> (error AND status = 32769)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[1].recipeID AND recipeQueryResult.ingredientType = recipe[1].ingredientType AND recipeQueryResult.ingredientRatio = recipe[1].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[1].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[2].recipeID AND recipeQueryResult.ingredientType = recipe[2].ingredientType AND recipeQueryResult.ingredientRatio = recipe[2].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[2].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[3].recipeID AND recipeQueryResult.ingredientType = recipe[3].ingredientType AND recipeQueryResult.ingredientRatio = recipe[3].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[3].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[4].recipeID AND recipeQueryResult.ingredientType = recipe[4].ingredientType AND recipeQueryResult.ingredientRatio = recipe[4].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[4].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[5].recipeID AND recipeQueryResult.ingredientType = recipe[5].ingredientType AND recipeQueryResult.ingredientRatio = recipe[5].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[5].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[6].recipeID AND recipeQueryResult.ingredientType = recipe[6].ingredientType AND recipeQueryResult.ingredientRatio = recipe[6].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[6].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[7].recipeID AND recipeQueryResult.ingredientType = recipe[7].ingredientType AND recipeQueryResult.ingredientRatio = recipe[7].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[7].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[8].recipeID AND recipeQueryResult.ingredientType = recipe[8].ingredientType AND recipeQueryResult.ingredientRatio = recipe[8].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[8].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[9].recipeID AND recipeQueryResult.ingredientType = recipe[9].ingredientType AND recipeQueryResult.ingredientRatio = recipe[9].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[9].productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID) -> (NOT error AND status = 0 AND recipeQueryResult.recipeID = recipe[10].recipeID AND recipeQueryResult.ingredientType = recipe[10].ingredientType AND recipeQueryResult.ingredientRatio = recipe[10].ingredientRatio AND recipeQueryResult.productionTemperature = recipe[10].productionTemperature)))))",
+              "at": 2,
+              "explanation": "",
+              "trace": [
+                {
+                  "addrecipe": false,
+                  "deleterecipe": false,
+                  "modifyrecipe": true,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": false,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": true,
+                  "status": 32773,
+                  "recipe": [
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "tmp_i": 10,
+                  "tmp_idx": 0,
+                  "tmp_empty": 0,
+                  "tmp_duplicate": false,
+                  "tmp_count": 1
+                },
+                {
+                  "addrecipe": false,
+                  "deleterecipe": false,
+                  "modifyrecipe": true,
+                  "queryrecipe": true,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": false,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": true,
+                  "status": 32768,
+                  "recipe": [
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "tmp_i": 10,
+                  "tmp_idx": 0,
+                  "tmp_empty": 0,
+                  "tmp_duplicate": false,
+                  "tmp_count": 2
+                }
+              ]
+            },
+            {
+              "id": "S9",
+              "formula": "G((((rising(addRecipe) AND NOT rising(queryRecipe) AND NOT rising(deleteRecipe) AND NOT rising(modifyRecipe)) AND recipeIn.recipeID <> 0) -> ((recipeAdded -> (NOT error AND status = 0 AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) -> (recipe[1].recipeID = recipeIn.recipeID AND recipe[1].ingredientType = recipeIn.ingredientType AND recipe[1].ingredientRatio = recipeIn.ingredientRatio AND recipe[1].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) -> (recipe[2].recipeID = recipeIn.recipeID AND recipe[2].ingredientType = recipeIn.ingredientType AND recipe[2].ingredientRatio = recipeIn.ingredientRatio AND recipe[2].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) -> (recipe[3].recipeID = recipeIn.recipeID AND recipe[3].ingredientType = recipeIn.ingredientType AND recipe[3].ingredientRatio = recipeIn.ingredientRatio AND recipe[3].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) -> (recipe[4].recipeID = recipeIn.recipeID AND recipe[4].ingredientType = recipeIn.ingredientType AND recipe[4].ingredientRatio = recipeIn.ingredientRatio AND recipe[4].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) -> (recipe[5].recipeID = recipeIn.recipeID AND recipe[5].ingredientType = recipeIn.ingredientType AND recipe[5].ingredientRatio = recipeIn.ingredientRatio AND recipe[5].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) -> (recipe[6].recipeID = recipeIn.recipeID AND recipe[6].ingredientType = recipeIn.ingredientType AND recipe[6].ingredientRatio = recipeIn.ingredientRatio AND recipe[6].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0 AND recipe[5].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) -> (recipe[7].recipeID = recipeIn.recipeID AND recipe[7].ingredientType = recipeIn.ingredientType AND recipe[7].ingredientRatio = recipeIn.ingredientRatio AND recipe[7].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0 AND recipe[5].recipeID <> 0 AND recipe[6].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) -> (recipe[8].recipeID = recipeIn.recipeID AND recipe[8].ingredientType = recipeIn.ingredientType AND recipe[8].ingredientRatio = recipeIn.ingredientRatio AND recipe[8].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0 AND recipe[5].recipeID <> 0 AND recipe[6].recipeID <> 0 AND recipe[7].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) -> (recipe[9].recipeID = recipeIn.recipeID AND recipe[9].ingredientType = recipeIn.ingredientType AND recipe[9].ingredientRatio = recipeIn.ingredientRatio AND recipe[9].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0 AND recipe[5].recipeID <> 0 AND recipe[6].recipeID <> 0 AND recipe[7].recipeID <> 0 AND recipe[8].recipeID <> 0)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID) -> (recipe[10].recipeID = recipeIn.recipeID AND recipe[10].ingredientType = recipeIn.ingredientType AND recipe[10].ingredientRatio = recipeIn.ingredientRatio AND recipe[10].productionTemperature = recipeIn.productionTemperature AND recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0 AND recipe[5].recipeID <> 0 AND recipe[6].recipeID <> 0 AND recipe[7].recipeID <> 0 AND recipe[8].recipeID <> 0 AND recipe[9].recipeID <> 0)))) AND ((NOT recipeAdded AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID))) -> (error AND status = 32770)) AND ((NOT recipeAdded AND NOT ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID))) -> ((recipe[1].recipeID <> 0 AND recipe[2].recipeID <> 0 AND recipe[3].recipeID <> 0 AND recipe[4].recipeID <> 0 AND recipe[5].recipeID <> 0 AND recipe[6].recipeID <> 0 AND recipe[7].recipeID <> 0 AND recipe[8].recipeID <> 0 AND recipe[9].recipeID <> 0 AND recipe[10].recipeID <> 0) AND error AND status = 32771)))))",
+              "at": 2,
+              "explanation": "",
+              "trace": [
+                {
+                  "addrecipe": false,
+                  "deleterecipe": false,
+                  "modifyrecipe": true,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": false,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": true,
+                  "status": 32773,
+                  "recipe": [
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "tmp_i": 10,
+                  "tmp_idx": 0,
+                  "tmp_empty": 0,
+                  "tmp_duplicate": false,
+                  "tmp_count": 1
+                },
+                {
+                  "addrecipe": true,
+                  "deleterecipe": false,
+                  "modifyrecipe": true,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": false,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": true,
+                  "status": 32768,
+                  "recipe": [
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "tmp_i": 10,
+                  "tmp_idx": 0,
+                  "tmp_empty": 0,
+                  "tmp_duplicate": false,
+                  "tmp_count": 2
+                }
+              ]
+            },
+            {
+              "id": "S11",
+              "formula": "G(((rising(modifyRecipe) AND NOT rising(queryRecipe) AND NOT rising(addRecipe) AND NOT rising(deleteRecipe)) -> ((NOT ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) OR (recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID)) -> (error AND status = 32773 AND NOT recipeModified)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[1].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[1].recipeID = recipeIn.recipeID AND recipe[1].ingredientType = recipeIn.ingredientType AND recipe[1].ingredientRatio = recipeIn.ingredientRatio AND recipe[1].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[2].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[2].recipeID = recipeIn.recipeID AND recipe[2].ingredientType = recipeIn.ingredientType AND recipe[2].ingredientRatio = recipeIn.ingredientRatio AND recipe[2].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[3].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[3].recipeID = recipeIn.recipeID AND recipe[3].ingredientType = recipeIn.ingredientType AND recipe[3].ingredientRatio = recipeIn.ingredientRatio AND recipe[3].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[4].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[4].recipeID = recipeIn.recipeID AND recipe[4].ingredientType = recipeIn.ingredientType AND recipe[4].ingredientRatio = recipeIn.ingredientRatio AND recipe[4].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[5].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[5].recipeID = recipeIn.recipeID AND recipe[5].ingredientType = recipeIn.ingredientType AND recipe[5].ingredientRatio = recipeIn.ingredientRatio AND recipe[5].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[6].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[6].recipeID = recipeIn.recipeID AND recipe[6].ingredientType = recipeIn.ingredientType AND recipe[6].ingredientRatio = recipeIn.ingredientRatio AND recipe[6].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[7].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[7].recipeID = recipeIn.recipeID AND recipe[7].ingredientType = recipeIn.ingredientType AND recipe[7].ingredientRatio = recipeIn.ingredientRatio AND recipe[7].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[8].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[8].recipeID = recipeIn.recipeID AND recipe[8].ingredientType = recipeIn.ingredientType AND recipe[8].ingredientRatio = recipeIn.ingredientRatio AND recipe[8].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[9].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[9].recipeID = recipeIn.recipeID AND recipe[9].ingredientType = recipeIn.ingredientType AND recipe[9].ingredientRatio = recipeIn.ingredientRatio AND recipe[9].productionTemperature = recipeIn.productionTemperature)) AND ((recipeIn.recipeID <> 0 AND recipeIn.recipeID = recipe[10].recipeID) -> (recipeModified AND NOT error AND status = 0 AND recipe[10].recipeID = recipeIn.recipeID AND recipe[10].ingredientType = recipeIn.ingredientType AND recipe[10].ingredientRatio = recipeIn.ingredientRatio AND recipe[10].productionTemperature = recipeIn.productionTemperature)))))",
+              "at": 2,
+              "explanation": "",
+              "trace": [
+                {
+                  "addrecipe": false,
+                  "deleterecipe": true,
+                  "modifyrecipe": false,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": false,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": true,
+                  "status": 32772,
+                  "recipe": [
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "tmp_i": 10,
+                  "tmp_idx": 0,
+                  "tmp_empty": 0,
+                  "tmp_duplicate": false,
+                  "tmp_count": 1
+                },
+                {
+                  "addrecipe": false,
+                  "deleterecipe": true,
+                  "modifyrecipe": true,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": false,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": true,
+                  "status": 32768,
+                  "recipe": [
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "tmp_i": 10,
+                  "tmp_idx": 0,
+                  "tmp_empty": 0,
+                  "tmp_duplicate": false,
+                  "tmp_count": 2
+                }
+              ]
+            }
+          ],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 23.343999999997322,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-03_c6275b04fd",
+            "source_sha256": "00f91d7a8e54351e58786533292c10d7f3271113ee54caea8c47ac73e8821f47",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "input_partition": {
+            "original_combinations": 128,
+            "classes": {},
+            "representative_combinations": 128
+          },
+          "search": {
+            "algorithm": "finite_window_product_bfs",
+            "stop_reason": "time_limit",
+            "completed_depth": 3,
+            "current_depth": 4,
+            "elapsed_seconds": 30.0,
+            "edges_checked": 51507,
+            "frontier_states": 1748,
+            "product_states": 2974,
+            "states_explored": 1133,
+            "input_space_size": 128
+          },
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "9fe28a3be6dd723ee454356de11663e0850bcd8dc9e160b78f63c41bb7785ff7",
+          "source_sha256": "00f91d7a8e54351e58786533292c10d7f3271113ee54caea8c47ac73e8821f47",
+          "problem_sha256": "d2ff174e73c207d97f3b81b8fb08546ededd376e7a4d0433b17865d420a95467",
+          "mc_timeout_seconds": 35,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {},
+          "cache_hit": false,
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "bounded",
+          "candidate_text_rewritten": false,
+          "task_json_sha256": "0fbf2994aa007860d772b5ca1710e80ded91d699a19fcf318285378ecce9c108",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated",
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          }
+        }
+      },
+      "feedback": "Functional checks: 21/21; bounded status: violated.\nConfirmed bounded property violation: S2, position 1. Review the public contract; no private observer definitions are provided.\nConfirmed bounded property violation: S7, position 2. Review the public contract; no private observer definitions are provided.\nConfirmed bounded property violation: S10, position 2. Review the public contract; no private observer definitions are provided.",
+      "timing": {
+        "static_seconds": 0.468,
+        "native_queue_seconds": 27.422,
+        "native_compile_seconds": 23.344,
+        "functional_seconds": 0.25,
+        "formal_queue_seconds": 0.0,
+        "bounded_seconds": 30.75
+      },
+      "idx": 1,
+      "code": "TYPE ST_Recipe :\nSTRUCT\n    recipeID : INT;\n    ingredientType : INT;\n    ingredientRatio : REAL;\n    productionTemperature : REAL;\nEND_STRUCT\nEND_TYPE;\n\nFUNCTION_BLOCK RecipeManagement\nVAR_INPUT\n    addRecipe : BOOL;\n    deleteRecipe : BOOL;\n    modifyRecipe : BOOL;\n    queryRecipe : BOOL;\n    recipeIn : ST_Recipe;\nEND_VAR\nVAR_OUTPUT\n    recipeAdded : BOOL;\n    recipeDeleted : BOOL;\n    recipeModified : BOOL;\n    recipeQueryResult : ST_Recipe;\n    error : BOOL;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    recipe : ARRAY[1..10] OF ST_Recipe;\nEND_VAR\nVAR\n    tmp_i : INT;\n    tmp_idx : INT;\n    tmp_empty : INT;\n    tmp_duplicate : BOOL;\n    tmp_count : INT;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\n   Pub outputs recipeAdded/Deleted/Modified are one-scan success pulses; no latch.\n   error/status are combinational: FALSE/0 on success or idle, TRUE/code on specified failure.\n   recipe array persists in IN_OUT slots. Add uses first empty slot; delete clears ID only; modify replaces whole recipe.\n   Query/delete/modify search only non-zero recipeID; add duplicate check includes recipeID 0 as empty-slot duplicate.\n   Multiple simultaneous request inputs are unspecified; implementation reports error=TRUE, status=16#8000 and performs none.\n   Boundary: recipeID 0 is never a queryable/deletable/modifiable identifier.\n*)\n(* CONTRACT_RULES [] *)\n\nrecipeAdded := FALSE;\nrecipeDeleted := FALSE;\nrecipeModified := FALSE;\nerror := FALSE;\nstatus := 0;\nrecipeQueryResult.recipeID := 0;\nrecipeQueryResult.ingredientType := 0;\nrecipeQueryResult.ingredientRatio := 0.0;\nrecipeQueryResult.productionTemperature := 0.0;\n\ntmp_count := 0;\nIF addRecipe THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF deleteRecipe THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF modifyRecipe THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF queryRecipe THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\n\nIF tmp_count > 1 THEN\n    error := TRUE;\n    status := 16#8000;\n    RETURN;\nEND_IF;\n\nIF addRecipe THEN\n    tmp_duplicate := FALSE;\n    FOR tmp_i := 1 TO 10 DO\n        IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n            tmp_duplicate := TRUE;\n            EXIT;\n        END_IF;\n    END_FOR;\n\n    IF tmp_duplicate THEN\n        error := TRUE;\n        status := 16#8002;\n    ELSE\n        tmp_empty := 0;\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = 0 THEN\n                tmp_empty := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n\n        IF tmp_empty = 0 THEN\n            error := TRUE;\n            status := 16#8003;\n        ELSE\n            recipe[tmp_empty] := recipeIn;\n            recipeAdded := TRUE;\n        END_IF;\n    END_IF;\n\nELSIF deleteRecipe THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8004;\n    ELSE\n        recipe[tmp_idx].recipeID := 0;\n        recipeDeleted := TRUE;\n    END_IF;\n\nELSIF modifyRecipe THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8005;\n    ELSE\n        recipe[tmp_idx] := recipeIn;\n        recipeModified := TRUE;\n    END_IF;\n\nELSIF queryRecipe THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8001;\n    ELSE\n        recipeQueryResult := recipe[tmp_idx];\n    END_IF;\nEND_IF;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "00f91d7a8e54351e58786533292c10d7f3271113ee54caea8c47ac73e8821f47",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 8,
+        "cited_public_clauses": []
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 5178,
+      "completion_tokens": 1836,
+      "cost_cny": 0.07597746,
+      "latency_s": 20.297,
+      "generation_seconds": 20.297,
+      "end_to_end_seconds": 102.547,
+      "format_edits": [],
+      "raw_source_sha256": "00f91d7a8e54351e58786533292c10d7f3271113ee54caea8c47ac73e8821f47",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": true,
+      "tests_passed": 21,
+      "tests_total": 21,
+      "verification_status": "violated",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 21,
+        "tests_passed": 21,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "h03-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "error": false,
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 1,
+                  "ingredientRatio": 10.0,
+                  "productionTemperature": 105.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ],
+              "recipeAdded": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 1,
+                "ingredientRatio": 10.0,
+                "productionTemperature": 105.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 1,
+                "ingredientRatio": 10.0,
+                "productionTemperature": 105.0
+              },
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 2
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 1,
+                  "ingredientRatio": 10.0,
+                  "productionTemperature": 105.0
+                },
+                {
+                  "recipeID": 2,
+                  "ingredientType": 2,
+                  "ingredientRatio": 20.0,
+                  "productionTemperature": 110.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ],
+              "recipeAdded": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 2,
+                "ingredientRatio": 20.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "recipeQueryResult": {
+                "recipeID": 2,
+                "ingredientType": 2,
+                "ingredientRatio": 20.0,
+                "productionTemperature": 110.0
+              },
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32770,
+              "recipeAdded": false
+            },
+            "actual": {
+              "error": true,
+              "recipeAdded": false,
+              "status": 32770
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeDeleted": true
+            },
+            "actual": {
+              "error": false,
+              "recipeDeleted": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 3
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 1,
+                  "ingredientRatio": 10.0,
+                  "productionTemperature": 105.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 3,
+                  "ingredientRatio": 30.0,
+                  "productionTemperature": 115.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ],
+              "recipeAdded": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeModified": true
+            },
+            "actual": {
+              "error": false,
+              "recipeModified": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 33,
+                "ingredientRatio": 3.3,
+                "productionTemperature": 210.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 33,
+                "ingredientRatio": 3.3,
+                "productionTemperature": 210.0
+              },
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32771,
+              "recipeAdded": false
+            },
+            "actual": {
+              "error": true,
+              "recipeAdded": false,
+              "status": 32771
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeDeleted": true
+            },
+            "actual": {
+              "error": false,
+              "recipeDeleted": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 2
+                },
+                {
+                  "recipeID": 3
+                },
+                {
+                  "recipeID": 4
+                },
+                {
+                  "recipeID": 11
+                },
+                {
+                  "recipeID": 6
+                },
+                {
+                  "recipeID": 7
+                },
+                {
+                  "recipeID": 8
+                },
+                {
+                  "recipeID": 9
+                },
+                {
+                  "recipeID": 10
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 2,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 4,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 11,
+                  "ingredientType": 11,
+                  "ingredientRatio": 110.0,
+                  "productionTemperature": 155.0
+                },
+                {
+                  "recipeID": 6,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 7,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 8,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 9,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 10,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ],
+              "recipeAdded": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32772
+            },
+            "actual": {
+              "error": true,
+              "status": 32772
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32773
+            },
+            "actual": {
+              "error": true,
+              "status": 32773
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "error": false,
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-add-deleteRecipe",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "$any": [
+                {
+                  "error": true
+                },
+                {
+                  "recipeAdded": true,
+                  "recipeDeleted": true
+                }
+              ]
+            },
+            "actual": {
+              "error": true,
+              "recipeAdded": false,
+              "recipeDeleted": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-add-modifyRecipe",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "$any": [
+                {
+                  "error": true
+                },
+                {
+                  "recipeAdded": true,
+                  "recipeModified": true
+                }
+              ]
+            },
+            "actual": {
+              "error": true,
+              "recipeAdded": false,
+              "recipeModified": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 1699,
+          "traces": 34514,
+          "specs_total": 11,
+          "specs_hold": 0,
+          "specs_violated": 1,
+          "specs_inconclusive": 10,
+          "violations": [
+            {
+              "id": "S2",
+              "formula": "G(error -> status = 32769 OR status = 32770 OR status = 32771 OR status = 32772 OR status = 32773)",
+              "at": 1,
+              "explanation": "",
+              "trace": [
+                {
+                  "addrecipe": false,
+                  "deleterecipe": true,
+                  "modifyrecipe": true,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": false,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": true,
+                  "status": 32768,
+                  "recipe": [
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "trg_add": {
+                    "CLK": false,
+                    "Q": false,
+                    "_M": false
+                  },
+                  "trg_delete": {
+                    "CLK": true,
+                    "Q": true,
+                    "_M": true
+                  },
+                  "trg_modify": {
+                    "CLK": true,
+                    "Q": true,
+                    "_M": true
+                  },
+                  "trg_query": {
+                    "CLK": false,
+                    "Q": false,
+                    "_M": false
+                  },
+                  "tmp_i": 0,
+                  "tmp_idx": 0,
+                  "tmp_empty": 0,
+                  "tmp_duplicate": false,
+                  "tmp_count": 2
+                }
+              ]
+            }
+          ],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 22.781000000002678,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-03_bc4df70c7c",
+            "source_sha256": "3ea34da6b2b975674e85eee8d6cf86dde5acaa6b21d6b834459de0291bbb7922",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "input_partition": {
+            "original_combinations": 128,
+            "classes": {},
+            "representative_combinations": 128
+          },
+          "search": {
+            "algorithm": "finite_window_product_bfs",
+            "stop_reason": "time_limit",
+            "completed_depth": 2,
+            "current_depth": 3,
+            "elapsed_seconds": 30.0,
+            "edges_checked": 34514,
+            "frontier_states": 66,
+            "product_states": 1699,
+            "states_explored": 1699,
+            "input_space_size": 128
+          },
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "9fe28a3be6dd723ee454356de11663e0850bcd8dc9e160b78f63c41bb7785ff7",
+          "source_sha256": "3ea34da6b2b975674e85eee8d6cf86dde5acaa6b21d6b834459de0291bbb7922",
+          "problem_sha256": "d2ff174e73c207d97f3b81b8fb08546ededd376e7a4d0433b17865d420a95467",
+          "mc_timeout_seconds": 35,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {},
+          "cache_hit": false,
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "bounded",
+          "candidate_text_rewritten": false,
+          "task_json_sha256": "0fbf2994aa007860d772b5ca1710e80ded91d699a19fcf318285378ecce9c108",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated",
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          }
+        }
+      },
+      "feedback": "Functional checks: 21/21; bounded status: violated.\nConfirmed bounded property violation: S2, position 1. Review the public contract; no private observer definitions are provided.",
+      "timing": {
+        "static_seconds": 0.313,
+        "native_queue_seconds": 16.39,
+        "native_compile_seconds": 22.781,
+        "functional_seconds": 0.266,
+        "formal_queue_seconds": 0.0,
+        "bounded_seconds": 30.547
+      },
+      "idx": 2,
+      "code": "TYPE ST_Recipe :\nSTRUCT\n    recipeID : INT;\n    ingredientType : INT;\n    ingredientRatio : REAL;\n    productionTemperature : REAL;\nEND_STRUCT\nEND_TYPE;\n\nFUNCTION_BLOCK RecipeManagement\nVAR_INPUT\n    addRecipe : BOOL;\n    deleteRecipe : BOOL;\n    modifyRecipe : BOOL;\n    queryRecipe : BOOL;\n    recipeIn : ST_Recipe;\nEND_VAR\nVAR_OUTPUT\n    recipeAdded : BOOL;\n    recipeDeleted : BOOL;\n    recipeModified : BOOL;\n    recipeQueryResult : ST_Recipe;\n    error : BOOL;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    recipe : ARRAY[1..10] OF ST_Recipe;\nEND_VAR\nVAR\n    trg_add : R_TRIG;\n    trg_delete : R_TRIG;\n    trg_modify : R_TRIG;\n    trg_query : R_TRIG;\n    tmp_i : INT;\n    tmp_idx : INT;\n    tmp_empty : INT;\n    tmp_duplicate : BOOL;\n    tmp_count : INT;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\n   Pub outputs recipeAdded/Deleted/Modified are one-scan success pulses; no latch.\n   error/status are combinational: FALSE/0 on success or idle, TRUE/code on specified failure.\n   recipe array persists in IN_OUT slots. Add uses first empty slot; delete clears ID only; modify replaces whole recipe.\n   Query/delete/modify search only non-zero recipeID; add duplicate check includes recipeID 0 as empty-slot duplicate.\n   Multiple simultaneous request inputs are unspecified; implementation reports error=TRUE, status=16#8000 and performs none.\n   Boundary: recipeID 0 is never a queryable/deletable/modifiable identifier.\n*)\n(* CONTRACT_RULES [] *)\n\ntrg_add(CLK := addRecipe);\ntrg_delete(CLK := deleteRecipe);\ntrg_modify(CLK := modifyRecipe);\ntrg_query(CLK := queryRecipe);\n\nrecipeAdded := FALSE;\nrecipeDeleted := FALSE;\nrecipeModified := FALSE;\nerror := FALSE;\nstatus := 0;\nrecipeQueryResult.recipeID := 0;\nrecipeQueryResult.ingredientType := 0;\nrecipeQueryResult.ingredientRatio := 0.0;\nrecipeQueryResult.productionTemperature := 0.0;\n\ntmp_count := 0;\nIF trg_add.Q THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF trg_delete.Q THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF trg_modify.Q THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF trg_query.Q THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\n\nIF tmp_count > 1 THEN\n    error := TRUE;\n    status := 16#8000;\n    RETURN;\nEND_IF;\n\nIF trg_add.Q THEN\n    tmp_duplicate := FALSE;\n    FOR tmp_i := 1 TO 10 DO\n        IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n            tmp_duplicate := TRUE;\n            EXIT;\n        END_IF;\n    END_FOR;\n\n    IF tmp_duplicate THEN\n        error := TRUE;\n        status := 16#8002;\n    ELSE\n        tmp_empty := 0;\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = 0 THEN\n                tmp_empty := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n\n        IF tmp_empty = 0 THEN\n            error := TRUE;\n            status := 16#8003;\n        ELSE\n            recipe[tmp_empty] := recipeIn;\n            recipeAdded := TRUE;\n        END_IF;\n    END_IF;\n\nELSIF trg_delete.Q THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8004;\n    ELSE\n        recipe[tmp_idx].recipeID := 0;\n        recipeDeleted := TRUE;\n    END_IF;\n\nELSIF trg_modify.Q THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8005;\n    ELSE\n        recipe[tmp_idx] := recipeIn;\n        recipeModified := TRUE;\n    END_IF;\n\nELSIF trg_query.Q THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8001;\n    ELSE\n        recipeQueryResult := recipe[tmp_idx];\n    END_IF;\nEND_IF;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "3ea34da6b2b975674e85eee8d6cf86dde5acaa6b21d6b834459de0291bbb7922",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 8,
+        "cited_public_clauses": []
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 5260,
+      "completion_tokens": 3086,
+      "cost_cny": 0.10322297999999998,
+      "latency_s": 39.203,
+      "generation_seconds": 39.203,
+      "end_to_end_seconds": 109.5,
+      "format_edits": [],
+      "raw_source_sha256": "3ea34da6b2b975674e85eee8d6cf86dde5acaa6b21d6b834459de0291bbb7922",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": true,
+      "tests_passed": 21,
+      "tests_total": 21,
+      "verification_status": "violated",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 21,
+        "tests_passed": 21,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "h03-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "error": false,
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 1,
+                  "ingredientRatio": 10.0,
+                  "productionTemperature": 105.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ],
+              "recipeAdded": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 1,
+                "ingredientRatio": 10.0,
+                "productionTemperature": 105.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 1,
+                "ingredientRatio": 10.0,
+                "productionTemperature": 105.0
+              },
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 2
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 1,
+                  "ingredientRatio": 10.0,
+                  "productionTemperature": 105.0
+                },
+                {
+                  "recipeID": 2,
+                  "ingredientType": 2,
+                  "ingredientRatio": 20.0,
+                  "productionTemperature": 110.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ],
+              "recipeAdded": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 2,
+                "ingredientRatio": 20.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "recipeQueryResult": {
+                "recipeID": 2,
+                "ingredientType": 2,
+                "ingredientRatio": 20.0,
+                "productionTemperature": 110.0
+              },
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32770,
+              "recipeAdded": false
+            },
+            "actual": {
+              "error": true,
+              "recipeAdded": false,
+              "status": 32770
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeDeleted": true
+            },
+            "actual": {
+              "error": false,
+              "recipeDeleted": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 3
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                },
+                {
+                  "recipeID": 0
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 1,
+                  "ingredientRatio": 10.0,
+                  "productionTemperature": 105.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 3,
+                  "ingredientRatio": 30.0,
+                  "productionTemperature": 115.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 0,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ],
+              "recipeAdded": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeModified": true
+            },
+            "actual": {
+              "error": false,
+              "recipeModified": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 33,
+                "ingredientRatio": 3.3,
+                "productionTemperature": 210.0
+              }
+            },
+            "actual": {
+              "error": false,
+              "recipeQueryResult": {
+                "recipeID": 1,
+                "ingredientType": 33,
+                "ingredientRatio": 3.3,
+                "productionTemperature": 210.0
+              },
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32771,
+              "recipeAdded": false
+            },
+            "actual": {
+              "error": true,
+              "recipeAdded": false,
+              "status": 32771
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeDeleted": true
+            },
+            "actual": {
+              "error": false,
+              "recipeDeleted": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": false,
+              "status": 0,
+              "recipeAdded": true,
+              "recipe": [
+                {
+                  "recipeID": 1
+                },
+                {
+                  "recipeID": 2
+                },
+                {
+                  "recipeID": 3
+                },
+                {
+                  "recipeID": 4
+                },
+                {
+                  "recipeID": 11
+                },
+                {
+                  "recipeID": 6
+                },
+                {
+                  "recipeID": 7
+                },
+                {
+                  "recipeID": 8
+                },
+                {
+                  "recipeID": 9
+                },
+                {
+                  "recipeID": 10
+                }
+              ]
+            },
+            "actual": {
+              "error": false,
+              "recipe": [
+                {
+                  "recipeID": 1,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 2,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 3,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 4,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 11,
+                  "ingredientType": 11,
+                  "ingredientRatio": 110.0,
+                  "productionTemperature": 155.0
+                },
+                {
+                  "recipeID": 6,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 7,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 8,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 9,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                },
+                {
+                  "recipeID": 10,
+                  "ingredientType": 0,
+                  "ingredientRatio": 0.0,
+                  "productionTemperature": 0.0
+                }
+              ],
+              "recipeAdded": true,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32769
+            },
+            "actual": {
+              "error": true,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32772
+            },
+            "actual": {
+              "error": true,
+              "status": 32772
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "error": true,
+              "status": 32773
+            },
+            "actual": {
+              "error": true,
+              "status": 32773
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h03-19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "error": false,
+              "status": 0
+            },
+            "actual": {
+              "error": false,
+              "recipeAdded": false,
+              "recipeDeleted": false,
+              "recipeModified": false,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-add-deleteRecipe",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "$any": [
+                {
+                  "error": true
+                },
+                {
+                  "recipeAdded": true,
+                  "recipeDeleted": true
+                }
+              ]
+            },
+            "actual": {
+              "error": true,
+              "recipeAdded": false,
+              "recipeDeleted": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-add-modifyRecipe",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "$any": [
+                {
+                  "error": true
+                },
+                {
+                  "recipeAdded": true,
+                  "recipeModified": true
+                }
+              ]
+            },
+            "actual": {
+              "error": true,
+              "recipeAdded": false,
+              "recipeModified": false
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 1448,
+          "traces": 28565,
+          "specs_total": 11,
+          "specs_hold": 0,
+          "specs_violated": 1,
+          "specs_inconclusive": 10,
+          "violations": [
+            {
+              "id": "S2",
+              "formula": "G(error -> status = 32769 OR status = 32770 OR status = 32771 OR status = 32772 OR status = 32773)",
+              "at": 1,
+              "explanation": "",
+              "trace": [
+                {
+                  "addrecipe": false,
+                  "deleterecipe": true,
+                  "modifyrecipe": true,
+                  "queryrecipe": false,
+                  "recipein": {
+                    "recipeID": 1,
+                    "ingredientType": 1,
+                    "ingredientRatio": 10.0,
+                    "productionTemperature": 105.0
+                  },
+                  "recipeadded": false,
+                  "recipedeleted": false,
+                  "recipemodified": false,
+                  "recipequeryresult": {
+                    "recipeID": 0,
+                    "ingredientType": 0,
+                    "ingredientRatio": 0.0,
+                    "productionTemperature": 0.0
+                  },
+                  "error": true,
+                  "status": 32768,
+                  "recipe": [
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    },
+                    {
+                      "recipeID": 0,
+                      "ingredientType": 0,
+                      "ingredientRatio": 0.0,
+                      "productionTemperature": 0.0
+                    }
+                  ],
+                  "trg_add": {
+                    "CLK": false,
+                    "Q": false,
+                    "_M": false
+                  },
+                  "trg_delete": {
+                    "CLK": true,
+                    "Q": true,
+                    "_M": true
+                  },
+                  "trg_modify": {
+                    "CLK": true,
+                    "Q": true,
+                    "_M": true
+                  },
+                  "trg_query": {
+                    "CLK": false,
+                    "Q": false,
+                    "_M": false
+                  },
+                  "tmp_i": 0,
+                  "tmp_idx": 0,
+                  "tmp_empty": 0,
+                  "tmp_duplicate": false,
+                  "tmp_count": 2
+                }
+              ]
+            }
+          ],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 35.07799999999406,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-hard-03_a8ca22fdf5",
+            "source_sha256": "3ad36f2b97b06cd328288bb5053d3abb252f096ec0f0f828ce16cc9aa15a7c35",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "input_partition": {
+            "original_combinations": 128,
+            "classes": {},
+            "representative_combinations": 128
+          },
+          "search": {
+            "algorithm": "finite_window_product_bfs",
+            "stop_reason": "time_limit",
+            "completed_depth": 2,
+            "current_depth": 3,
+            "elapsed_seconds": 30.0,
+            "edges_checked": 28565,
+            "frontier_states": 112,
+            "product_states": 1448,
+            "states_explored": 1448,
+            "input_space_size": 128
+          },
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "9fe28a3be6dd723ee454356de11663e0850bcd8dc9e160b78f63c41bb7785ff7",
+          "source_sha256": "3ad36f2b97b06cd328288bb5053d3abb252f096ec0f0f828ce16cc9aa15a7c35",
+          "problem_sha256": "d2ff174e73c207d97f3b81b8fb08546ededd376e7a4d0433b17865d420a95467",
+          "mc_timeout_seconds": 35,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {},
+          "cache_hit": false,
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "bounded",
+          "candidate_text_rewritten": false,
+          "task_json_sha256": "0fbf2994aa007860d772b5ca1710e80ded91d699a19fcf318285378ecce9c108",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated",
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          }
+        }
+      },
+      "feedback": "Functional checks: 21/21; bounded status: violated.\nConfirmed bounded property violation: S2, position 1. Review the public contract; no private observer definitions are provided.",
+      "timing": {
+        "static_seconds": 0.266,
+        "native_queue_seconds": 65.984,
+        "native_compile_seconds": 35.078,
+        "functional_seconds": 0.25,
+        "formal_queue_seconds": 0.0,
+        "bounded_seconds": 30.688
+      },
+      "idx": 3,
+      "code": "TYPE ST_Recipe :\nSTRUCT\n    recipeID : INT;\n    ingredientType : INT;\n    ingredientRatio : REAL;\n    productionTemperature : REAL;\nEND_STRUCT\nEND_TYPE;\n\nFUNCTION_BLOCK RecipeManagement\nVAR_INPUT\n    addRecipe : BOOL;\n    deleteRecipe : BOOL;\n    modifyRecipe : BOOL;\n    queryRecipe : BOOL;\n    recipeIn : ST_Recipe;\nEND_VAR\nVAR_OUTPUT\n    recipeAdded : BOOL;\n    recipeDeleted : BOOL;\n    recipeModified : BOOL;\n    recipeQueryResult : ST_Recipe;\n    error : BOOL;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    recipe : ARRAY[1..10] OF ST_Recipe;\nEND_VAR\nVAR\n    trg_add : R_TRIG;\n    trg_delete : R_TRIG;\n    trg_modify : R_TRIG;\n    trg_query : R_TRIG;\n    tmp_i : INT;\n    tmp_idx : INT;\n    tmp_empty : INT;\n    tmp_duplicate : BOOL;\n    tmp_count : INT;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\n   Pub outputs recipeAdded/Deleted/Modified are one-scan success pulses; no latch.\n   error/status are combinational: FALSE/0 on success or idle, TRUE/code on specified failure.\n   recipe array persists in IN_OUT slots. Add uses first empty slot; delete clears ID only; modify replaces whole recipe.\n   Query/delete/modify search only non-zero recipeID; add duplicate check includes recipeID 0 as empty-slot duplicate.\n   Multiple simultaneous request inputs are unspecified; implementation reports error=TRUE, status=16#8000 and performs none.\n   Boundary: recipeID 0 is never a queryable/deletable/modifiable identifier.\n   recipeQueryResult is retained after a successful query until the next successful query. It is not cleared on idle or on an unsuccessful query.\n*)\n(* CONTRACT_RULES [] *)\n\ntrg_add(CLK := addRecipe);\ntrg_delete(CLK := deleteRecipe);\ntrg_modify(CLK := modifyRecipe);\ntrg_query(CLK := queryRecipe);\n\nrecipeAdded := FALSE;\nrecipeDeleted := FALSE;\nrecipeModified := FALSE;\nerror := FALSE;\nstatus := 0;\n\ntmp_count := 0;\nIF trg_add.Q THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF trg_delete.Q THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF trg_modify.Q THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF trg_query.Q THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\n\nIF tmp_count > 1 THEN\n    error := TRUE;\n    status := 16#8000;\n    RETURN;\nEND_IF;\n\nIF trg_add.Q THEN\n    tmp_duplicate := FALSE;\n    FOR tmp_i := 1 TO 10 DO\n        IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n            tmp_duplicate := TRUE;\n            EXIT;\n        END_IF;\n    END_FOR;\n\n    IF tmp_duplicate THEN\n        error := TRUE;\n        status := 16#8002;\n    ELSE\n        tmp_empty := 0;\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = 0 THEN\n                tmp_empty := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n\n        IF tmp_empty = 0 THEN\n            error := TRUE;\n            status := 16#8003;\n        ELSE\n            recipe[tmp_empty] := recipeIn;\n            recipeAdded := TRUE;\n        END_IF;\n    END_IF;\n\nELSIF trg_delete.Q THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8004;\n    ELSE\n        recipe[tmp_idx].recipeID := 0;\n        recipeDeleted := TRUE;\n    END_IF;\n\nELSIF trg_modify.Q THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8005;\n    ELSE\n        recipe[tmp_idx] := recipeIn;\n        recipeModified := TRUE;\n    END_IF;\n\nELSIF trg_query.Q THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8001;\n    ELSE\n        recipeQueryResult := recipe[tmp_idx];\n    END_IF;\nEND_IF;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "3ad36f2b97b06cd328288bb5053d3abb252f096ec0f0f828ce16cc9aa15a7c35",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 9,
+        "cited_public_clauses": []
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 5387,
+      "completion_tokens": 9979,
+      "cost_cny": 0.25115364,
+      "latency_s": 139.86,
+      "generation_seconds": 139.86,
+      "end_to_end_seconds": 272.141,
+      "format_edits": [],
+      "raw_source_sha256": "3ad36f2b97b06cd328288bb5053d3abb252f096ec0f0f828ce16cc9aa15a7c35",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "maximum_four_candidates",
+  "tests_total": 21,
+  "study_plan_sha256": "ad44abcb7bc1484bd393497f301198527a0666c9cb5597c89aa0f7c287e1b833",
+  "started_at": "2026-11-13T11:55:41.874248+08:00",
+  "wall_seconds": 597.078,
+  "finished_at": "2026-11-13T12:05:38.817269+08:00"
+}

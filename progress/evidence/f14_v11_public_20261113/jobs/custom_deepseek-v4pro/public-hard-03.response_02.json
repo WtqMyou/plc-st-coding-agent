@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794542259,
+    "id": "resp_021794542257913bc68ba76535d4d8d120d8e883d298b956ce240",
+    "max_output_tokens": 24576,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179454225922300000000000000000000ffffac1502c038c794",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need answer with complete ST block, likely only need add END_FUNCTION_BLOCK at end? Candidate source context lines 1-162, missing END_FUNCTION_BLOCK. Compiler says missing final end keyword and no executable POU. Need emit complete repaired block. We need ensure all endings correct. Original block had TYPE ST_Recipe ... END_TYPE, FUNCTION_BLOCK RecipeManagement ... all declarations, code ends with END_IF. Need add END_FUNCTION_BLOCK at end. Also perhaps ensure balanced: in candidate source context line 161 END_IF; line 162 END_IF; Then add END_FUNCTION_BLOCK.\n\nBut we need preserve full code. Need output single fenced st block. Include engineering contract comments and contract rules. We can reuse original code with fix. Need ensure no missing semicolon etc. Let's reconstruct full original candidate with fix. Need verify code itself semantically. There may be latent functional issues? We are told only syntax defect is reported, preserve algorithm and fix syntax only. So only add END_FUNCTION_BLOCK. But since candidate source only context lines 1-2 and 161-162, we have full original code from prior answer. We need output complete repaired block, balanced nesting. Add final END_FUNCTION_BLOCK. \n\nWe should maybe add comment? Keep original contract. Ensure final block fenced st. Let's produce code exactly as original but with END_FUNCTION_BLOCK at line after END_IF. Check all IF/END_IF: nested FOR loops etc. At line 161 END_IF closes ELSIF queryRecipe? Actually original had:\nIF tmp_count > 1 THEN ... END_IF;\nIF addRecipe THEN ... ELSIF delete ... ELSIF modify ... ELSIF query ... END_IF;\nSo two top-level IFs. At end line 161 and 162? Let's reconstruct original full code from initial response.\n\nFull original code:\n\nTYPE ST_Recipe :\nSTRUCT\n    recipeID : INT;\n    ingredientType : INT;\n    ingredientRatio : REAL;\n    productionTemperature : REAL;\nEND_STRUCT\nEND_TYPE;\n\nFUNCTION_BLOCK RecipeManagement\nVAR_INPUT\n...\nEND_VAR\nVAR_OUTPUT ...\nEND_VAR\nVAR_IN_OUT ...\nEND_VAR\nVAR\n...\nEND_VAR\n\n(* ENGINEERING_CONTRACT... *)\n(* CONTRACT_RULES [] *)\n\nrecipeAdded := FALSE;\n...\ntmp_count := 0;\nIF addRecipe THEN tmp_count := tmp_count + 1; END_IF;\n...\nIF tmp_count > 1 THEN\n    error := TRUE;\n    status := 16#8000;\n    RETURN;\nEND_IF;\n\nIF addRecipe THEN\n...\nELSIF deleteRecipe THEN\n...\nELSIF modifyRecipe THEN\n...\nELSIF queryRecipe THEN\n...\nEND_IF;\n\nMissing END_FUNCTION_BLOCK. In generated source context line 161 END_IF; line 162 END_IF; maybe line 161 first IF tmp_count >1 END_IF, line 162 second ELSIF chain END_IF? Actually line numbering: maybe line 161 END_IF; line 162 END_IF; So add line 163 END_FUNCTION_BLOCK.\n\nNeed output entire block. Ensure no stray semicolon after END_STRUCT? We have END_STRUCT then END_TYPE; correct.\n\nNeed maybe include comments in code exactly. We'll output full fixed code. Use appropriate syntax, no BEGIN. Use fenced st."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```iecst\nTYPE ST_Recipe :\nSTRUCT\n    recipeID : INT;\n    ingredientType : INT;\n    ingredientRatio : REAL;\n    productionTemperature : REAL;\nEND_STRUCT\nEND_TYPE;\n\nFUNCTION_BLOCK RecipeManagement\nVAR_INPUT\n    addRecipe : BOOL;\n    deleteRecipe : BOOL;\n    modifyRecipe : BOOL;\n    queryRecipe : BOOL;\n    recipeIn : ST_Recipe;\nEND_VAR\nVAR_OUTPUT\n    recipeAdded : BOOL;\n    recipeDeleted : BOOL;\n    recipeModified : BOOL;\n    recipeQueryResult : ST_Recipe;\n    error : BOOL;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    recipe : ARRAY[1..10] OF ST_Recipe;\nEND_VAR\nVAR\n    tmp_i : INT;\n    tmp_idx : INT;\n    tmp_empty : INT;\n    tmp_duplicate : BOOL;\n    tmp_count : INT;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\n   Pub outputs recipeAdded/Deleted/Modified are one-scan success pulses; no latch.\n   error/status are combinational: FALSE/0 on success or idle, TRUE/code on specified failure.\n   recipe array persists in IN_OUT slots. Add uses first empty slot; delete clears ID only; modify replaces whole recipe.\n   Query/delete/modify search only non-zero recipeID; add duplicate check includes recipeID 0 as empty-slot duplicate.\n   Multiple simultaneous request inputs are unspecified; implementation reports error=TRUE, status=16#8000 and performs none.\n   Boundary: recipeID 0 is never a queryable/deletable/modifiable identifier.\n*)\n(* CONTRACT_RULES [] *)\n\nrecipeAdded := FALSE;\nrecipeDeleted := FALSE;\nrecipeModified := FALSE;\nerror := FALSE;\nstatus := 0;\nrecipeQueryResult.recipeID := 0;\nrecipeQueryResult.ingredientType := 0;\nrecipeQueryResult.ingredientRatio := 0.0;\nrecipeQueryResult.productionTemperature := 0.0;\n\ntmp_count := 0;\nIF addRecipe THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF deleteRecipe THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF modifyRecipe THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\nIF queryRecipe THEN\n    tmp_count := tmp_count + 1;\nEND_IF;\n\nIF tmp_count > 1 THEN\n    error := TRUE;\n    status := 16#8000;\n    RETURN;\nEND_IF;\n\nIF addRecipe THEN\n    tmp_duplicate := FALSE;\n    FOR tmp_i := 1 TO 10 DO\n        IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n            tmp_duplicate := TRUE;\n            EXIT;\n        END_IF;\n    END_FOR;\n\n    IF tmp_duplicate THEN\n        error := TRUE;\n        status := 16#8002;\n    ELSE\n        tmp_empty := 0;\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = 0 THEN\n                tmp_empty := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n\n        IF tmp_empty = 0 THEN\n            error := TRUE;\n            status := 16#8003;\n        ELSE\n            recipe[tmp_empty] := recipeIn;\n            recipeAdded := TRUE;\n        END_IF;\n    END_IF;\n\nELSIF deleteRecipe THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8004;\n    ELSE\n        recipe[tmp_idx].recipeID := 0;\n        recipeDeleted := TRUE;\n    END_IF;\n\nELSIF modifyRecipe THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8005;\n    ELSE\n        recipe[tmp_idx] := recipeIn;\n        recipeModified := TRUE;\n    END_IF;\n\nELSIF queryRecipe THEN\n    tmp_idx := 0;\n    IF recipeIn.recipeID <> 0 THEN\n        FOR tmp_i := 1 TO 10 DO\n            IF recipe[tmp_i].recipeID = recipeIn.recipeID THEN\n                tmp_idx := tmp_i;\n                EXIT;\n            END_IF;\n        END_FOR;\n    END_IF;\n\n    IF tmp_idx = 0 THEN\n        error := TRUE;\n        status := 16#8001;\n    ELSE\n        recipeQueryResult := recipe[tmp_idx];\n    END_IF;\nEND_IF;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179454226843700000000000000000000ffffac1502c01fe08f",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 5178,
+      "output_tokens": 1836,
+      "total_tokens": 7014,
+      "input_tokens_details": {
+        "cached_tokens": 2048
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 714
+      },
+      "cost": "¥0.061902"
+    }
+  }
+}

@@ -1,0 +1,393 @@
+{
+  "job_id": "custom_deepseek-v4pro/public-hard-04",
+  "pid": "public-hard-04",
+  "condition": "custom_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 89,
+            "code": "E_BAD_STMT",
+            "message": "无法解析的语句，遇到 '^'"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "4d0f31552bafbe0ca803628a9042f724e63ab16ce587338ac4fc7f9389dd1cce",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 89 [E_BAD_STMT]: 无法解析的语句，遇到 '^'\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n1: (* ENGINEERING_CONTRACT\n2:    elementCount DINT: retained process value; 0 after reset, +1 successful enqueue, -1 successful dequeue, held otherwise; range 0..capacity.\n88:             FOR local_i := 0 TO local_elemSize - 1 DO\n89:                 local_pDst^ := local_pSrc^;\n90:                 local_pSrc := local_pSrc + 1;\n91:                 local_pDst := local_pDst + 1;",
+      "timing": {
+        "static_seconds": 0.328
+      },
+      "idx": 0,
+      "code": "(* ENGINEERING_CONTRACT\n   elementCount DINT: retained process value; 0 after reset, +1 successful enqueue, -1 successful dequeue, held otherwise; range 0..capacity.\n   status WORD: overwritten every invocation; 0 idle/reset/success, 16#8002 rejected full enqueue, 16#8001 rejected empty dequeue; reset priority sets 0.\n   queue state: first invocation empty; reset priority clears head/tail/count; enqueue writes at tail, dequeue reads head; indices 0..capacity-1.\n   edge triggers: R_TRIG consumed every scan; reset priority ignores edge requests; simultaneous enqueue+dequeue unspecified -> no-op.\n   units/boundaries: capacity positive DINT derived once from buffer size / item element size; element copied byte-wise from item address.\n*)\n(* CONTRACT_RULES [] *)\nFUNCTION_BLOCK FIFO\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    item : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    local_rEnq : R_TRIG;\n    local_rDeq : R_TRIG;\n    local_enqEdge : BOOL;\n    local_deqEdge : BOOL;\n\n    local_associated : BOOL := FALSE;\n    local_pBufferBase : POINTER TO BYTE;\n    local_pItemBase : POINTER TO BYTE;\n    local_elemSize : DINT := 1;\n    local_capacity : DINT := 1;\n\n    local_count : DINT := 0;\n    local_head : DINT := 0;\n    local_tail : DINT := 0;\n\n    local_bufInfo : __SYSTEM.VAR_INFO;\n    local_itemInfo : __SYSTEM.VAR_INFO;\n\n    local_pSrc : POINTER TO BYTE;\n    local_pDst : POINTER TO BYTE;\n    local_i : DINT;\nEND_VAR\n\n(* Consume rising edges every scan so reset cannot create ghost operations later. *)\nlocal_rEnq(CLK := enqueue);\nlocal_enqEdge := local_rEnq.Q;\nlocal_rDeq(CLK := dequeue);\nlocal_deqEdge := local_rDeq.Q;\n\nstatus := 16#0000;\n\n(* One-time association of buffer and element storage, using the first invocation. *)\nIF NOT local_associated THEN\n    local_bufInfo := __VARINFO(buffer);\n    local_itemInfo := __VARINFO(item);\n\n    local_elemSize := local_itemInfo.diSize;\n    IF local_elemSize <= 0 THEN\n        local_elemSize := 1;\n    END_IF;\n\n    local_capacity := local_bufInfo.diSize / local_elemSize;\n    IF local_capacity < 1 THEN\n        local_capacity := 1;\n    END_IF;\n\n    local_pBufferBase := local_bufInfo.pvAddress;\n    local_pItemBase := local_itemInfo.pvAddress;\n    local_associated := TRUE;\nEND_IF;\n\nIF reset THEN\n    (* Reset has priority over all operations; stored values remain untouched. *)\n    local_count := 0;\n    local_head := 0;\n    local_tail := 0;\n    status := 16#0000;\nELSE\n    IF local_enqEdge AND NOT local_deqEdge THEN\n        IF local_count < local_capacity THEN\n            (* Copy current item value into tail slot. *)\n            local_pSrc := local_pItemBase;\n            local_pDst := local_pBufferBase + (local_tail * local_elemSize);\n\n            FOR local_i := 0 TO local_elemSize - 1 DO\n                local_pDst^ := local_pSrc^;\n                local_pSrc := local_pSrc + 1;\n                local_pDst := local_pDst + 1;\n            END_FOR;\n\n            local_tail := (local_tail + 1) MOD local_capacity;\n            local_count := local_count + 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8002; (* enqueue rejected: full *)\n        END_IF;\n    ELSIF local_deqEdge AND NOT local_enqEdge THEN\n        IF local_count > 0 THEN\n            (* Copy head element back to item. *)\n            local_pSrc := local_pBufferBase + (local_head * local_elemSize);\n            local_pDst := local_pItemBase;\n\n            FOR local_i := 0 TO local_elemSize - 1 DO\n                local_pDst^ := local_pSrc^;\n                local_pSrc := local_pSrc + 1;\n                local_pDst := local_pDst + 1;\n            END_FOR;\n\n            local_head := (local_head + 1) MOD local_capacity;\n            local_count := local_count - 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8001; (* dequeue rejected: empty *)\n        END_IF;\n    END_IF;\nEND_IF;\n\nelementCount := local_count;",
+      "code_hash": "4d0f31552bafbe0ca803628a9042f724e63ab16ce587338ac4fc7f9389dd1cce",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 7,
+        "cited_public_clauses": []
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 2576,
+      "completion_tokens": 18932,
+      "cost_cny": 0.4221349199999999,
+      "latency_s": 254.094,
+      "generation_seconds": 254.094,
+      "end_to_end_seconds": 254.422,
+      "format_edits": [],
+      "raw_source_sha256": "4d0f31552bafbe0ca803628a9042f724e63ab16ce587338ac4fc7f9389dd1cce",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 124,
+            "code": "E_MISSING_END_POU",
+            "message": "FUNCTION_BLOCK FIFO 缺少结束关键字"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "a65bf5e75b4ea9294dcd43217faebc5f98d68cf8e3e0c5b9e9ec6bdb472e8c99",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 124 [E_MISSING_END_POU]: FUNCTION_BLOCK FIFO 缺少结束关键字\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n1: (* ENGINEERING_CONTRACT\n2:    elementCount DINT: retained process value; 0 after reset, +1 successful enqueue, -1 successful dequeue, held otherwise; range 0..capacity.\n123: \n124: elementCount := local_count;",
+      "timing": {
+        "static_seconds": 0.328
+      },
+      "idx": 1,
+      "code": "(* ENGINEERING_CONTRACT\n   elementCount DINT: retained process value; 0 after reset, +1 successful enqueue, -1 successful dequeue, held otherwise; range 0..capacity.\n   status WORD: overwritten every invocation; 0 idle/reset/success, 16#8002 rejected full enqueue, 16#8001 rejected empty dequeue; reset priority sets 0.\n   queue state: first invocation empty; reset priority clears head/tail/count; enqueue writes at tail, dequeue reads head; indices 0..capacity-1.\n   edge triggers: R_TRIG consumed every scan; reset priority ignores edge requests; simultaneous enqueue+dequeue unspecified -> no-op.\n   units/boundaries: capacity positive DINT derived once from buffer size / item element size; element copied byte-wise from item address.\n*)\n(* CONTRACT_RULES [] *)\nFUNCTION_BLOCK FIFO\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    item : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    local_rEnq : R_TRIG;\n    local_rDeq : R_TRIG;\n    local_enqEdge : BOOL;\n    local_deqEdge : BOOL;\n\n    local_associated : BOOL := FALSE;\n    local_pBufferBase : POINTER TO BYTE;\n    local_pItemBase : POINTER TO BYTE;\n    local_elemSize : DINT := 1;\n    local_capacity : DINT := 1;\n\n    local_count : DINT := 0;\n    local_head : DINT := 0;\n    local_tail : DINT := 0;\n\n    local_bufInfo : __SYSTEM.VAR_INFO;\n    local_itemInfo : __SYSTEM.VAR_INFO;\n\n    local_pSrc : POINTER TO BYTE;\n    local_pDst : POINTER TO BYTE;\n    local_offset : DINT;\n    local_copiedBytes : UDINT;\nEND_VAR\n\n(* Consume rising edges every scan so reset cannot create ghost operations later. *)\nlocal_rEnq(CLK := enqueue);\nlocal_enqEdge := local_rEnq.Q;\nlocal_rDeq(CLK := dequeue);\nlocal_deqEdge := local_rDeq.Q;\n\nstatus := 16#0000;\n\n(* One-time association of buffer and item storage, using the first invocation. *)\nIF NOT local_associated THEN\n    local_bufInfo := __VARINFO(buffer);\n    local_itemInfo := __VARINFO(item);\n\n    local_elemSize := local_itemInfo.diSize;\n    IF local_elemSize <= 0 THEN\n        local_elemSize := 1;\n    END_IF;\n\n    local_capacity := local_bufInfo.diSize / local_elemSize;\n    IF local_capacity < 1 THEN\n        local_capacity := 1;\n    END_IF;\n\n    local_pBufferBase := local_bufInfo.pvAddress;\n    local_pItemBase := local_itemInfo.pvAddress;\n    local_associated := TRUE;\nEND_IF;\n\nIF reset THEN\n    (* Reset has priority over all operations; stored values remain untouched. *)\n    local_count := 0;\n    local_head := 0;\n    local_tail := 0;\n    status := 16#0000;\nELSE\n    IF local_enqEdge AND NOT local_deqEdge THEN\n        IF local_count < local_capacity THEN\n            (* Copy current item value into tail slot. *)\n            local_pSrc := local_pItemBase;\n            local_pDst := local_pBufferBase;\n            local_offset := local_tail * local_elemSize;\n            local_pDst := local_pDst + local_offset;\n            local_copiedBytes := SysMemCpy(\n                pbyDest := local_pDst,\n                pbySource := local_pSrc,\n                dwCount := TO_DWORD(local_elemSize)\n            );\n\n            local_tail := (local_tail + 1) MOD local_capacity;\n            local_count := local_count + 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8002; (* enqueue rejected: full *)\n        END_IF;\n    ELSIF local_deqEdge AND NOT local_enqEdge THEN\n        IF local_count > 0 THEN\n            (* Copy head element back to item. *)\n            local_pSrc := local_pBufferBase;\n            local_offset := local_head * local_elemSize;\n            local_pSrc := local_pSrc + local_offset;\n            local_pDst := local_pItemBase;\n            local_copiedBytes := SysMemCpy(\n                pbyDest := local_pDst,\n                pbySource := local_pSrc,\n                dwCount := TO_DWORD(local_elemSize)\n            );\n\n            local_head := (local_head + 1) MOD local_capacity;\n            local_count := local_count - 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8001; (* dequeue rejected: empty *)\n        END_IF;\n    END_IF;\nEND_IF;\n\nelementCount := local_count;",
+      "code_hash": "a65bf5e75b4ea9294dcd43217faebc5f98d68cf8e3e0c5b9e9ec6bdb472e8c99",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 7,
+        "cited_public_clauses": []
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 4334,
+      "completion_tokens": 10965,
+      "cost_cny": 0.26469819,
+      "latency_s": 144.078,
+      "generation_seconds": 144.078,
+      "end_to_end_seconds": 144.406,
+      "format_edits": [],
+      "raw_source_sha256": "a65bf5e75b4ea9294dcd43217faebc5f98d68cf8e3e0c5b9e9ec6bdb472e8c99",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 58,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 '__VARINFO'"
+          },
+          {
+            "level": "error",
+            "line": 59,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 '__VARINFO'"
+          },
+          {
+            "level": "error",
+            "line": 90,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'SysMemCpy'"
+          },
+          {
+            "level": "error",
+            "line": 109,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'SysMemCpy'"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_UNKNOWN_FUNC] 第58行 调用了未知函数/功能块 '__VARINFO'; [E_UNKNOWN_FUNC] 第59行 调用了未知函数/功能块 '__VARINFO'; [E_UNKNOWN_FUNC] 第90行 调用了未知函数/功能块 'SysMemCpy'",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "ae5e38669daf1e69dd6b0bede2fb34126641f29a077909875c95ac1d31276674",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 58 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 '__VARINFO'\nLine 59 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 '__VARINFO'\nLine 90 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 'SysMemCpy'\nLine 109 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 'SysMemCpy'\nGenerated source context (candidate text only):\n57: IF NOT local_associated THEN\n58:     local_bufInfo := __VARINFO(buffer);\n59:     local_itemInfo := __VARINFO(item);\n60: \n61:     local_elemSize := local_itemInfo.diSize;\n89:             local_pDst := local_pDst + local_offset;\n90:             local_copiedBytes := SysMemCpy(\n91:                 pbyDest := local_pDst,\n92:                 pbySource := local_pSrc,\n108:             local_pDst := local_pItemBase;\n109:             local_copiedBytes := SysMemCpy(\n110:                 pbyDest := local_pDst,\n111:                 pbySource := local_pSrc,",
+      "timing": {
+        "static_seconds": 0.296
+      },
+      "idx": 2,
+      "code": "(* ENGINEERING_CONTRACT\n   elementCount DINT: retained process value; 0 after reset, +1 successful enqueue, -1 successful dequeue, held otherwise; range 0..capacity.\n   status WORD: overwritten every invocation; 0 idle/reset/success, 16#8002 rejected full enqueue, 16#8001 rejected empty dequeue; reset priority sets 0.\n   queue state: first invocation empty; reset priority clears head/tail/count; enqueue writes at tail, dequeue reads head; indices 0..capacity-1.\n   edge triggers: R_TRIG consumed every scan; reset priority ignores edge requests; simultaneous enqueue+dequeue unspecified -> no-op.\n   units/boundaries: capacity positive DINT derived once from buffer size / item element size; element copied byte-wise from item address.\n*)\n(* CONTRACT_RULES [] *)\nFUNCTION_BLOCK FIFO\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    item : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    local_rEnq : R_TRIG;\n    local_rDeq : R_TRIG;\n    local_enqEdge : BOOL;\n    local_deqEdge : BOOL;\n\n    local_associated : BOOL := FALSE;\n    local_pBufferBase : POINTER TO BYTE;\n    local_pItemBase : POINTER TO BYTE;\n    local_elemSize : DINT := 1;\n    local_capacity : DINT := 1;\n\n    local_count : DINT := 0;\n    local_head : DINT := 0;\n    local_tail : DINT := 0;\n\n    local_bufInfo : __SYSTEM.VAR_INFO;\n    local_itemInfo : __SYSTEM.VAR_INFO;\n\n    local_pSrc : POINTER TO BYTE;\n    local_pDst : POINTER TO BYTE;\n    local_offset : DINT;\n    local_copiedBytes : UDINT;\nEND_VAR\n\n(* Consume rising edges every scan so reset cannot create ghost operations later. *)\nlocal_rEnq(CLK := enqueue);\nlocal_enqEdge := local_rEnq.Q;\nlocal_rDeq(CLK := dequeue);\nlocal_deqEdge := local_rDeq.Q;\n\nstatus := 16#0000;\n\n(* One-time association of buffer and item storage, using the first invocation. *)\nIF NOT local_associated THEN\n    local_bufInfo := __VARINFO(buffer);\n    local_itemInfo := __VARINFO(item);\n\n    local_elemSize := local_itemInfo.diSize;\n    IF local_elemSize <= 0 THEN\n        local_elemSize := 1;\n    END_IF;\n\n    local_capacity := local_bufInfo.diSize / local_elemSize;\n    IF local_capacity < 1 THEN\n        local_capacity := 1;\n    END_IF;\n\n    local_pBufferBase := local_bufInfo.pvAddress;\n    local_pItemBase := local_itemInfo.pvAddress;\n    local_associated := TRUE;\nEND_IF;\n\nIF reset THEN\n    (* Reset has priority over all operations; stored values remain untouched. *)\n    local_count := 0;\n    local_head := 0;\n    local_tail := 0;\n    status := 16#0000;\nELSE\n    IF local_enqEdge AND NOT local_deqEdge THEN\n        IF local_count < local_capacity THEN\n            (* Copy current item value into tail slot. *)\n            local_pSrc := local_pItemBase;\n            local_pDst := local_pBufferBase;\n            local_offset := local_tail * local_elemSize;\n            local_pDst := local_pDst + local_offset;\n            local_copiedBytes := SysMemCpy(\n                pbyDest := local_pDst,\n                pbySource := local_pSrc,\n                dwCount := TO_DWORD(local_elemSize)\n            );\n\n            local_tail := (local_tail + 1) MOD local_capacity;\n            local_count := local_count + 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8002; (* enqueue rejected: full *)\n        END_IF;\n    ELSIF local_deqEdge AND NOT local_enqEdge THEN\n        IF local_count > 0 THEN\n            (* Copy head element back to item. *)\n            local_pSrc := local_pBufferBase;\n            local_offset := local_head * local_elemSize;\n            local_pSrc := local_pSrc + local_offset;\n            local_pDst := local_pItemBase;\n            local_copiedBytes := SysMemCpy(\n                pbyDest := local_pDst,\n                pbySource := local_pSrc,\n                dwCount := TO_DWORD(local_elemSize)\n            );\n\n            local_head := (local_head + 1) MOD local_capacity;\n            local_count := local_count - 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8001; (* dequeue rejected: empty *)\n        END_IF;\n    END_IF;\nEND_IF;\n\nelementCount := local_count;\nEND_FUNCTION_BLOCK",
+      "code_hash": "ae5e38669daf1e69dd6b0bede2fb34126641f29a077909875c95ac1d31276674",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 7,
+        "cited_public_clauses": []
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 4373,
+      "completion_tokens": 2987,
+      "cost_cny": 0.09480473999999998,
+      "latency_s": 30.329,
+      "generation_seconds": 30.329,
+      "end_to_end_seconds": 30.625,
+      "format_edits": [],
+      "raw_source_sha256": "ae5e38669daf1e69dd6b0bede2fb34126641f29a077909875c95ac1d31276674",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 58,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 '__VARINFO'"
+          },
+          {
+            "level": "error",
+            "line": 59,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 '__VARINFO'"
+          },
+          {
+            "level": "error",
+            "line": 90,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'SysMemCpy'"
+          },
+          {
+            "level": "error",
+            "line": 109,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'SysMemCpy'"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_UNKNOWN_FUNC] 第58行 调用了未知函数/功能块 '__VARINFO'; [E_UNKNOWN_FUNC] 第59行 调用了未知函数/功能块 '__VARINFO'; [E_UNKNOWN_FUNC] 第90行 调用了未知函数/功能块 'SysMemCpy'",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "ae5e38669daf1e69dd6b0bede2fb34126641f29a077909875c95ac1d31276674",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 58 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 '__VARINFO'\nLine 59 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 '__VARINFO'\nLine 90 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 'SysMemCpy'\nLine 109 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 'SysMemCpy'\nGenerated source context (candidate text only):\n57: IF NOT local_associated THEN\n58:     local_bufInfo := __VARINFO(buffer);\n59:     local_itemInfo := __VARINFO(item);\n60: \n61:     local_elemSize := local_itemInfo.diSize;\n89:             local_pDst := local_pDst + local_offset;\n90:             local_copiedBytes := SysMemCpy(\n91:                 pbyDest := local_pDst,\n92:                 pbySource := local_pSrc,\n108:             local_pDst := local_pItemBase;\n109:             local_copiedBytes := SysMemCpy(\n110:                 pbyDest := local_pDst,\n111:                 pbySource := local_pSrc,",
+      "timing": {
+        "static_seconds": 0.296
+      },
+      "idx": 3,
+      "code": "(* ENGINEERING_CONTRACT\n   elementCount DINT: retained process value; 0 after reset, +1 successful enqueue, -1 successful dequeue, held otherwise; range 0..capacity.\n   status WORD: overwritten every invocation; 0 idle/reset/success, 16#8002 rejected full enqueue, 16#8001 rejected empty dequeue; reset priority sets 0.\n   queue state: first invocation empty; reset priority clears head/tail/count; enqueue writes at tail, dequeue reads head; indices 0..capacity-1.\n   edge triggers: R_TRIG consumed every scan; reset priority ignores edge requests; simultaneous enqueue+dequeue unspecified -> no-op.\n   units/boundaries: capacity positive DINT derived once from buffer size / item element size; element copied byte-wise from item address.\n*)\n(* CONTRACT_RULES [] *)\nFUNCTION_BLOCK FIFO\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    item : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    local_rEnq : R_TRIG;\n    local_rDeq : R_TRIG;\n    local_enqEdge : BOOL;\n    local_deqEdge : BOOL;\n\n    local_associated : BOOL := FALSE;\n    local_pBufferBase : POINTER TO BYTE;\n    local_pItemBase : POINTER TO BYTE;\n    local_elemSize : DINT := 1;\n    local_capacity : DINT := 1;\n\n    local_count : DINT := 0;\n    local_head : DINT := 0;\n    local_tail : DINT := 0;\n\n    local_bufInfo : __SYSTEM.VAR_INFO;\n    local_itemInfo : __SYSTEM.VAR_INFO;\n\n    local_pSrc : POINTER TO BYTE;\n    local_pDst : POINTER TO BYTE;\n    local_offset : DINT;\n    local_copiedBytes : UDINT;\nEND_VAR\n\n(* Consume rising edges every scan so reset cannot create ghost operations later. *)\nlocal_rEnq(CLK := enqueue);\nlocal_enqEdge := local_rEnq.Q;\nlocal_rDeq(CLK := dequeue);\nlocal_deqEdge := local_rDeq.Q;\n\nstatus := 16#0000;\n\n(* One-time association of buffer and item storage, using the first invocation. *)\nIF NOT local_associated THEN\n    local_bufInfo := __VARINFO(buffer);\n    local_itemInfo := __VARINFO(item);\n\n    local_elemSize := local_itemInfo.diSize;\n    IF local_elemSize <= 0 THEN\n        local_elemSize := 1;\n    END_IF;\n\n    local_capacity := local_bufInfo.diSize / local_elemSize;\n    IF local_capacity < 1 THEN\n        local_capacity := 1;\n    END_IF;\n\n    local_pBufferBase := local_bufInfo.pvAddress;\n    local_pItemBase := local_itemInfo.pvAddress;\n    local_associated := TRUE;\nEND_IF;\n\nIF reset THEN\n    (* Reset has priority over all operations; stored values remain untouched. *)\n    local_count := 0;\n    local_head := 0;\n    local_tail := 0;\n    status := 16#0000;\nELSE\n    IF local_enqEdge AND NOT local_deqEdge THEN\n        IF local_count < local_capacity THEN\n            (* Copy current item value into tail slot. *)\n            local_pSrc := local_pItemBase;\n            local_pDst := local_pBufferBase;\n            local_offset := local_tail * local_elemSize;\n            local_pDst := local_pDst + local_offset;\n            local_copiedBytes := SysMemCpy(\n                pbyDest := local_pDst,\n                pbySource := local_pSrc,\n                dwCount := TO_DWORD(local_elemSize)\n            );\n\n            local_tail := (local_tail + 1) MOD local_capacity;\n            local_count := local_count + 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8002; (* enqueue rejected: full *)\n        END_IF;\n    ELSIF local_deqEdge AND NOT local_enqEdge THEN\n        IF local_count > 0 THEN\n            (* Copy head element back to item. *)\n            local_pSrc := local_pBufferBase;\n            local_offset := local_head * local_elemSize;\n            local_pSrc := local_pSrc + local_offset;\n            local_pDst := local_pItemBase;\n            local_copiedBytes := SysMemCpy(\n                pbyDest := local_pDst,\n                pbySource := local_pSrc,\n                dwCount := TO_DWORD(local_elemSize)\n            );\n\n            local_head := (local_head + 1) MOD local_capacity;\n            local_count := local_count - 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8001; (* dequeue rejected: empty *)\n        END_IF;\n    END_IF;\nEND_IF;\n\nelementCount := local_count;\nEND_FUNCTION_BLOCK",
+      "code_hash": "ae5e38669daf1e69dd6b0bede2fb34126641f29a077909875c95ac1d31276674",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 7,
+        "cited_public_clauses": []
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 4467,
+      "completion_tokens": 9882,
+      "cost_cny": 0.24254343,
+      "latency_s": 125.672,
+      "generation_seconds": 125.672,
+      "end_to_end_seconds": 125.672,
+      "format_edits": [],
+      "raw_source_sha256": "ae5e38669daf1e69dd6b0bede2fb34126641f29a077909875c95ac1d31276674",
+      "provider_error": "",
+      "duplicate_of_candidate_index": 2
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "repeated_candidate",
+  "tests_total": 31,
+  "study_plan_sha256": "ad44abcb7bc1484bd393497f301198527a0666c9cb5597c89aa0f7c287e1b833",
+  "started_at": "2026-11-13T11:56:57.859520+08:00",
+  "wall_seconds": 555.625,
+  "finished_at": "2026-11-13T12:06:13.294782+08:00"
+}
