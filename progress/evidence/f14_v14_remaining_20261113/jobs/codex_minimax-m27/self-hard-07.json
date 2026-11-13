@@ -1,0 +1,203 @@
+{
+  "job_id": "codex_minimax-m27/self-hard-07",
+  "pid": "self-hard-07",
+  "condition": "codex_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": false,
+  "attempts": [
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 46,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 46,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "At least one statement is expected",
+              "Compile complete -- 1 errors, 0 warnings",
+              "Build complete -- 1 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.23499999998603,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-07_bd59dba780",
+            "source_sha256": "d77f1a3c1827770d6b3ab79663207f1d621c62391b4660cdfe9278c79fc6faa2",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "d77f1a3c1827770d6b3ab79663207f1d621c62391b4660cdfe9278c79fc6faa2",
+          "task_json_sha256": "73e4ad6db4833e95dcfd78d013bb5963e3817f09e432a6fd42489e596e09035a",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\nAt least one statement is expected\nCompile complete -- 1 errors, 0 warnings\nBuild complete -- 1 errors, 0 warnings : No download possible\nAdditional code checks ...\nAdditional code checks complete -- 0 errors\nFunctional checks: 0/46; bounded status: not_run.",
+      "timing": {
+        "static_seconds": 0.187,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 15.235
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    mode                : INT;\n    resetBtn            : BOOL;\n    scanSeconds         : REAL;\n    tempSP              : REAL;\n    tempPV              : REAL;\n    flowPV              : REAL;\n    manualFlowSP        : REAL;\n    manualValve         : REAL;\nEND_VAR\nVAR_OUTPUT\n    flowSP              : REAL;\n    valveCommand        : REAL;\n    fault               : BOOL;\n    normalMode          : BOOL;\nEND_VAR\nVAR\n    accT                : REAL := 0.0;\n    accF                : REAL := 0.0;\n    mode_prev           : INT := 999;\n    prev_resetBtn       : BOOL := FALSE;\n    first_scan          : BOOL := TRUE;\nEND_VAR\nVAR_TEMP\n    eT                  : REAL;\n    eF                  : REAL;\n    trial               : REAL;\n    reset_rising        : BOOL;\n    mode_changed        : BOOL;\nEND_VAR\n(* ENGINEERING_CONTRACT\n * =============================================================================\n * Modes: 0=Manual(FB), 1=Auto(inner PI), 2=Cascade(both PI loops)\n * Normal operation: mode in {0,1,2}, 0 < scanSeconds <= 10.0\n * Fault: mode outside {0,1,2} OR scanSeconds <= 0 OR scanSeconds > 10\n * -----------------------------------------------------------------------------\n * Output state retention (per LTL spec):\n * - Mode switch to 2 (cascade): flowSP, valveCommand HOLD prev; normalMode=FALSE\n * - Mode switch to 0/1: flowSP=manualFlowSP, valveCommand HOLD prev; normalMode=FALSE\n * - Manual (mode=0) normal cycle: flowSP=manualFlowSP, valveCommand=manualValve\n * - Auto (mode=1) normal cycle: flowSP=manualFlowSP; valveCommand=PI(clamped)\n * - Cascade (mode=2) normal cycle: flowSP=PI(clamped), valveCommand=PI(clamped)\n * - Fault: flowSP=manualFlowSP, valveCommand=manualValve, normalMode=FALSE\n * - Reset rising edge: same as fault initialization, fault still reports truthfully\n * -----------------------------------------------------------------------------\n * Integrators (anti-windup back-calculation):\n * - accT unit: t/h; accF unit: %; both pre-set to 0 on reset/fault/first scan\n * - acc update after output limit: acc = limited_output - Kp*e\n * - On mode change to cascade, both accT and accF retain prior cycle values\n * -----------------------------------------------------------------------------\n * Timing: Ki defined per second; scanSeconds multiplied explicitly\n * Boundaries: flowSP [0,50] t/h; valveCommand [0,100] %\n * =============================================================================\n *)\n(* CONTRACT_RULES [] *)\n\nreset_rising := resetBtn AND NOT prev_resetBtn;\nmode_changed := (mode <> mode_prev);\n\nfault := (mode < 0) OR (mode > 2) OR (scanSeconds <= 0.0) OR (scanSeconds > 10.0);\n\nIF first_scan OR reset_rising THEN\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    accT := 0.0;\n    accF := 0.0;\n    normalMode := FALSE;\n    first_scan := FALSE;\nELSIF fault THEN\n    flowSP := manualFlowSP;\n    valveCommand := manualValve;\n    accT := 0.0;\n    accF := 0.0;\n    normalMode := FALSE;\nELSE\n    IF mode_changed THEN\n        normalMode := FALSE;\n        IF mode = 2 THEN\n            // Cascade: hold both outputs\n            // accT, accF retained for bumpless entry\n        ELSIF (mode = 0) OR (mode = 1) THEN\n            flowSP := manualFlowSP;\n            // valveCommand held\n        END_IF;\n    ELSE\n        normalMode := TRUE;\n        IF mode = 2 THEN\n            // Outer loop PI\n            eT := tempSP - tempPV;\n            accT := accT + 0.2 * eT * scanSeconds;\n            trial := accT + 0.2 * eT * scanSeconds;\n            flowSP := 1.0 * eT + trial;\n            flowSP := LIMIT(0.0, flowSP, 50.0);\n            accT := flowSP - 1.0 * eT;\n            // Inner loop PI\n            eF := flowSP - flowPV;\n            accF := accF + 0.5 * eF * scanSeconds;\n            trial := accF + 0.5 * eF * scanSeconds;\n            valveCommand := 2.0 * eF + trial;\n            valveCommand := LIMIT(0.0, valveCommand, 100.0);\n            accF := valveCommand - 2.0 * eF;\n        ELSIF mode = 1 THEN\n            // Auto: flowSP from manual, inner PI\n            flowSP := manualFlowSP;\n            eF := flowSP - flowPV;\n            accF := accF + 0.5 * eF * scanSeconds;\n            trial := accF + 0.5 * eF * scanSeconds;\n            valveCommand := 2.0 * eF + trial;\n            valveCommand := LIMIT(0.0, valveCommand, 100.0);\n            accF := valveCommand - 2.0 * eF;\n        ELSIF mode = 0 THEN\n            // Manual\n            flowSP := manualFlowSP;\n            valveCommand := manualValve;\n        END_IF;\n    END_IF;\nEND_IF;\n\nmode_prev := mode;\nprev_resetBtn := resetBtn;\nEND_FUNCTION_BLOCK",
+      "code_hash": "d77f1a3c1827770d6b3ab79663207f1d621c62391b4660cdfe9278c79fc6faa2",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 24,
+        "cited_public_clauses": []
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 12605,
+      "completion_tokens": 8111,
+      "cost_cny": 0.074736291,
+      "latency_s": 220.734,
+      "generation_seconds": 220.734,
+      "end_to_end_seconds": 236.156,
+      "format_edits": [],
+      "raw_source_sha256": "d77f1a3c1827770d6b3ab79663207f1d621c62391b4660cdfe9278c79fc6faa2",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 46,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 46,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "task_json_sha256": "73e4ad6db4833e95dcfd78d013bb5963e3817f09e432a6fd42489e596e09035a",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/46; bounded status: not_run.\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n",
+      "timing": {
+        "static_seconds": 0.172
+      },
+      "idx": 1,
+      "code": "",
+      "code_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "invalid_model_patch",
+        "error": "Edit anchor must occur exactly once"
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 14363,
+      "completion_tokens": 413,
+      "cost_cny": 0.026568885,
+      "latency_s": 30.594,
+      "generation_seconds": 30.594,
+      "end_to_end_seconds": 30.766,
+      "format_edits": [],
+      "raw_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "",
+  "tests_total": 46,
+  "study_plan_sha256": "e0db2940199cc656528584436ab352ead1fdbaa878edd82cd2958bfa3af1ca4c",
+  "started_at": "2026-11-13T19:59:40.191480+08:00",
+  "wall_seconds": 267.141,
+  "finished_at": "2026-11-13T20:04:07.231072+08:00"
+}

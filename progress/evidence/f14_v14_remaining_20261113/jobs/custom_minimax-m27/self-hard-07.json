@@ -1,0 +1,313 @@
+{
+  "job_id": "custom_minimax-m27/self-hard-07",
+  "pid": "self-hard-07",
+  "condition": "custom_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 46,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_FLOW_STRUCTURE",
+            "line": 42,
+            "message": "Pascal wrapper BEGIN is not part of a CODESYS ST function-block body. Start statements immediately after END_VAR; terminate the POU with END_FUNCTION_BLOCK."
+          },
+          {
+            "level": "error",
+            "line": 42,
+            "code": "E_BAD_STMT",
+            "message": "无法解析的语句，遇到 'IF'"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 46,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "0710c2155c76e56ad79a505ca2b501215b002c0fffbf0e4e1a223f3119b7a79e",
+          "task_json_sha256": "73e4ad6db4833e95dcfd78d013bb5963e3817f09e432a6fd42489e596e09035a",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/46; bounded status: not_run.\nLine 42 [E_FLOW_STRUCTURE]: Pascal wrapper BEGIN is not part of a CODESYS ST function-block body. Start statements immediately after END_VAR; terminate the POU with END_FUNCTION_BLOCK.\nLine 42 [E_BAD_STMT]: 无法解析的语句，遇到 'IF'\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n1: FUNCTION_BLOCK FB\n2: VAR_INPUT\n41: *)\n42: BEGIN\n43:     (* --- First scan: initialize outputs and accumulators --- *)\n44:     IF firstScan THEN",
+      "timing": {
+        "static_seconds": 0.172
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    mode            : INT;           (* 0=Manual 1=Auto 2=Cascade *)\n    resetBtn        : BOOL;          (* Rising edge: reset to initial state *)\n    scanSeconds     : REAL;          (* Scan period in seconds *)\n    tempSP          : REAL;          (* Temperature setpoint, degC *)\n    tempPV          : REAL;          (* Temperature process value, degC *)\n    flowPV          : REAL;          (* Flow process value, t/h *)\n    manualFlowSP    : REAL;          (* Manual flow setpoint, t/h *)\n    manualValve     : REAL;          (* Manual valve position, % *)\nEND_VAR\nVAR_OUTPUT\n    flowSP          : REAL;          (* Flow setpoint output, t/h, clamped 0..50 *)\n    valveCommand    : REAL;          (* Valve command output, %, clamped 0..100 *)\n    fault           : BOOL;          (* Fault: invalid mode or scanSeconds *)\n    normalMode      : BOOL;          (* This scan is normal operation (not reset/fault/switch/first) *)\nEND_VAR\nVAR\n    prevResetBtn    : BOOL    := FALSE;\n    prevMode        : INT     := 0;\n    accT            : REAL    := 0.0;    (* Integral state outer loop, unit t/h *)\n    accF            : REAL    := 0.0;    (* Integral state inner loop, unit % *)\n    firstScan       : BOOL    := TRUE;\nEND_VAR\nVAR_TEMP\n    tmpModeChanged  : BOOL;\n    tmpET           : REAL;\n    tmpEF           : REAL;\n    tmpTrial        : REAL;\nEND_VAR\n(*\nENGINEERING_CONTRACT:\n  Modes: 0=Manual (both follow manual), 1=Auto (flow=manual, PI valve), 2=Cascade (PI flow then PI valve)\n  Outputs: flowSP [0..50] t/h, valveCommand [0..100] %; retention per mode contract\n  Activation: PI execution on normalMode=TRUE; bumpless transfer on mode switch (outputs hold/follow per spec)\n  Reset/Deactivation: resetBtn rising edge → init to manual values, no PI on that scan\n  Fault: mode∉{0,1,2} or scanSeconds∉(0,10] → fault, follow manual, no PI\n  Priority: reset>fault (both reported), first-scan treated as switch (normalMode=FALSE)\n  Units: KiT=0.2 (t/h)/(degC·s), KpT=1.0 (t/h)/degC; KiF=0.5 %/((t/h)·s), KpF=2.0 %/(t/h)\n  Anti-windup: back-calculation from clamped output to accumulator\n*)\nBEGIN\n    (* --- First scan: initialize outputs and accumulators --- *)\n    IF firstScan THEN\n        flowSP      := manualFlowSP;\n        valveCommand := manualValve;\n        accT        := 0.0;\n        accF        := 0.0;\n        fault       := FALSE;\n        normalMode  := FALSE;\n        firstScan   := FALSE;\n        prevResetBtn := resetBtn;\n        prevMode    := mode;\n        RETURN;\n    END_IF;\n\n    (* --- Detect state changes --- *)\n    tmpModeChanged := (mode <> prevMode);\n\n    (* --- Reset rising edge: immediate fallback to manual, no PI this scan --- *)\n    IF resetBtn AND NOT prevResetBtn THEN\n        flowSP       := manualFlowSP;\n        valveCommand := manualValve;\n        accT         := 0.0;\n        accF         := 0.0;\n        fault        := FALSE;\n        normalMode   := FALSE;\n        prevResetBtn := resetBtn;\n        prevMode     := mode;\n        RETURN;\n    END_IF;\n\n    (* --- Fault condition: invalid mode or scanSeconds --- *)\n    fault := (mode < 0) OR (mode > 2) OR (scanSeconds <= 0.0) OR (scanSeconds > 10.0);\n\n    (* --- Fault fallback: follow manual immediately, no integral update --- *)\n    IF fault THEN\n        flowSP       := manualFlowSP;\n        valveCommand := manualValve;\n        accT         := 0.0;\n        accF         := 0.0;\n        normalMode   := FALSE;\n        prevResetBtn := resetBtn;\n        prevMode     := mode;\n        RETURN;\n    END_IF;\n\n    (* --- Normal operation or mode-transition scan --- *)\n    IF mode = 0 THEN\n        (* Manual: both outputs follow manual values; recalc accumulators for bumpless re-entry *)\n        flowSP       := manualFlowSP;\n        valveCommand := manualValve;\n        tmpET := tempSP - tempPV;\n        tmpEF := flowSP - flowPV;\n        accT := flowSP - 1.0 * tmpET;\n        accF := valveCommand - 2.0 * tmpEF;\n\n    ELSIF mode = 2 THEN\n        (* Cascade: outer loop PI → flowSP; inner loop PI → valveCommand *)\n        IF tmpModeChanged THEN\n            (* Mode switch: hold outputs, recalc accumulators for bumpless transfer *)\n            flowSP       := flowSP;\n            valveCommand := valveCommand;\n            tmpET := tempSP - tempPV;\n            tmpEF := flowSP - flowPV;\n            accT := flowSP - 1.0 * tmpET;\n            accF := valveCommand - 2.0 * tmpEF;\n        ELSE\n            (* Normal PI execution with anti-windup back-calculation *)\n            tmpET := tempSP - tempPV;\n            tmpEF := flowSP - flowPV;\n            (* Outer loop *)\n            tmpTrial := accT + 0.2 * tmpET * scanSeconds;\n            flowSP   := LIMIT(0.0, 1.0 * tmpET + tmpTrial, 50.0);\n            accT     := flowSP - 1.0 * tmpET;\n            (* Inner loop uses current flowSP *)\n            tmpEF    := flowSP - flowPV;\n            tmpTrial := accF + 0.5 * tmpEF * scanSeconds;\n            valveCommand := LIMIT(0.0, 2.0 * tmpEF + tmpTrial, 100.0);\n            accF     := valveCommand - 2.0 * tmpEF;\n        END_IF;\n\n    ELSIF mode = 1 THEN\n        (* Auto: flowSP = manualFlowSP; inner loop PI → valveCommand *)\n        IF tmpModeChanged THEN\n            (* Mode switch: flowSP follows manual, valve holds; recalc accumulators *)\n            flowSP       := manualFlowSP;\n            valveCommand := valveCommand;\n            tmpET := tempSP - tempPV;\n            tmpEF := flowSP - flowPV;\n            accT := flowSP - 1.0 * tmpET;\n            accF := valveCommand - 2.0 * tmpEF;\n        ELSE\n            (* Normal PI execution *)\n            flowSP       := manualFlowSP;\n            tmpET        := tempSP - tempPV;\n            accT         := flowSP - 1.0 * tmpET;\n            tmpEF        := flowSP - flowPV;\n            tmpTrial     := accF + 0.5 * tmpEF * scanSeconds;\n            valveCommand := LIMIT(0.0, 2.0 * tmpEF + tmpTrial, 100.0);\n            accF         := valveCommand - 2.0 * tmpEF;\n        END_IF;\n    END_IF;\n\n    (* --- Update previous-state tracking --- *)\n    prevResetBtn := resetBtn;\n    prevMode     := mode;\n\n    (* --- normalMode: second-or-later scan, stable mode, no fault, no reset rising edge --- *)\n    normalMode := NOT firstScan AND (mode = prevMode) AND NOT fault AND NOT (resetBtn AND NOT prevResetBtn);\nEND_FUNCTION_BLOCK",
+      "code_hash": "0710c2155c76e56ad79a505ca2b501215b002c0fffbf0e4e1a223f3119b7a79e",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 11,
+        "cited_public_clauses": []
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 6200,
+      "completion_tokens": 6199,
+      "cost_cny": 0.051422364,
+      "latency_s": 150.343,
+      "generation_seconds": 150.343,
+      "end_to_end_seconds": 150.515,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2526,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3020,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3525,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 5039,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "90ebdeb8a8f8994af2654f1f0a846d28e7d9113966609750d1041cb385a81aaf",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 46,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 46,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "task_json_sha256": "73e4ad6db4833e95dcfd78d013bb5963e3817f09e432a6fd42489e596e09035a",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/46; bounded status: not_run.\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n",
+      "timing": {
+        "static_seconds": 0.156
+      },
+      "idx": 1,
+      "code": "",
+      "code_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "invalid_model_patch",
+        "error": "Edit anchor must occur exactly once"
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 8498,
+      "completion_tokens": 591,
+      "cost_cny": 0.018020058000000002,
+      "latency_s": 16.328,
+      "generation_seconds": 16.328,
+      "end_to_end_seconds": 16.484,
+      "format_edits": [],
+      "raw_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 46,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 46,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "task_json_sha256": "73e4ad6db4833e95dcfd78d013bb5963e3817f09e432a6fd42489e596e09035a",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/46; bounded status: not_run.\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n",
+      "timing": {
+        "static_seconds": 0.156
+      },
+      "idx": 2,
+      "code": "",
+      "code_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "invalid_model_patch",
+        "error": "Edit anchor must occur exactly once"
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 8612,
+      "completion_tokens": 538,
+      "cost_cny": 0.017857476000000004,
+      "latency_s": 13.922,
+      "generation_seconds": 13.922,
+      "end_to_end_seconds": 13.922,
+      "format_edits": [],
+      "raw_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "provider_error": "",
+      "duplicate_of_candidate_index": 1
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "repeated_candidate",
+  "tests_total": 46,
+  "study_plan_sha256": "e0db2940199cc656528584436ab352ead1fdbaa878edd82cd2958bfa3af1ca4c",
+  "started_at": "2026-11-13T19:56:36.981917+08:00",
+  "wall_seconds": 181.078,
+  "finished_at": "2026-11-13T19:59:37.959885+08:00",
+  "operational_network_wait": {
+    "batch": "v4_wait900",
+    "ceiling_seconds": 900,
+    "task_seconds": 2400,
+    "evaluation_reserve_seconds": 150,
+    "model_parameters_unchanged": true
+  }
+}
