@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794542934,
+    "id": "resp_021794542933367c4b4c21807da17f108ce4c4545791d8ed90abe",
+    "max_output_tokens": 24576,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179454293457200000000000000000000ffffac155d72ac05a3",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "We need to repair block: missing VAR_INPUT / VAR_OUTPUT declarations. Also provide CONTRACT_RULES as required in prompt. Candidate is a FUNCTION_BLOCK without interface variables. Need add input/output var sections. The prompt says canonical interface declarations listed. We must include them. Also keep engineering contract and contract rules from original. Need fix syntax errors. Likely we need declare VAR_INPUT with OCCUPANCY_DETECTED, ENERGY_SAVING_MODE, HVAC_MODE_SELECTOR; VAR_OUTPUT with SUPPLY_FAN_RUN, TEMP_SETPOINT_ADJUST. Ensure END_VAR placements. Currently original had VAR ... END_VAR only for local helpers. Need prepend VAR_INPUT and VAR_OUTPUT. Also maybe initial assignment of outputs is okay. Ensure no BEGIN wrapper. Check timer: using tmp_fanTimer(IN := tmp_delayActive, PT := T#30S) okay. However TON function block instance must be declared: tmp_fanTimer : TON; in VAR. Already present. Need ensure TON standard. The code resets SUPPLY_FAN_RUN to FALSE then assigns timer Q; okay. But note: The TON instance is called with IN, then Q reflects current evaluate? In CODESYS, FB call updates internal state and Q output; after call, Q is correct. Then assign SUPPLY_FAN_RUN := tmp_fanTimer.Q. Good.\n\nPotential issue: The task says \"Immediately stop the fan and reset timing if occupancy is lost or Night mode is selected.\" Our tmp_delayActive := tmp_occ AND (tmp_mode <> 3); if conditions false, TON IN false, Q false; ET reset? In CODESYS TON, when IN goes FALSE, ET is reset to 0; Q false. Good. When conditions recover, wait full 30 seconds again because ET reset starts from 0. Good.\n\nNow output adjustment: We compute tmp_adjust then clamp, assign TEMP_SETPOINT_ADJUST. Good.\n\nBut there is assignment SUPPLY_FAN_RUN := FALSE and TEMP_SETPOINT_ADJUST := 0 at start, then later assign. This is okay, but maybe could be simplified; however output initialization at power-up is required? The prompt says \"Initialize outputs to OFF and zero at power-up; update them from current inputs when normal calculation begins.\" Since FB outputs are not persistent? In CODESYS FB outputs are evaluated each call, so initial assignment happens each scan, but then updated. That is acceptable. However we need ensure outputs declared as VAR_OUTPUT.\n\nLet's construct full block with interface declarations before VAR local. Need include comment ENGINEERING_CONTRACT and CONTRACT_RULES. The provided original had those. We'll include them; contract rules empty.\n\nNeed be careful: The CONTRACT_RULES comment should be a JSON list; it says [] for no unconditional latch. Good.\n\nNow also ensure all variables typed. tmp_mode : INT; tmp_occ : BOOL; tmp_es : BOOL; tmp_delayActive : BOOL; tmp_fanTimer : TON; tmp_adjust : INT.\n\nNow verify syntax: FUNCTION_BLOCK OfficeHVACMultiModeControl ... END_FUNCTION_BLOCK. Need no semicolon after END_FUNCTION_BLOCK? In ST, END_FUNCTION_BLOCK; usually no semicolon? But can include ; maybe not required. We'll omit.\n\nNow we need to output entire block with balanced END_IF, END_CASE, etc. Let's rewrite cleanly. Use the same algorithm. We'll keep the engineering contract comment but perhaps shorten to fit 12 lines; original is 12+ but acceptable. But keep as required. The instruction from repair says preserve original interface and contract comments. So include them.\n\nPotential issue: The code initializes SUPPLY_FAN_RUN := FALSE and TEMP_SETPOINT_ADJUST := 0 before inputs read. But outputs are VAR_OUTPUT, we can assign directly. That's fine. However if we assign at start then compute later, no retention? It's okay.\n\nOne more nuance: Need to ensure that when invalid mode (else case) temp_adjust = 0 and clamp; okay. The task says callers supply valid value, so else not needed but fine.\n\nNow include VAR_INPUT and VAR_OUTPUT sections before VAR. In ST, order: FUNCTION_BLOCK name ... VAR_INPUT ... END_VAR VAR_OUTPUT ... END_VAR VAR ... END_VAR then statements.\n\nLet's produce final answer."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "FUNCTION_BLOCK OfficeHVACMultiModeControl\n\n(* ENGINEERING_CONTRACT\nPUB001: HVAC_MODE_SELECTOR valid 0..3; assumption: input is valid.\nPUB002: SUPPLY_FAN_RUN active when OCCUPANCY_DETECTED AND mode<>3 remain true for 30s via TON.\n  Activation: TON.Q after 30s; Hold: conditions remain true; Reset: occupancy lost or mode=3,\n  timer IN false => immediate Q false and ET reset; same-scan final value from current inputs.\nPUB003-PUB005: TEMP_SETPOINT_ADJUST combinational from current mode, occupancy, energy-saving.\n  Auto: occ 0, unocc ES +3, unocc std +2. Comfort: occ 0, unocc +1.\n  Economy: occ 0, unocc +4. Night: +4 regardless of occupancy. Units degrees C.\n  Clamp -4..+4. Energy-saving affects Auto mode only.\nPUB006: outputs initialized FALSE/0 by declaration/start scan; no independent retained output outside timer.\nPUB007: 30s delay controls only BOOL fan enable.\n*)\n\n(* CONTRACT_RULES\n[]\n*)\n\nVAR_INPUT\n    OCCUPANCY_DETECTED : BOOL;\n    ENERGY_SAVING_MODE : BOOL;\n    HVAC_MODE_SELECTOR : INT;\nEND_VAR\nVAR_OUTPUT\n    SUPPLY_FAN_RUN : BOOL;\n    TEMP_SETPOINT_ADJUST : INT;\nEND_VAR\nVAR\n    tmp_delayActive : BOOL;\n    tmp_fanTimer    : TON;\n    tmp_adjust      : INT;\n    tmp_mode        : INT;\n    tmp_occ         : BOOL;\n    tmp_es          : BOOL;\nEND_VAR\n\nSUPPLY_FAN_RUN := FALSE;\nTEMP_SETPOINT_ADJUST := 0;\n\ntmp_mode := HVAC_MODE_SELECTOR;\ntmp_occ  := OCCUPANCY_DETECTED;\ntmp_es   := ENERGY_SAVING_MODE;\n\ntmp_delayActive := tmp_occ AND (tmp_mode <> 3);\ntmp_fanTimer(IN := tmp_delayActive, PT := T#30S);\nSUPPLY_FAN_RUN := tmp_fanTimer.Q;\n\nCASE tmp_mode OF\n  0:\n    IF tmp_occ THEN\n      tmp_adjust := 0;\n    ELSE\n      IF tmp_es THEN\n        tmp_adjust := 3;\n      ELSE\n        tmp_adjust := 2;\n      END_IF;\n    END_IF;\n\n  1:\n    IF tmp_occ THEN\n      tmp_adjust := 0;\n    ELSE\n      tmp_adjust := 1;\n    END_IF;\n\n  2:\n    IF tmp_occ THEN\n      tmp_adjust := 0;\n    ELSE\n      tmp_adjust := 4;\n    END_IF;\n\n  3:\n    tmp_adjust := 4;\n\n  ELSE\n    tmp_adjust := 0;\nEND_CASE;\n\nIF tmp_adjust > 4 THEN\n  tmp_adjust := 4;\nELSIF tmp_adjust < -4 THEN\n  tmp_adjust := -4;\nEND_IF;\n\nTEMP_SETPOINT_ADJUST := tmp_adjust;\n\nEND_FUNCTION_BLOCK"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179454294720900000000000000000000ffffac155d7290ddc9",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 3937,
+      "output_tokens": 1677,
+      "total_tokens": 5614,
+      "input_tokens_details": {
+        "cached_tokens": 2048
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 954
+      },
+      "cost": "¥0.024844"
+    }
+  }
+}
