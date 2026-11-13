@@ -1,0 +1,755 @@
+{
+  "pid": "public-medium-04",
+  "source": "public",
+  "difficulty": "medium",
+  "title": "Temperature Logic Control",
+  "requirements": "Write a function block FB to implement a temperature control logic. The program should include the following functions:\n1. Read the value of the temperature sensor through an analog input module.\n2. Compare the read temperature value TemperatureSensorInput with the set temperature value SetTemperature.\n3. If the actual temperature is lower than the set temperature, start the heater HeaterOutput.\n4. If the actual temperature is higher than the set temperature, turn off the heater HeaterOutput.\n5. If the heater works continuously for more than a certain period (for convenience, using 5s), it should trigger an overheating protection, automatically turn off the heater, and must wait for a certain period (for convenience, using 3s) before the overheating protection can be lifted.\n6. Provide status indication, displaying the current temperature, set temperature, heater status, and whether overheating protection is triggered.\n7. Provide temperature sensor fault judgment, if the read temperature value TemperatureSensorInput is less than 0 or greater than 100, it is considered a sensor fault, and the heater should be turned off.",
+  "variables": [
+    {
+      "name": "TemperatureSensorInput",
+      "data_type": "REAL",
+      "description": "The input value of the temperature sensor, i.e., the actual temperature",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "SetTemperature",
+      "data_type": "REAL",
+      "description": "The set temperature value",
+      "direction": "input",
+      "fields": []
+    },
+    {
+      "name": "CurrentTemperature",
+      "data_type": "REAL",
+      "description": "Display of the current temperature",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "SetTempDisplay",
+      "data_type": "REAL",
+      "description": "Display of the set temperature",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "HeaterStatus",
+      "data_type": "BOOL",
+      "description": "Display of the heater status",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "OverheatProtection",
+      "data_type": "BOOL",
+      "description": "Display of the overheating protection status",
+      "direction": "output",
+      "fields": []
+    },
+    {
+      "name": "HeaterOutput",
+      "data_type": "BOOL",
+      "description": "The control output of the heater",
+      "direction": "output",
+      "fields": []
+    }
+  ],
+  "target_pou": "FUNCTION_BLOCK",
+  "specs": [
+    {
+      "sid": "S1",
+      "text": "传感器读数低于 0 或高于 100 时，加热输出必须为 FALSE。",
+      "ltl": "G((TemperatureSensorInput < 0.0 | TemperatureSensorInput > 100.0) -> !HeaterOutput)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S2",
+      "text": "过热保护有效期间，加热输出必须被强制关断。",
+      "ltl": "G(OverheatProtection -> !HeaterOutput)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S3",
+      "text": "实际温度高于设定值时关闭加热。",
+      "ltl": "G(TemperatureSensorInput > SetTemperature -> NOT HeaterOutput)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S4",
+      "text": "无故障、无过热保护且读数低于设定温度时，加热输出必须为 TRUE（过载触发保护的当拍除外）。",
+      "ltl": "G((TemperatureSensorInput < SetTemperature & TemperatureSensorInput >= 0.0 & TemperatureSensorInput <= 100.0 & !OverheatProtection) -> HeaterOutput)",
+      "kind": "safety",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S5",
+      "text": "过热保护冷却至少 3 秒，按外部任务时钟检查。",
+      "ltl": "",
+      "kind": "liveness",
+      "verified_by": "simulation"
+    },
+    {
+      "sid": "S6",
+      "text": "显示值跟随当拍温度和设定值，状态指示跟随实际加热输出。",
+      "ltl": "G((CurrentTemperature = TemperatureSensorInput) AND (SetTempDisplay = SetTemperature) AND (HeaterStatus <-> HeaterOutput))",
+      "kind": "data",
+      "verified_by": "bounded_checker"
+    },
+    {
+      "sid": "S7",
+      "kind": "safety",
+      "verified_by": "simulation",
+      "ltl": "",
+      "text": "连续加热超过 5 秒后触发保护，按外部任务时钟检查。"
+    }
+  ],
+  "test_cases": [
+    {
+      "tc_id": "cool-heat-1",
+      "group": "cool-heat",
+      "mode": "sequence",
+      "scan_interval_ms": 0,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-heat-2",
+      "group": "cool-heat",
+      "mode": "sequence",
+      "scan_interval_ms": 2000,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-heat-3",
+      "group": "cool-heat",
+      "mode": "sequence",
+      "scan_interval_ms": 2999,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-heat-5000ms",
+      "group": "cool-heat",
+      "mode": "sequence",
+      "scan_interval_ms": 1,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-heat-4",
+      "group": "cool-heat",
+      "mode": "sequence",
+      "scan_interval_ms": 1,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": true,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "cool-heat-5",
+      "group": "cool-heat",
+      "mode": "sequence",
+      "scan_interval_ms": 2999,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": true,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "cool-heat-6",
+      "group": "cool-heat",
+      "mode": "sequence",
+      "scan_interval_ms": 1,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-above-1",
+      "group": "cool-above",
+      "mode": "sequence",
+      "scan_interval_ms": 0,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-above-2",
+      "group": "cool-above",
+      "mode": "sequence",
+      "scan_interval_ms": 2000,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-above-3",
+      "group": "cool-above",
+      "mode": "sequence",
+      "scan_interval_ms": 2999,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-above-4",
+      "group": "cool-above",
+      "mode": "sequence",
+      "scan_interval_ms": 2,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": true,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "cool-above-5",
+      "group": "cool-above",
+      "mode": "sequence",
+      "scan_interval_ms": 2999,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": true,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "cool-above-6",
+      "group": "cool-above",
+      "mode": "sequence",
+      "scan_interval_ms": 1,
+      "inputs": {
+        "TemperatureSensorInput": 60,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 60,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "cool-fault-1",
+      "group": "cool-fault",
+      "mode": "sequence",
+      "scan_interval_ms": 0,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-fault-2",
+      "group": "cool-fault",
+      "mode": "sequence",
+      "scan_interval_ms": 2000,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-fault-3",
+      "group": "cool-fault",
+      "mode": "sequence",
+      "scan_interval_ms": 2999,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-fault-4",
+      "group": "cool-fault",
+      "mode": "sequence",
+      "scan_interval_ms": 2,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": true,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "cool-fault-5",
+      "group": "cool-fault",
+      "mode": "sequence",
+      "scan_interval_ms": 2999,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": true,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "cool-fault-6",
+      "group": "cool-fault",
+      "mode": "sequence",
+      "scan_interval_ms": 1,
+      "inputs": {
+        "TemperatureSensorInput": -1,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": -1,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "cool-equal-1",
+      "group": "cool-equal",
+      "mode": "sequence",
+      "scan_interval_ms": 0,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-equal-2",
+      "group": "cool-equal",
+      "mode": "sequence",
+      "scan_interval_ms": 2000,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-equal-3",
+      "group": "cool-equal",
+      "mode": "sequence",
+      "scan_interval_ms": 2999,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "cool-equal-4",
+      "group": "cool-equal",
+      "mode": "sequence",
+      "scan_interval_ms": 2,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": true,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "cool-equal-5",
+      "group": "cool-equal",
+      "mode": "sequence",
+      "scan_interval_ms": 2999,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": true,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "cool-equal-6",
+      "group": "cool-equal",
+      "mode": "sequence",
+      "scan_interval_ms": 1,
+      "inputs": {
+        "TemperatureSensorInput": 50,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 50,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false
+      }
+    },
+    {
+      "tc_id": "two-trips-1",
+      "group": "two-trips",
+      "mode": "sequence",
+      "scan_interval_ms": 0,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "two-trips-2",
+      "group": "two-trips",
+      "mode": "sequence",
+      "scan_interval_ms": 5001,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": true,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "two-trips-3",
+      "group": "two-trips",
+      "mode": "sequence",
+      "scan_interval_ms": 3000,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "two-trips-4",
+      "group": "two-trips",
+      "mode": "sequence",
+      "scan_interval_ms": 4999,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "two-trips-5",
+      "group": "two-trips",
+      "mode": "sequence",
+      "scan_interval_ms": 2,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": true,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "sensor-and-setpoint-1",
+      "group": "sensor-and-setpoint",
+      "mode": "sequence",
+      "scan_interval_ms": 0,
+      "inputs": {
+        "TemperatureSensorInput": 55,
+        "SetTemperature": 54
+      },
+      "expected": {
+        "CurrentTemperature": 55,
+        "SetTempDisplay": 54,
+        "OverheatProtection": false,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "sensor-and-setpoint-2",
+      "group": "sensor-and-setpoint",
+      "mode": "sequence",
+      "scan_interval_ms": 1,
+      "inputs": {
+        "TemperatureSensorInput": 55,
+        "SetTemperature": 56
+      },
+      "expected": {
+        "CurrentTemperature": 55,
+        "SetTempDisplay": 56,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "sensor-and-setpoint-3",
+      "group": "sensor-and-setpoint",
+      "mode": "sequence",
+      "scan_interval_ms": 3000,
+      "inputs": {
+        "TemperatureSensorInput": 120,
+        "SetTemperature": 56
+      },
+      "expected": {
+        "CurrentTemperature": 120,
+        "SetTempDisplay": 56,
+        "OverheatProtection": false,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "sensor-and-setpoint-4",
+      "group": "sensor-and-setpoint",
+      "mode": "sequence",
+      "scan_interval_ms": 100,
+      "inputs": {
+        "TemperatureSensorInput": 0,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 0,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "sensor-and-setpoint-5",
+      "group": "sensor-and-setpoint",
+      "mode": "sequence",
+      "scan_interval_ms": 3000,
+      "inputs": {
+        "TemperatureSensorInput": 100,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 100,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": false,
+        "HeaterOutput": false
+      }
+    },
+    {
+      "tc_id": "sensor-and-setpoint-6",
+      "group": "sensor-and-setpoint",
+      "mode": "sequence",
+      "scan_interval_ms": 500,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    },
+    {
+      "tc_id": "sensor-and-setpoint-7",
+      "group": "sensor-and-setpoint",
+      "mode": "sequence",
+      "scan_interval_ms": 3000,
+      "inputs": {
+        "TemperatureSensorInput": 20,
+        "SetTemperature": 50
+      },
+      "expected": {
+        "CurrentTemperature": 20,
+        "SetTempDisplay": 50,
+        "OverheatProtection": false,
+        "HeaterStatus": true,
+        "HeaterOutput": true
+      }
+    }
+  ],
+  "provenance": {
+    "source_record": "sources/index.json#public-medium-04",
+    "release_contract": "STBench-F1.4"
+  },
+  "language": "en",
+  "raw_text": "# Temperature Logic Control\n\n- **Difficulty:** Medium (medium)\n\n## Requirements\n\nWrite a function block FB to implement a temperature control logic. The program should include the following functions:\n1. Read the value of the temperature sensor through an analog input module.\n2. Compare the read temperature value TemperatureSensorInput with the set temperature value SetTemperature.\n3. If the actual temperature is lower than the set temperature, start the heater HeaterOutput.\n4. If the actual temperature is higher than the set temperature, turn off the heater HeaterOutput.\n5. If the heater works continuously for more than a certain period (for convenience, using 5s), it should trigger an overheating protection, automatically turn off the heater, and must wait for a certain period (for convenience, using 3s) before the overheating protection can be lifted.\n6. Provide status indication, displaying the current temperature, set temperature, heater status, and whether overheating protection is triggered.\n7. Provide temperature sensor fault judgment, if the read temperature value TemperatureSensorInput is less than 0 or greater than 100, it is considered a sensor fault, and the heater should be turned off.\n\n## Interface Definition\n\n| Direction | Variable/Field | Data Type | Description |\n| --- | --- | --- | --- |\n| Input | `TemperatureSensorInput` | `REAL` | The input value of the temperature sensor, i.e., the actual temperature |\n| Input | `SetTemperature` | `REAL` | The set temperature value |\n| Output | `CurrentTemperature` | `REAL` | Display of the current temperature |\n| Output | `SetTempDisplay` | `REAL` | Display of the set temperature |\n| Output | `HeaterStatus` | `BOOL` | Display of the heater status |\n| Output | `OverheatProtection` | `BOOL` | Display of the overheating protection status |\n| Output | `HeaterOutput` | `BOOL` | The control output of the heater |",
+  "case_mode": "sequence",
+  "mc_inputs": {
+    "SetTemperature": [
+      49,
+      50,
+      51,
+      54,
+      56
+    ]
+  }
+}
