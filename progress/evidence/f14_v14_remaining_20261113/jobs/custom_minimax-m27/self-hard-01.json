@@ -1,0 +1,475 @@
+{
+  "job_id": "custom_minimax-m27/self-hard-01",
+  "pid": "self-hard-01",
+  "condition": "custom_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 15,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_FLOW_STRUCTURE",
+            "line": 52,
+            "message": "Pascal wrapper BEGIN is not part of a CODESYS ST function-block body. Start statements immediately after END_VAR; terminate the POU with END_FUNCTION_BLOCK."
+          },
+          {
+            "level": "error",
+            "line": 52,
+            "code": "E_BAD_STMT",
+            "message": "无法解析的语句，遇到 'ackRising'"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 15,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "d64227d3ef7b562712fa65fe9d96e363608fcac98c64b13b39fc00563229de4e",
+          "task_json_sha256": "3494d2418a473bcd80f3dd433559063b27bfc9131e6a1d51c216359c45134274",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/15; bounded status: not_run.\nLine 52 [E_FLOW_STRUCTURE]: Pascal wrapper BEGIN is not part of a CODESYS ST function-block body. Start statements immediately after END_VAR; terminate the POU with END_FUNCTION_BLOCK.\nLine 52 [E_BAD_STMT]: 无法解析的语句，遇到 'ackRising'\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n1: FUNCTION_BLOCK FB\n2: VAR_INPUT\n51: *)\n52: BEGIN\n53:     (* Rising-edge detection *)\n54:     ackRising := ackBtn AND NOT prev_alarmActive; (* reuse prev_alarmActive as prev_ackBtn *)",
+      "timing": {
+        "static_seconds": 0.172
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    flowLow   : BOOL;\n    ackBtn    : BOOL;\n    sensorOK  : BOOL;\nEND_VAR\nVAR_OUTPUT\n    alarmActive : BOOL;\n    alarmAcked  : BOOL;\n    highHigh    : BOOL;\nEND_VAR\nVAR\n    prev_flowLow  : BOOL := FALSE;\n    prev_alarmActive : BOOL := FALSE;\n    prev_alarmAcked  : BOOL := FALSE;\nEND_VAR\nVAR_TEMP\n    ackRising : BOOL;\nEND_VAR\n(* ENGINEERING_CONTRACT\n   ISA-18.2 four-state alarm (unack-active / unack-cleared / acked-active / acked-cleared):\n   ┌──────────────────┬───────────────┬──────────────────────────────────────────────┐\n   │ Output / State   │ Activation    │ Retention / Reset / Deactivation              │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ alarmActive      │ flowLow rising│ Held until condition cleared AND alarmAcked   │\n   │                  │ edge          │ (no self-clear without explicit ack)         │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ alarmAcked       │ 1) ackBtn     │ Held across scans; reset only when acked-btn │\n   │                  │    rising edge│    pressed while condition gone (clears both)│\n   │                  │ 2) condition  │                                              │\n   │                  │    cleared    │                                              │\n   │                  │    (prev unack│                                              │\n   │                  │    active)    │                                              │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ highHigh         │ sensorOK=FALSE│ Auto-cleared when sensorOK returns TRUE      │\n   │                  │ (same scan)   │ (independent, never inhibits low alarm)     │\n   └──────────────────┴───────────────┴──────────────────────────────────────────────┘\n   Boundaries:\n     - alarmActive retained across scans when !alarmAcked (PUB001/PUB002/PUB005)\n     - highHigh = NOT sensorOK  (PUB004/PUB016)\n     - ackBtn rising-edge only; same-scan evaluation (PUB006/PUB007/PUB014)\n     - No timers or hidden state; all VAR static (PUB008)\n   Supported formal properties:\n     [S1] G(flowLow & ackBtn -> alarmActive)\n     [S2] G(alarmActive & !alarmAcked & X(flowLow) -> X(alarmActive))\n     [S3] G(!sensorOK -> highHigh)\n     [S4] G(rising(ackBtn) & flowLow -> alarmAcked)\n     [S5] G(highHigh <-> !sensorOK)\n     [S6] alarmActive FSM (see state table above)\n     [S7] alarmAcked FSM (see state table above)\n*)\nBEGIN\n    (* Rising-edge detection *)\n    ackRising := ackBtn AND NOT prev_alarmActive; (* reuse prev_alarmActive as prev_ackBtn *)\n\n    (* ── High-priority alarm: sensor wire-break ── *)\n    highHigh := NOT sensorOK;  (* PUB004/PUB016, PUB034: auto-clear when OK *)\n\n    (* ── Four-state low-priority alarm ── *)\n\n    (* Condition gone transitions *)\n    IF flowLow THEN\n        (* Condition still present *)\n        alarmActive := TRUE;\n        IF ackRising THEN\n            alarmAcked := TRUE;  (* acked while condition present: acked-active *)\n        END_IF;\n    ELSE\n        (* Condition currently gone *)\n        IF prev_flowLow THEN\n            (* Just-cleared edge: alarm can't vanish unacknowledged *)\n            IF alarmActive AND NOT alarmAcked THEN\n                alarmAcked := TRUE;   (* unack-active → acked-cleared *)\n            END_IF;\n            (* acked-cleared stays active until user presses ack *)\n            IF alarmActive AND alarmAcked THEN\n                (* stay acked-cleared; handled below after ack check *)\n            END_IF;\n        END_IF;\n\n        (* Transition out of acked-cleared on explicit acknowledge *)\n        IF alarmActive AND alarmAcked AND ackRising THEN\n            alarmActive := FALSE;\n            alarmAcked  := FALSE;\n        END_IF;\n\n        (* No active alarm and not just cleared → cleared state *)\n        IF NOT alarmActive THEN\n            alarmAcked := FALSE;\n        END_IF;\n    END_IF;\n\n    (* Persist alarmActive when condition present but not yet acked *)\n    IF flowLow AND prev_flowLow AND alarmActive AND NOT alarmAcked THEN\n        alarmActive := TRUE;   (* hold unack-active across scans *)\n    END_IF;\n\n    (* Shift-register for next scan *)\n    prev_flowLow     := flowLow;\n    prev_alarmActive := alarmActive;\n    prev_alarmAcked  := alarmAcked;\n    (* reuse: prev_alarmActive used as prev_ackBtn above via ackRising *)\nEND_FUNCTION_BLOCK",
+      "code_hash": "d64227d3ef7b562712fa65fe9d96e363608fcac98c64b13b39fc00563229de4e",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 32,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007",
+          "PUB008",
+          "PUB014",
+          "PUB016"
+        ]
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 3598,
+      "completion_tokens": 3301,
+      "cost_cny": 0.027874518000000004,
+      "latency_s": 66.031,
+      "generation_seconds": 66.031,
+      "end_to_end_seconds": 66.203,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3076,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "5463549df417ebc531f2fea846de3b6c78ddd774fb26671fe4090e8ae090deef",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 15,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 15,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "At least one statement is expected",
+              "Compile complete -- 1 errors, 0 warnings",
+              "Build complete -- 1 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.328000000008615,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-01_23ee93acbd",
+            "source_sha256": "9c9ce4b65abf222db89af41bb33309df0dc3a83711656f2dab1122c2abaee7f6",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "9c9ce4b65abf222db89af41bb33309df0dc3a83711656f2dab1122c2abaee7f6",
+          "task_json_sha256": "3494d2418a473bcd80f3dd433559063b27bfc9131e6a1d51c216359c45134274",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\nAt least one statement is expected\nCompile complete -- 1 errors, 0 warnings\nBuild complete -- 1 errors, 0 warnings : No download possible\nAdditional code checks ...\nAdditional code checks complete -- 0 errors\nFunctional checks: 0/15; bounded status: not_run.",
+      "timing": {
+        "static_seconds": 0.172,
+        "native_queue_seconds": 9.563,
+        "native_compile_seconds": 15.328
+      },
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    flowLow   : BOOL;\n    ackBtn    : BOOL;\n    sensorOK  : BOOL;\nEND_VAR\nVAR_OUTPUT\n    alarmActive : BOOL;\n    alarmAcked  : BOOL;\n    highHigh    : BOOL;\nEND_VAR\nVAR\n    prev_flowLow  : BOOL := FALSE;\n    prev_ackBtn   : BOOL := FALSE;\n    prev_alarmActive : BOOL := FALSE;\n    prev_alarmAcked  : BOOL := FALSE;\nEND_VAR\nVAR_TEMP\n    ackRising : BOOL;\nEND_VAR\n(* ENGINEERING_CONTRACT\n   ISA-18.2 four-state alarm (unack-active / unack-cleared / acked-active / acked-cleared):\n   ┌──────────────────┬───────────────┬──────────────────────────────────────────────┐\n   │ Output / State   │ Activation    │ Retention / Reset / Deactivation              │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ alarmActive      │ flowLow rising│ Held until condition cleared AND alarmAcked   │\n   │                  │ edge          │ (no self-clear without explicit ack)         │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ alarmAcked       │ 1) ackBtn     │ Held across scans; reset only when acked-btn │\n   │                  │    rising edge│    pressed while condition gone (clears both)│\n   │                  │ 2) condition  │                                              │\n   │                  │    cleared    │                                              │\n   │                  │    (prev unack│                                              │\n   │                  │    active)    │                                              │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ highHigh         │ sensorOK=FALSE│ Auto-cleared when sensorOK returns TRUE      │\n   │                  │ (same scan)   │ (independent, never inhibits low alarm)     │\n   └──────────────────┴───────────────┴──────────────────────────────────────────────┘\n   Boundaries:\n     - alarmActive retained across scans when !alarmAcked (PUB001/PUB002/PUB005)\n     - highHigh = NOT sensorOK  (PUB004/PUB016)\n     - ackBtn rising-edge only; same-scan evaluation (PUB006/PUB007/PUB014)\n     - No timers or hidden state; all VAR static (PUB008)\n   Supported formal properties:\n     [S1] G(flowLow & ackBtn -> alarmActive)\n     [S2] G(alarmActive & !alarmAcked & X(flowLow) -> X(alarmActive))\n     [S3] G(!sensorOK -> highHigh)\n     [S4] G(rising(ackBtn) & flowLow -> alarmAcked)\n     [S5] G(highHigh <-> !sensorOK)\n     [S6] alarmActive FSM (see state table above)\n     [S7] alarmAcked FSM (see state table above)\n*)\n    (* Rising-edge detection *)\n    ackRising := ackBtn AND NOT prev_ackBtn;\n\n    (* ── High-priority alarm: sensor wire-break ── *)\n    highHigh := NOT sensorOK;  (* PUB004/PUB016, PUB034: auto-clear when OK *)\n\n    (* ── Four-state low-priority alarm ── *)\n\n    (* Condition gone transitions *)\n    IF flowLow THEN\n        (* Condition still present *)\n        alarmActive := TRUE;\n        IF ackRising THEN\n            alarmAcked := TRUE;  (* acked while condition present: acked-active *)\n        END_IF;\n    ELSE\n        (* Condition currently gone *)\n        IF prev_flowLow THEN\n            (* Just-cleared edge: alarm can't vanish unacknowledged *)\n            IF alarmActive AND NOT alarmAcked THEN\n                alarmAcked := TRUE;   (* unack-active → acked-cleared *)\n            END_IF;\n            (* acked-cleared stays active until user presses ack *)\n            IF alarmActive AND alarmAcked THEN\n                (* stay acked-cleared; handled below after ack check *)\n            END_IF;\n        END_IF;\n\n        (* Transition out of acked-cleared on explicit acknowledge *)\n        IF alarmActive AND alarmAcked AND ackRising THEN\n            alarmActive := FALSE;\n            alarmAcked  := FALSE;\n        END_IF;\n\n        (* No active alarm and not just cleared → cleared state *)\n        IF NOT alarmActive THEN\n            alarmAcked := FALSE;\n        END_IF;\n    END_IF;\n\n    (* Persist alarmActive when condition present but not yet acked *)\n    IF flowLow AND prev_flowLow AND alarmActive AND NOT alarmAcked THEN\n        alarmActive := TRUE;   (* hold unack-active across scans *)\n    END_IF;\n\n    (* Shift-register for next scan *)\n    prev_flowLow     := flowLow;\n    prev_ackBtn      := ackBtn;\n    prev_alarmActive := alarmActive;\n    prev_alarmAcked  := alarmAcked;\nEND_FUNCTION_BLOCK",
+      "code_hash": "9c9ce4b65abf222db89af41bb33309df0dc3a83711656f2dab1122c2abaee7f6",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 32,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007",
+          "PUB008",
+          "PUB014",
+          "PUB016"
+        ]
+      },
+      "model_patch": {
+        "mode": "model_exact_edits",
+        "base_sha256": "d64227d3ef7b562712fa65fe9d96e363608fcac98c64b13b39fc00563229de4e",
+        "plan": {
+          "edits": [
+            {
+              "old": "VAR\n    prev_flowLow  : BOOL := FALSE;\n    prev_alarmActive : BOOL := FALSE;\n    prev_alarmAcked  : BOOL := FALSE;\nEND_VAR\nVAR_TEMP\n    ackRising : BOOL;\nEND_VAR\n(* ENGINEERING_CONTRACT\n   ISA-18.2 four-state alarm (unack-active / unack-cleared / acked-active / acked-cleared):\n   ┌──────────────────┬───────────────┬──────────────────────────────────────────────┐\n   │ Output / State   │ Activation    │ Retention / Reset / Deactivation              │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ alarmActive      │ flowLow rising│ Held until condition cleared AND alarmAcked   │\n   │                  │ edge          │ (no self-clear without explicit ack)         │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ alarmAcked       │ 1) ackBtn     │ Held across scans; reset only when acked-btn │\n   │                  │    rising edge│    pressed while condition gone (clears both)│\n   │                  │ 2) condition  │                                              │\n   │                  │    cleared    │                                              │\n   │                  │    (prev unack│                                              │\n   │                  │    active)    │                                              │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ highHigh         │ sensorOK=FALSE│ Auto-cleared when sensorOK returns TRUE      │\n   │                  │ (same scan)   │ (independent, never inhibits low alarm)     │\n   └──────────────────┴───────────────┴──────────────────────────────────────────────┘\n   Boundaries:\n     - alarmActive retained across scans when !alarmAcked (PUB001/PUB002/PUB005)\n     - highHigh = NOT sensorOK  (PUB004/PUB016)\n     - ackBtn rising-edge only; same-scan evaluation (PUB006/PUB007/PUB014)\n     - No timers or hidden state; all VAR static (PUB008)\n   Supported formal properties:\n     [S1] G(flowLow & ackBtn -> alarmActive)\n     [S2] G(alarmActive & !alarmAcked & X(flowLow) -> X(alarmActive))\n     [S3] G(!sensorOK -> highHigh)\n     [S4] G(rising(ackBtn) & flowLow -> alarmAcked)\n     [S5] G(highHigh <-> !sensorOK)\n     [S6] alarmActive FSM (see state table above)\n     [S7] alarmAcked FSM (see state table above)\n*)\nBEGIN\n    (* Rising-edge detection *)\n    ackRising := ackBtn AND NOT prev_alarmActive; (* reuse prev_alarmActive as prev_ackBtn *)",
+              "new": "VAR\n    prev_flowLow  : BOOL := FALSE;\n    prev_ackBtn   : BOOL := FALSE;\n    prev_alarmActive : BOOL := FALSE;\n    prev_alarmAcked  : BOOL := FALSE;\nEND_VAR\nVAR_TEMP\n    ackRising : BOOL;\nEND_VAR\n(* ENGINEERING_CONTRACT\n   ISA-18.2 four-state alarm (unack-active / unack-cleared / acked-active / acked-cleared):\n   ┌──────────────────┬───────────────┬──────────────────────────────────────────────┐\n   │ Output / State   │ Activation    │ Retention / Reset / Deactivation              │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ alarmActive      │ flowLow rising│ Held until condition cleared AND alarmAcked   │\n   │                  │ edge          │ (no self-clear without explicit ack)         │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ alarmAcked       │ 1) ackBtn     │ Held across scans; reset only when acked-btn │\n   │                  │    rising edge│    pressed while condition gone (clears both)│\n   │                  │ 2) condition  │                                              │\n   │                  │    cleared    │                                              │\n   │                  │    (prev unack│                                              │\n   │                  │    active)    │                                              │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ highHigh         │ sensorOK=FALSE│ Auto-cleared when sensorOK returns TRUE      │\n   │                  │ (same scan)   │ (independent, never inhibits low alarm)     │\n   └──────────────────┴───────────────┴──────────────────────────────────────────────┘\n   Boundaries:\n     - alarmActive retained across scans when !alarmAcked (PUB001/PUB002/PUB005)\n     - highHigh = NOT sensorOK  (PUB004/PUB016)\n     - ackBtn rising-edge only; same-scan evaluation (PUB006/PUB007/PUB014)\n     - No timers or hidden state; all VAR static (PUB008)\n   Supported formal properties:\n     [S1] G(flowLow & ackBtn -> alarmActive)\n     [S2] G(alarmActive & !alarmAcked & X(flowLow) -> X(alarmActive))\n     [S3] G(!sensorOK -> highHigh)\n     [S4] G(rising(ackBtn) & flowLow -> alarmAcked)\n     [S5] G(highHigh <-> !sensorOK)\n     [S6] alarmActive FSM (see state table above)\n     [S7] alarmAcked FSM (see state table above)\n*)\n    (* Rising-edge detection *)\n    ackRising := ackBtn AND NOT prev_ackBtn;"
+            },
+            {
+              "old": "    (* Shift-register for next scan *)\n    prev_flowLow     := flowLow;\n    prev_alarmActive := alarmActive;\n    prev_alarmAcked  := alarmAcked;\n    (* reuse: prev_alarmActive used as prev_ackBtn above via ackRising *)\nEND_FUNCTION_BLOCK",
+              "new": "    (* Shift-register for next scan *)\n    prev_flowLow     := flowLow;\n    prev_ackBtn      := ackBtn;\n    prev_alarmActive := alarmActive;\n    prev_alarmAcked  := alarmAcked;\nEND_FUNCTION_BLOCK"
+            }
+          ]
+        }
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 5281,
+      "completion_tokens": 1664,
+      "cost_cny": 0.019803483,
+      "latency_s": 22.687,
+      "generation_seconds": 22.687,
+      "end_to_end_seconds": 47.75,
+      "format_edits": [],
+      "raw_source_sha256": "9c9ce4b65abf222db89af41bb33309df0dc3a83711656f2dab1122c2abaee7f6",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 15,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 15,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "At least one statement is expected",
+              "Compile complete -- 1 errors, 0 warnings",
+              "Build complete -- 1 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.23399999999674,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-01_e9fa1a740c",
+            "source_sha256": "2c5dd5755ba9a8adf7dde40d3cf369925453f67f0ce2afe68ee15a228612666e",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "2c5dd5755ba9a8adf7dde40d3cf369925453f67f0ce2afe68ee15a228612666e",
+          "task_json_sha256": "3494d2418a473bcd80f3dd433559063b27bfc9131e6a1d51c216359c45134274",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\nAt least one statement is expected\nCompile complete -- 1 errors, 0 warnings\nBuild complete -- 1 errors, 0 warnings : No download possible\nAdditional code checks ...\nAdditional code checks complete -- 0 errors\nFunctional checks: 0/15; bounded status: not_run.",
+      "timing": {
+        "static_seconds": 0.156,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 15.234
+      },
+      "idx": 2,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    flowLow   : BOOL;\n    ackBtn    : BOOL;\n    sensorOK  : BOOL;\nEND_VAR\nVAR_OUTPUT\n    alarmActive : BOOL;\n    alarmAcked  : BOOL;\n    highHigh    : BOOL;\nEND_VAR\nVAR\n    prev_flowLow  : BOOL := FALSE;\n    prev_ackBtn   : BOOL := FALSE;\n    prev_alarmActive : BOOL := FALSE;\n    prev_alarmAcked  : BOOL := FALSE;\nEND_VAR\nVAR_TEMP\n    ackRising : BOOL;\nEND_VAR\n(* ENGINEERING_CONTRACT\n   ISA-18.2 four-state alarm (unack-active / unack-cleared / acked-active / acked-cleared):\n   ┌──────────────────┬───────────────┬──────────────────────────────────────────────┐\n   │ Output / State   │ Activation    │ Retention / Reset / Deactivation              │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ alarmActive      │ flowLow rising│ Held until condition cleared AND alarmAcked   │\n   │                  │ edge          │ (no self-clear without explicit ack)         │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ alarmAcked       │ 1) ackBtn     │ Held across scans; reset only when acked-btn │\n   │                  │    rising edge│    pressed while condition gone (clears both)│\n   │                  │ 2) condition  │                                              │\n   │                  │    cleared    │                                              │\n   │                  │    (prev unack│                                              │\n   │                  │    active)    │                                              │\n   ├──────────────────┼───────────────┼──────────────────────────────────────────────┤\n   │ highHigh         │ sensorOK=FALSE│ Auto-cleared when sensorOK returns TRUE      │\n   │                  │ (same scan)   │ (independent, never inhibits low alarm)     │\n   └──────────────────┴───────────────┴──────────────────────────────────────────────┘\n   Boundaries:\n     - alarmActive retained across scans when !alarmAcked (PUB001/PUB002/PUB005)\n     - highHigh = NOT sensorOK  (PUB004/PUB016)\n     - ackBtn rising-edge only; same-scan evaluation (PUB006/PUB007/PUB014)\n     - No timers or hidden state; all VAR static (PUB008)\n   Supported formal properties:\n     [S1] G(flowLow & ackBtn -> alarmActive)\n     [S2] G(alarmActive & !alarmAcked & X(flowLow) -> X(alarmActive))\n     [S3] G(!sensorOK -> highHigh)\n     [S4] G(rising(ackBtn) & flowLow -> alarmAcked)\n     [S5] G(highHigh <-> !sensorOK)\n     [S6] alarmActive FSM (see state table above)\n     [S7] alarmAcked FSM (see state table above)\n*)\n    ackRising := ackBtn AND NOT prev_ackBtn;\n\n    (* ── High-priority alarm: sensor wire-break ── *)\n    highHigh := NOT sensorOK;  (* PUB004/PUB016, PUB034: auto-clear when OK *)\n\n    (* ── Four-state low-priority alarm ── *)\n\n    (* Condition gone transitions *)\n    IF flowLow THEN\n        (* Condition still present *)\n        alarmActive := TRUE;\n        IF ackRising THEN\n            alarmAcked := TRUE;  (* acked while condition present: acked-active *)\n        END_IF;\n    ELSE\n        (* Condition currently gone *)\n        IF prev_flowLow THEN\n            (* Just-cleared edge: alarm can't vanish unacknowledged *)\n            IF alarmActive AND NOT alarmAcked THEN\n                alarmAcked := TRUE;   (* unack-active → acked-cleared *)\n            END_IF;\n            (* acked-cleared stays active until user presses ack *)\n            IF alarmActive AND alarmAcked THEN\n                (* stay acked-cleared; handled below after ack check *)\n            END_IF;\n        END_IF;\n\n        (* Transition out of acked-cleared on explicit acknowledge *)\n        IF alarmActive AND alarmAcked AND ackRising THEN\n            alarmActive := FALSE;\n            alarmAcked  := FALSE;\n        END_IF;\n\n        (* No active alarm and not just cleared → cleared state *)\n        IF NOT alarmActive THEN\n            alarmAcked := FALSE;\n        END_IF;\n    END_IF;\n\n    (* Persist alarmActive when condition present but not yet acked *)\n    IF flowLow AND prev_flowLow AND alarmActive AND NOT alarmAcked THEN\n        alarmActive := TRUE;   (* hold unack-active across scans *)\n    END_IF;\n\n    (* Shift-register for next scan *)\n    prev_flowLow     := flowLow;\n    prev_ackBtn      := ackBtn;\n    prev_alarmActive := alarmActive;\n    prev_alarmAcked  := alarmAcked;\nEND_FUNCTION_BLOCK",
+      "code_hash": "2c5dd5755ba9a8adf7dde40d3cf369925453f67f0ce2afe68ee15a228612666e",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 32,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007",
+          "PUB008",
+          "PUB014",
+          "PUB016"
+        ]
+      },
+      "model_patch": {
+        "mode": "model_exact_edits",
+        "base_sha256": "9c9ce4b65abf222db89af41bb33309df0dc3a83711656f2dab1122c2abaee7f6",
+        "plan": {
+          "edits": [
+            {
+              "old": "    prev_alarmAcked  := alarmAcked;\nEND_FUNCTION_BLOCK",
+              "new": "    prev_alarmAcked  := alarmAcked;\nEND_FUNCTION_BLOCK"
+            },
+            {
+              "old": "    (* Rising-edge detection *)\n    ackRising := ackBtn AND NOT prev_ackBtn;",
+              "new": "    ackRising := ackBtn AND NOT prev_ackBtn;"
+            },
+            {
+              "old": "    (* Shift-register for next scan *)\n    prev_flowLow     := flowLow;\n    prev_ackBtn      := ackBtn;\n    prev_alarmActive := alarmActive;\n    prev_alarmAcked  := alarmAcked;\nEND_FUNCTION_BLOCK",
+              "new": "    (* Shift-register for next scan *)\n    prev_flowLow     := flowLow;\n    prev_ackBtn      := ackBtn;\n    prev_alarmActive := alarmActive;\n    prev_alarmAcked  := alarmAcked;\nEND_FUNCTION_BLOCK"
+            }
+          ]
+        }
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 5468,
+      "completion_tokens": 624,
+      "cost_cny": 0.013212276000000002,
+      "latency_s": 11.687,
+      "generation_seconds": 11.687,
+      "end_to_end_seconds": 27.093,
+      "format_edits": [],
+      "raw_source_sha256": "2c5dd5755ba9a8adf7dde40d3cf369925453f67f0ce2afe68ee15a228612666e",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 15,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 15,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "task_json_sha256": "3494d2418a473bcd80f3dd433559063b27bfc9131e6a1d51c216359c45134274",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/15; bounded status: not_run.\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n",
+      "timing": {
+        "static_seconds": 0.156
+      },
+      "idx": 3,
+      "code": "",
+      "code_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "invalid_model_patch",
+        "error": "Expecting value: line 1 column 1 (char 0)"
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 5390,
+      "completion_tokens": 4758,
+      "cost_cny": 0.040516098,
+      "latency_s": 91.25,
+      "generation_seconds": 91.25,
+      "end_to_end_seconds": 91.422,
+      "format_edits": [],
+      "raw_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "maximum_four_candidates",
+  "tests_total": 15,
+  "study_plan_sha256": "e0db2940199cc656528584436ab352ead1fdbaa878edd82cd2958bfa3af1ca4c",
+  "started_at": "2026-11-13T19:26:59.024278+08:00",
+  "wall_seconds": 232.61,
+  "finished_at": "2026-11-13T19:30:51.557308+08:00",
+  "operational_network_wait": {
+    "batch": "v4_wait900",
+    "ceiling_seconds": 900,
+    "task_seconds": 2400,
+    "evaluation_reserve_seconds": 150,
+    "model_parameters_unchanged": true
+  }
+}
