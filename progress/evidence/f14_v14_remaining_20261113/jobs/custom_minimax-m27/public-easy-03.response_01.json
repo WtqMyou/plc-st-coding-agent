@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-690erd-1794551182288176251",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\nFUNCTION_BLOCK AlarmHysteresis\nVAR_INPUT\n    Value      : REAL;\n    hiLevel    : REAL;\n    loLevel    : REAL;\n    hystWindow : REAL;\nEND_VAR\nVAR_OUTPUT\n    hiAlarm : BOOL;\n    loAlarm : BOOL;\n    error   : BOOL;\n    status  : WORD;\nEND_VAR\nVAR\n    tmp_range : REAL;\nEND_VAR\n\n(* ENGINEERING_CONTRACT\n| Output   | Activation                          | Retention        | Reset/Deactivation                  | Same-scan | Units/Bounds           |\n|----------|-------------------------------------|------------------|-------------------------------------|-----------|------------------------|\n| hiAlarm  | Value > hiLevel                     | hold             | Value < hiLevel - hystWindow        | -         | PUB001, hysteresis     |\n| loAlarm  | Value < loLevel                     | hold             | Value > loLevel + hystWindow        | -         | PUB001, hysteresis     |\n| error    | loLevel >= hiLevel                  | hold_until_reset | -                                   | priority  | PUB002, 16#8001        |\n| error    | hystWindow >= (hiLevel - loLevel)   | hold_until_reset | -                                   | priority  | PUB003, 16#8002        |\n| status   | set on error                        | retain           | -                                   | -         | PUB002/PUB003, WORD    |\n\nPriority: Error checks execute before alarm logic; on error, status is set and block exits early.\nRetention: hiAlarm/loAlarm are latching (PUB001); error is latching until explicit reset (not specified).\nBoundary: Strict > and < comparisons; hystWindow is REAL; range = hiLevel - loLevel.\n*)\n\n(* CONTRACT_RULES [] *)\n\ntmp_range := hiLevel - loLevel;\n\nerror := FALSE;\nstatus := 16#0000;\n\nIF loLevel >= hiLevel THEN\n    error := TRUE;\n    status := 16#8001;\n    RETURN;\nEND_IF\n\nIF hystWindow >= tmp_range THEN\n    error := TRUE;\n    status := 16#8002;\n    RETURN;\nEND_IF\n\nIF Value > hiLevel THEN\n    hiAlarm := TRUE;\nELSIF Value < (hiLevel - hystWindow) THEN\n    hiAlarm := FALSE;\nEND_IF\n\nIF Value < loLevel THEN\n    loAlarm := TRUE;\nELSIF Value > (loLevel + hystWindow) THEN\n    loAlarm := FALSE;\nEND_IF\n\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "Let me analyze this task carefully:\n\n**Requirements:**\n1. When Value > hiLevel → trigger hiAlarm = TRUE\n2. When Value < hiLevel - hystWindow → exit hiAlarm (hiAlarm = FALSE)\n3. When Value < loLevel → trigger loAlarm = TRUE\n4. When Value > loLevel + hystWindow → exit loAlarm (loAlarm = FALSE)\n5. If loLevel >= hiLevel → error = TRUE, status = 16#8001, exit\n6. If hystWindow >= (hiLevel - loLevel) → error = TRUE, status = 16#8002\n\n**Interface:**\n- Inputs: Value (REAL), hiLevel (REAL), loLevel (REAL), hystWindow (REAL)\n- Outputs: hiAlarm (BOOL), loAlarm (BOOL), error (BOOL), status (WORD)\n\n**Engineering Contract Table:**\n| Output | Activation | Retention | Reset/Deactivation | Same-scan | Units |\n|--------|------------|-----------|-------------------|-----------|-------|\n| hiAlarm | Value > hiLevel | hold | Value < hiLevel - hystWindow | - | PUB001 |\n| loAlarm | Value < loLevel | hold | Value > loLevel + hystWindow | - | PUB001 |\n| error | loLevel >= hiLevel OR hystWindow >= (hiLevel - loLevel) | hold | - | - | PUB002, PUB003 |\n| status | set when error | retain | - | - | PUB002, PUB003 |\n\n**Observations:**\n- hiAlarm and loAlarm are latching outputs - they retain state until the hysteresis condition is met\n- error and status are set on error conditions and remain set (no reset condition stated)\n\n\n- The error checks happen first, and if an error exists, we exit without processing alarms. Otherwise, the hysteresis logic applies: hiAlarm latches when Value exceeds hiLevel and clears when it drops below hiLevel - hystWindow, while loAlarm latches when Value falls below loLevel and clears when it rises above loLevel + hystWindow. The hysteresis logic confirms the implementation is correct. Testing the boundary conditions validates the behavior: crossing hiLevel triggers hiAlarm, and it only clears when dropping below hiLevel - hystWindow. Similarly, loAlarm activates below loLevel and deactivates only when rising above loLevel + hystWindow.\n\nThe error conditions handle invalid configurations appropriately—rejecting cases where loLevel exceeds hiLevel, or where the hysteresis window is too large relative to the operating range. The output latch tracking maintains state correctly by recording both alarm signals.\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "Let me analyze this task carefully:\n\n**Requirements:**\n1. When Value > hiLevel → trigger hiAlarm = TRUE\n2. When Value < hiLevel - hystWindow → exit hiAlarm (hiAlarm = FALSE)\n3. When Value < loLevel → trigger loAlarm = TRUE\n4. When Value > loLevel + hystWindow → exit loAlarm (loAlarm = FALSE)\n5. If loLevel >= hiLevel → error = TRUE, status = 16#8001, exit\n6. If hystWindow >= (hiLevel - loLevel) → error = TRUE, status = 16#8002\n\n**Interface:**\n- Inputs: Value (REAL), hiLevel (REAL), loLevel (REAL), hystWindow (REAL)\n- Outputs: hiAlarm (BOOL), loAlarm (BOOL), error (BOOL), status (WORD)\n\n**Engineering Contract Table:**\n| Output | Activation | Retention | Reset/Deactivation | Same-scan | Units |\n|--------|------------|-----------|-------------------|-----------|-------|\n| hiAlarm | Value > hiLevel | hold | Value < hiLevel - hystWindow | - | PUB001 |\n| loAlarm | Value < loLevel | hold | Value > loLevel + hystWindow | - | PUB001 |\n| error | loLevel >= hiLevel OR hystWindow >= (hiLevel - loLevel) | hold | - | - | PUB002, PUB003 |\n| status | set when error | retain | - | - | PUB002, PUB003 |\n\n**Observations:**\n- hiAlarm and loAlarm are latching outputs - they retain state until the hysteresis condition is met\n- error and status are set on error conditions and remain set (no reset condition stated)\n\n\n- The error checks happen first, and if an error exists, we exit without processing alarms. Otherwise, the hysteresis logic applies: hiAlarm latches when Value exceeds hiLevel and clears when it drops below hiLevel - hystWindow, while loAlarm latches when Value falls below loLevel and clears when it rises above loLevel + hystWindow. The hysteresis logic confirms the implementation is correct. Testing the boundary conditions validates the behavior: crossing hiLevel triggers hiAlarm, and it only clears when dropping below hiLevel - hystWindow. Similarly, loAlarm activates below loLevel and deactivates only when rising above loLevel + hystWindow.\n\nThe error conditions handle invalid configurations appropriately—rejecting cases where loLevel exceeds hiLevel, or where the hysteresis window is too large relative to the operating range. The output latch tracking maintains state correctly by recording both alarm signals.\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794551183,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 2506,
+      "completion_tokens": 1036,
+      "total_tokens": 3542,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.011032"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
