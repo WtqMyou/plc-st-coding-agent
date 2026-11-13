@@ -1,0 +1,426 @@
+{
+  "job_id": "codex_minimax-m27/self-hard-04",
+  "pid": "self-hard-04",
+  "condition": "codex_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 32,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 32,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "At least one statement is expected",
+              "Compile complete -- 1 errors, 0 warnings",
+              "Build complete -- 1 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.25,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-04_d25dc9823d",
+            "source_sha256": "bfae0ea7620b166bd75aafdef49a8016b7534a568d8f2854f58139006607b583",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "bfae0ea7620b166bd75aafdef49a8016b7534a568d8f2854f58139006607b583",
+          "task_json_sha256": "e83aaae20aff5df675a4cbd0dc28ccbb23d87b8f6464bc672e2ab8f00ffc6df3",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\nAt least one statement is expected\nCompile complete -- 1 errors, 0 warnings\nBuild complete -- 1 errors, 0 warnings : No download possible\nAdditional code checks ...\nAdditional code checks complete -- 0 errors\nFunctional checks: 0/32; bounded status: not_run.",
+      "timing": {
+        "static_seconds": 0.156,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 15.25
+      },
+      "idx": 0,
+      "code": "(*\nENGINEERING_CONTRACT\n==================\nState retention & activation:\n- leadPump: latches until demand=0 clears it; reset_input=demand<=0 PUB004\n- lagPump: latches until demand<2 clears it; hold on same-scan no-rise PUB005\n- runningCount: combinational, equals clipped demand every scan PUB001\nInitialization:\n- First positive demand after demand=0 selects shortest-run pump as leadPump (PUB010)\n- First positive demand sets lagPump if demand>=2 (PUB011)\nRotation behavior:\n- rotated=TRUE + main.runHours - MIN(runHours) > 50 → switch to shortest (PUB012)\n- rotated=FALSE → never switch, even if hysteresis gap exists (PUB012)\n- rotated is level-triggered, evaluated every scan with current main hours (PUB012)\nBackup selection moments:\n- Initial selection | leadPump change | runningCount increase → recompute lagPump (PUB026)\n- Otherwise retain previous lagPump (PUB028)\nDirection conflict: N/A (no opposite movements in this pump-selection task)\nUnits: runHours in LINT hours, 50-hour hysteresis threshold (PUB012)\n*)\n(* CONTRACT_RULES [] *)\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n    demand     : INT;\n    runHours   : ARRAY[1..5] OF LINT;\n    rotated    : BOOL;\nEND_VAR\nVAR_OUTPUT\n    leadPump   : INT := 0;\n    lagPump    : INT := 0;\n    runningCount : INT := 0;\nEND_VAR\nVAR\n    prevLeadPump    : INT := 0;\n    prevLagPump     : INT := 0;\n    prevRunningCount : INT := 0;\n    prevClippedDemand : INT := 0;\n    wasDemandZero   : BOOL := TRUE;\nEND_VAR\n\nVAR\n    clippedDemand : INT;\n    tmp_i         : INT;\n    tmp_minHours  : LINT;\n    tmp_minPump   : INT;\n    tmp_secondMinHours : LINT;\n    tmp_secondMinPump  : INT;\n    tmp_mainHoursDiff  : LINT;\nEND_VAR\n\n    // PUB001: Clip demand to 0..5\n    IF demand < 0 THEN\n        clippedDemand := 0;\n    ELSIF demand > 5 THEN\n        clippedDemand := 5;\n    ELSE\n        clippedDemand := demand;\n    END_IF;\n\n    runningCount := clippedDemand;\n\n    // Clear all outputs when demand <= 0\n    IF clippedDemand = 0 THEN\n        leadPump := 0;\n        lagPump  := 0;\n        prevLeadPump    := 0;\n        prevLagPump     := 0;\n        prevRunningCount := 0;\n        prevClippedDemand := 0;\n        wasDemandZero   := TRUE;\n    ELSE\n        // Find pump with minimum run hours (for hysteresis check and selection)\n        tmp_minHours := runHours[1];\n        tmp_minPump  := 1;\n        FOR tmp_i := 2 TO 5 DO\n            IF runHours[tmp_i] < tmp_minHours THEN\n                tmp_minHours := runHours[tmp_i];\n                tmp_minPump  := tmp_i;\n            ELSIF runHours[tmp_i] = tmp_minHours AND tmp_i < tmp_minPump THEN\n                tmp_minPump  := tmp_i;\n            END_IF;\n        END_FOR;\n\n        // Determine if this is initial selection (first positive demand after zero)\n        IF wasDemandZero THEN\n            // Initial selection: pick shortest-run pump as main\n            leadPump   := tmp_minPump;\n            lagPump    := 0;\n            wasDemandZero := FALSE;\n        ELSE\n            // Not initial selection: check for rotation request\n            IF rotated AND prevLeadPump <> 0 THEN\n                // Compute main pump's hours difference from minimum\n                tmp_mainHoursDiff := runHours[prevLeadPump] - tmp_minHours;\n                IF tmp_mainHoursDiff > 50 THEN\n                    // Hysteresis satisfied: switch to shortest-run pump\n                    leadPump := tmp_minPump;\n                ELSE\n                    // Keep current main pump\n                    leadPump := prevLeadPump;\n                END_IF;\n            ELSE\n                // No rotation request or no previous main: keep current main\n                leadPump := prevLeadPump;\n            END_IF;\n        END_IF;\n\n        // Backup pump selection (PUB026, PUB028)\n        IF clippedDemand >= 2 THEN\n            // Need backup pump\n            // Recompute lagPump only on: initial, leadPump change, runningCount increase\n            IF wasDemandZero OR leadPump <> prevLeadPump OR clippedDemand > prevClippedDemand THEN\n                // Find second-minimum pump (excluding leadPump)\n                tmp_secondMinHours := 16#7FFFFFFFFFFFFFFF; // Large LINT value\n                tmp_secondMinPump  := 0;\n                FOR tmp_i := 1 TO 5 DO\n                    IF tmp_i = leadPump THEN\n                        // Skip main pump\n                    ELSE\n                        IF runHours[tmp_i] < tmp_secondMinHours THEN\n                            tmp_secondMinHours := runHours[tmp_i];\n                            tmp_secondMinPump  := tmp_i;\n                        ELSIF runHours[tmp_i] = tmp_secondMinHours AND tmp_i < tmp_secondMinPump THEN\n                            tmp_secondMinPump  := tmp_i;\n                        END_IF;\n                    END_IF;\n                END_FOR;\n                lagPump := tmp_secondMinPump;\n            ELSE\n                // Retain previous backup pump\n                lagPump := prevLagPump;\n            END_IF;\n        ELSE\n            // Demand < 2: no backup pump\n            lagPump := 0;\n        END_IF;\n    END_IF;\n\n    // Update previous state for next scan\n    prevLeadPump     := leadPump;\n    prevLagPump      := lagPump;\n    prevRunningCount := runningCount;\n    prevClippedDemand := clippedDemand;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "bfae0ea7620b166bd75aafdef49a8016b7534a568d8f2854f58139006607b583",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 20,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB004",
+          "PUB005",
+          "PUB010",
+          "PUB011",
+          "PUB012",
+          "PUB026",
+          "PUB028"
+        ]
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 11272,
+      "completion_tokens": 1948,
+      "cost_cny": 0.031627176,
+      "latency_s": 69.641,
+      "generation_seconds": 69.641,
+      "end_to_end_seconds": 85.063,
+      "format_edits": [],
+      "raw_source_sha256": "bfae0ea7620b166bd75aafdef49a8016b7534a568d8f2854f58139006607b583",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 32,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 32,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "task_json_sha256": "e83aaae20aff5df675a4cbd0dc28ccbb23d87b8f6464bc672e2ab8f00ffc6df3",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/32; bounded status: not_run.\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n",
+      "timing": {
+        "static_seconds": 0.156
+      },
+      "idx": 1,
+      "code": "",
+      "code_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "invalid_model_patch",
+        "error": "Expecting value: line 1 column 1 (char 0)"
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 13058,
+      "completion_tokens": 814,
+      "cost_cny": 0.027064926,
+      "latency_s": 28.922,
+      "generation_seconds": 28.922,
+      "end_to_end_seconds": 29.078,
+      "format_edits": [],
+      "raw_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 32,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 32,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "At least one statement is expected",
+              "Compile complete -- 1 errors, 0 warnings",
+              "Build complete -- 1 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.203000000008615,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-04_ae316713fe",
+            "source_sha256": "c8c0810d97f86a6bfb0fd7c3a9318980c10591649fefce5eb15cd32cb1667a5f",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "c8c0810d97f86a6bfb0fd7c3a9318980c10591649fefce5eb15cd32cb1667a5f",
+          "task_json_sha256": "e83aaae20aff5df675a4cbd0dc28ccbb23d87b8f6464bc672e2ab8f00ffc6df3",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\nAt least one statement is expected\nCompile complete -- 1 errors, 0 warnings\nBuild complete -- 1 errors, 0 warnings : No download possible\nAdditional code checks ...\nAdditional code checks complete -- 0 errors\nFunctional checks: 0/32; bounded status: not_run.",
+      "timing": {
+        "static_seconds": 0.203,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 15.203
+      },
+      "idx": 2,
+      "code": "(*\nENGINEERING_CONTRACT\n==================\nState retention & activation:\n- leadPump: latches until demand=0 clears it; reset_input=demand<=0 PUB004\n- lagPump: latches until demand<2 clears it; hold on same-scan no-rise PUB005\n- runningCount: combinational, equals clipped demand every scan PUB001\nInitialization:\n- First positive demand after demand=0 selects shortest-run pump as leadPump (PUB010)\n- First positive demand sets lagPump if demand>=2 (PUB011)\nRotation behavior:\n- rotated=TRUE + main.runHours - MIN(runHours) > 50 → switch to shortest (PUB012)\n- rotated=FALSE → never switch, even if hysteresis gap exists (PUB012)\n- rotated is level-triggered, evaluated every scan with current main hours (PUB012)\nBackup selection moments:\n- Initial selection | leadPump change | runningCount increase → recompute lagPump (PUB026)\n- Otherwise retain previous lagPump (PUB028)\nDirection conflict: N/A (no opposite movements in this pump-selection task)\nUnits: runHours in LINT hours, 50-hour hysteresis threshold (PUB012)\n*)\n(* CONTRACT_RULES [] *)\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n    demand     : INT;\n    runHours   : ARRAY[1..5] OF LINT;\n    rotated    : BOOL;\nEND_VAR\nVAR_OUTPUT\n    leadPump   : INT := 0;\n    lagPump    : INT := 0;\n    runningCount : INT := 0;\nEND_VAR\nVAR\n    prevLeadPump    : INT := 0;\n    prevLagPump     : INT := 0;\n    prevRunningCount : INT := 0;\n    prevClippedDemand : INT := 0;\n    wasDemandZero   : BOOL := TRUE;\n    clippedDemand : INT;\n    tmp_i         : INT;\n    tmp_minHours  : LINT;\n    tmp_minPump   : INT;\n    tmp_secondMinHours : LINT;\n    tmp_secondMinPump  : INT;\n    tmp_mainHoursDiff  : LINT;\nEND_VAR\n\n    // PUB001: Clip demand to 0..5\n    IF demand < 0 THEN\n        clippedDemand := 0;\n    ELSIF demand > 5 THEN\n        clippedDemand := 5;\n    ELSE\n        clippedDemand := demand;\n    END_IF;\n\n    runningCount := clippedDemand;\n\n    // Clear all outputs when demand <= 0\n    IF clippedDemand = 0 THEN\n        leadPump := 0;\n        lagPump  := 0;\n        prevLeadPump    := 0;\n        prevLagPump     := 0;\n        prevRunningCount := 0;\n        prevClippedDemand := 0;\n        wasDemandZero   := TRUE;\n    ELSE\n        // Find pump with minimum run hours (for hysteresis check and selection)\n        tmp_minHours := runHours[1];\n        tmp_minPump  := 1;\n        FOR tmp_i := 2 TO 5 DO\n            IF runHours[tmp_i] < tmp_minHours THEN\n                tmp_minHours := runHours[tmp_i];\n                tmp_minPump  := tmp_i;\n            ELSIF runHours[tmp_i] = tmp_minHours AND tmp_i < tmp_minPump THEN\n                tmp_minPump  := tmp_i;\n            END_IF;\n        END_FOR;\n\n        // Determine if this is initial selection (first positive demand after zero)\n        IF wasDemandZero THEN\n            // Initial selection: pick shortest-run pump as main\n            leadPump   := tmp_minPump;\n            lagPump    := 0;\n            wasDemandZero := FALSE;\n        ELSE\n            // Not initial selection: check for rotation request\n            IF rotated AND prevLeadPump <> 0 THEN\n                // Compute main pump's hours difference from minimum\n                tmp_mainHoursDiff := runHours[prevLeadPump] - tmp_minHours;\n                IF tmp_mainHoursDiff > 50 THEN\n                    // Hysteresis satisfied: switch to shortest-run pump\n                    leadPump := tmp_minPump;\n                ELSE\n                    // Keep current main pump\n                    leadPump := prevLeadPump;\n                END_IF;\n            ELSE\n                // No rotation request or no previous main: keep current main\n                leadPump := prevLeadPump;\n            END_IF;\n        END_IF;\n\n        // Backup pump selection (PUB026, PUB028)\n        IF clippedDemand >= 2 THEN\n            // Need backup pump\n            // Recompute lagPump only on: initial, leadPump change, runningCount increase\n            IF wasDemandZero OR leadPump <> prevLeadPump OR clippedDemand > prevClippedDemand THEN\n                // Find second-minimum pump (excluding leadPump)\n                tmp_secondMinHours := 16#7FFFFFFFFFFFFFFF; // Large LINT value\n                tmp_secondMinPump  := 0;\n                FOR tmp_i := 1 TO 5 DO\n                    IF tmp_i = leadPump THEN\n                        // Skip main pump\n                    ELSE\n                        IF runHours[tmp_i] < tmp_secondMinHours THEN\n                            tmp_secondMinHours := runHours[tmp_i];\n                            tmp_secondMinPump  := tmp_i;\n                        ELSIF runHours[tmp_i] = tmp_secondMinHours AND tmp_i < tmp_secondMinPump THEN\n                            tmp_secondMinPump  := tmp_i;\n                        END_IF;\n                    END_IF;\n                END_FOR;\n                lagPump := tmp_secondMinPump;\n            ELSE\n                // Retain previous backup pump\n                lagPump := prevLagPump;\n            END_IF;\n        ELSE\n            // Demand < 2: no backup pump\n            lagPump := 0;\n        END_IF;\n    END_IF;\n\n    // Update previous state for next scan\n    prevLeadPump     := leadPump;\n    prevLagPump      := lagPump;\n    prevRunningCount := runningCount;\n    prevClippedDemand := clippedDemand;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "c8c0810d97f86a6bfb0fd7c3a9318980c10591649fefce5eb15cd32cb1667a5f",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 20,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB004",
+          "PUB005",
+          "PUB010",
+          "PUB011",
+          "PUB012",
+          "PUB026",
+          "PUB028"
+        ]
+      },
+      "model_patch": {
+        "mode": "model_exact_edits",
+        "base_sha256": "bfae0ea7620b166bd75aafdef49a8016b7534a568d8f2854f58139006607b583",
+        "plan": {
+          "edits": [
+            {
+              "old": "VAR\n    prevLeadPump    : INT := 0;\n    prevLagPump     : INT := 0;\n    prevRunningCount : INT := 0;\n    prevClippedDemand : INT := 0;\n    wasDemandZero   : BOOL := TRUE;\nEND_VAR\n\nVAR\n    clippedDemand : INT;\n    tmp_i         : INT;\n    tmp_minHours  : LINT;\n    tmp_minPump   : INT;\n    tmp_secondMinHours : LINT;\n    tmp_secondMinPump  : INT;\n    tmp_mainHoursDiff  : LINT;\nEND_VAR",
+              "new": "VAR\n    prevLeadPump    : INT := 0;\n    prevLagPump     : INT := 0;\n    prevRunningCount : INT := 0;\n    prevClippedDemand : INT := 0;\n    wasDemandZero   : BOOL := TRUE;\n    clippedDemand : INT;\n    tmp_i         : INT;\n    tmp_minHours  : LINT;\n    tmp_minPump   : INT;\n    tmp_secondMinHours : LINT;\n    tmp_secondMinPump  : INT;\n    tmp_mainHoursDiff  : LINT;\nEND_VAR"
+            }
+          ]
+        }
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 13166,
+      "completion_tokens": 907,
+      "cost_cny": 0.027861246,
+      "latency_s": 32.031,
+      "generation_seconds": 32.031,
+      "end_to_end_seconds": 47.437,
+      "format_edits": [],
+      "raw_source_sha256": "c8c0810d97f86a6bfb0fd7c3a9318980c10591649fefce5eb15cd32cb1667a5f",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 32,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 32,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "task_json_sha256": "e83aaae20aff5df675a4cbd0dc28ccbb23d87b8f6464bc672e2ab8f00ffc6df3",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/32; bounded status: not_run.\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n",
+      "timing": {
+        "static_seconds": 0.156
+      },
+      "idx": 3,
+      "code": "",
+      "code_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "invalid_model_patch",
+        "error": "Edit anchor must occur exactly once"
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 13261,
+      "completion_tokens": 1027,
+      "cost_cny": 0.028815171,
+      "latency_s": 32.64,
+      "generation_seconds": 32.64,
+      "end_to_end_seconds": 32.656,
+      "format_edits": [],
+      "raw_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "provider_error": "",
+      "duplicate_of_candidate_index": 1
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "repeated_candidate",
+  "tests_total": 32,
+  "study_plan_sha256": "e0db2940199cc656528584436ab352ead1fdbaa878edd82cd2958bfa3af1ca4c",
+  "started_at": "2026-11-13T19:45:12.369964+08:00",
+  "wall_seconds": 194.89,
+  "finished_at": "2026-11-13T19:48:27.165667+08:00",
+  "operational_network_wait": {
+    "batch": "v4_wait900",
+    "ceiling_seconds": 900,
+    "task_seconds": 2400,
+    "evaluation_reserve_seconds": 150,
+    "model_parameters_unchanged": true
+  }
+}

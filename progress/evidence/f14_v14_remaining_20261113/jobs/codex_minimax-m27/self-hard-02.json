@@ -1,0 +1,1125 @@
+{
+  "job_id": "codex_minimax-m27/self-hard-02",
+  "pid": "self-hard-02",
+  "condition": "codex_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": false,
+  "attempts": [
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 47,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 47,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "At least one statement is expected",
+              "Compile complete -- 1 errors, 0 warnings",
+              "Build complete -- 1 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 14.75,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-02_cf95bbb832",
+            "source_sha256": "36acec19b085bd53ebe08cf0b6f0732b02ec5fd7c245bde5d8b2aca9dbcdce6f",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "36acec19b085bd53ebe08cf0b6f0732b02ec5fd7c245bde5d8b2aca9dbcdce6f",
+          "task_json_sha256": "af4df330b66f14ec39cf738bffb35579c599df8143768cf9f13effa3d86d88f5",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\nAt least one statement is expected\nCompile complete -- 1 errors, 0 warnings\nBuild complete -- 1 errors, 0 warnings : No download possible\nAdditional code checks ...\nAdditional code checks complete -- 0 errors\nFunctional checks: 0/47; bounded status: not_run.",
+      "timing": {
+        "static_seconds": 0.188,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 14.75
+      },
+      "idx": 0,
+      "code": "(* ENGINEERING_CONTRACT:\n * Phase activation:\n *   - Phase 0 (IDLE): Initial and idle; no counting, waiting for start\n *   - Phase 1 (HEATING): Active; elapsed increments, transitions to phase 2 on pv>=setpoint\n *   - Phase 2 (HOLDING): Active; elapsed increments, retained until timeout/abort/start\n *   - Phase 3 (COMPLETE): Retention; elapsed/timeout frozen until new start or abort\n *   - Phase 9 (ABORTED): Retention; elapsed/timeout frozen until new start\n *\n * Priority per scan (same-scan order):\n *   1. abortBtn=TRUE  → phase=9, preserve elapsed/timeout\n *   2. startBtn rising edge (no abort) → phase=1, elapsed=0, timeout=FALSE\n *   3. running (no abort, no start edge) → count if prev phase 1/2, else hold\n *\n * Counting:\n *   - Start scan: elapsed=0 (not counted)\n *   - Running scans: elapsed += 1 while prev phase 1 or 2\n *   - maxDuration: positive INT, comparison elapsed >= maxDuration triggers timeout\n *\n * Units: maxDuration in scan cycles, elapsed in scan cycles\n * Reset: Only new start rising edge (with no abort) clears elapsed/timeout\n *)\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n    startBtn    : BOOL;\n    abortBtn    : BOOL;\n    setpoint    : REAL;\n    pv          : REAL;\n    maxDuration : INT;\nEND_VAR\n\nVAR_OUTPUT\n    elapsed : INT := 0;\n    phase   : INT := 0;\n    timeout : BOOL := FALSE;\nEND_VAR\n\nVAR\n    prev_startBtn : BOOL := FALSE;\nEND_VAR\n\nVAR\n    startRising : BOOL;\n    prev_phase  : INT;\nEND_VAR\n\n// Detect rising edge of startBtn for this scan\nstartRising := startBtn AND NOT prev_startBtn;\nprev_phase  := phase;\n\n// Priority 1: Abort (highest)\nIF abortBtn THEN\n    phase := 9;\n    // elapsed and timeout are preserved\n    prev_startBtn := startBtn;\n    RETURN;\nEND_IF;\n\n// Priority 2: New start rising edge (no abort)\nIF startRising THEN\n    phase   := 1;\n    elapsed := 0;\n    timeout := FALSE;\n    prev_startBtn := startBtn;\n    RETURN;\nEND_IF;\n\n// Priority 3: Running / frozen states (no abort, no new start edge)\nIF prev_phase = 1 OR prev_phase = 2 THEN\n    // Running: increment elapsed\n    elapsed := elapsed + 1;\n\n    IF elapsed >= maxDuration THEN\n        // Timeout: enter complete state\n        timeout := TRUE;\n        phase   := 3;\n    ELSE\n        // Not yet timed out: determine phase\n        IF pv >= setpoint THEN\n            phase := 2;          // pv达标，保持保温\n        ELSE\n            phase := 1;          // 仍处于升温\n        END_IF;\n    END_IF;\nELSE\n    // Frozen: idle (phase=0), complete (phase=3), or aborted (phase=9)\n    // phase and timeout retain their values\nEND_IF;\n\nprev_startBtn := startBtn;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "36acec19b085bd53ebe08cf0b6f0732b02ec5fd7c245bde5d8b2aca9dbcdce6f",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 21,
+        "cited_public_clauses": []
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 10990,
+      "completion_tokens": 2681,
+      "cost_cny": 0.036023526,
+      "latency_s": 87.609,
+      "generation_seconds": 87.609,
+      "end_to_end_seconds": 102.547,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 1700,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 1877,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "9188d24d7f44d8656f3f7c6ca918e2c27ae9a7989bde3410da8e2160e75ec056",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 47,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 47,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "task_json_sha256": "af4df330b66f14ec39cf738bffb35579c599df8143768cf9f13effa3d86d88f5",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/47; bounded status: not_run.\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n",
+      "timing": {
+        "static_seconds": 0.172
+      },
+      "idx": 1,
+      "code": "",
+      "code_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "invalid_model_patch",
+        "error": "Expecting value: line 1 column 1 (char 0)"
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 12236,
+      "completion_tokens": 1072,
+      "cost_cny": 0.027413316000000004,
+      "latency_s": 39.422,
+      "generation_seconds": 39.422,
+      "end_to_end_seconds": 39.594,
+      "format_edits": [],
+      "raw_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 46,
+      "tests_total": 47,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 47,
+        "tests_passed": 46,
+        "pass_rate": 0.9787,
+        "failure_summary": "peer-b26: phase 期望 2，实际 1",
+        "cases": [
+          {
+            "tc_id": "b1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 0,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 0,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 1,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 1,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 2,
+              "elapsed": 2,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 2,
+              "phase": 2,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 2,
+              "elapsed": 3,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 2,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 3,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 9,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 0,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 0,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 1,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 1,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 2,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 2,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 3,
+              "elapsed": 3,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 3,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 3,
+              "elapsed": 3,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 3,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 3,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 9,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 3,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 9,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 3,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 9,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 0,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 0,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 3,
+              "elapsed": 1,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 1,
+              "phase": 3,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 1,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 1,
+              "phase": 9,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 0,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 0,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "b18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 0,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 0,
+              "phase": 9,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 0,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 0,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 1
+            },
+            "actual": {
+              "elapsed": 1,
+              "phase": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 2,
+              "elapsed": 2,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 2,
+              "phase": 2,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 2,
+              "elapsed": 3
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 2
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 3,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 9,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 0,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 0,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "elapsed": 1,
+              "phase": 1
+            },
+            "actual": {
+              "elapsed": 1,
+              "phase": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "elapsed": 2,
+              "phase": 1
+            },
+            "actual": {
+              "elapsed": 2,
+              "phase": 1
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "timeout": true,
+              "phase": 3,
+              "elapsed": 3
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 3,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 3,
+              "elapsed": 3,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 3,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 3,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 9,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 3,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 9,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 3,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 9,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 3,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 9,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 3,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 3,
+              "phase": 9,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 0,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 0,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 3,
+              "timeout": true,
+              "elapsed": 1
+            },
+            "actual": {
+              "elapsed": 1,
+              "phase": 3,
+              "timeout": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 0,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 0,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 1,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 1,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b20",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 1,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 1,
+              "phase": 9,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b21",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 9,
+              "elapsed": 1,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 1,
+              "phase": 9,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b22",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 0,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 0,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b23",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 0,
+              "elapsed": 0,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 0,
+              "phase": 0,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b24",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 0,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 0,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b25",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 2,
+              "elapsed": 1,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 1,
+              "phase": 2,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b26",
+            "passed": false,
+            "mode": "sequence",
+            "message": "phase 期望 2，实际 1",
+            "expected": {
+              "phase": 2,
+              "elapsed": 2,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 2,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": "peer-b26（保温后温度回落到设定值以下，应继续保温。）：phase 期望 2，实际 1"
+          },
+          {
+            "tc_id": "peer-b27",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 0,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 0,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b28",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 1,
+              "elapsed": 255,
+              "timeout": false
+            },
+            "actual": {
+              "elapsed": 255,
+              "phase": 1,
+              "timeout": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "peer-b29",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "phase": 3,
+              "elapsed": 256,
+              "timeout": true
+            },
+            "actual": {
+              "elapsed": 256,
+              "phase": 3,
+              "timeout": true
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.844000000011874,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-02_6e12cf9dde",
+            "source_sha256": "5c6cf849dadd9e3cfbe4d4062f77dfb73d0866e6a8cd6074e222c59072d72503",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "declared_contract_check": {
+            "status": "not_declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          },
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "5c6cf849dadd9e3cfbe4d4062f77dfb73d0866e6a8cd6074e222c59072d72503",
+          "task_json_sha256": "af4df330b66f14ec39cf738bffb35579c599df8143768cf9f13effa3d86d88f5",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 46/47; bounded status: not_run.\nFAILED functional checkpoints: individually_mismatching_outputs names definite assertion mismatches, not a list of passing checks. Compare these actual values with the public requirement. No expected values are supplied. allowed_output_combination_failed concerns a whole permitted combination, not necessarily every field.\nComplete public input prefixes and observed executions (initial-state scope is explicit; no assertion values or test notes):\n[{\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"peer-b23\", \"inputs\": {\"startBtn\": false, \"abortBtn\": false, \"setpoint\": 100, \"pv\": 20, \"maxDuration\": 5}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"phase\": 0}}, {\"case\": \"peer-b24\", \"inputs\": {\"startBtn\": true, \"abortBtn\": false, \"setpoint\": 100, \"pv\": 100, \"maxDuration\": 5}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"phase\": 1}}, {\"case\": \"peer-b25\", \"inputs\": {\"startBtn\": true, \"abortBtn\": false, \"setpoint\": 100, \"pv\": 100, \"maxDuration\": 5}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"phase\": 2}}, {\"case\": \"peer-b26\", \"inputs\": {\"startBtn\": false, \"abortBtn\": false, \"setpoint\": 100, \"pv\": 20, \"maxDuration\": 5}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {\"phase\": 1}}], \"checkpoints\": [{\"case\": \"peer-b26\", \"individually_mismatching_outputs\": [\"phase\"], \"allowed_output_combination_failed\": false, \"observed_outputs\": {\"elapsed\": 2, \"phase\": 1, \"timeout\": false}}], \"relevant_public_clauses\": [{\"id\": \"PUB003\", \"text\": \"写一个功能块 FB，管理间歇反应釜批次。初始 (phase, elapsed, timeout)=(0,0,FALSE)。\"}, {\"id\": \"PUB006\", \"text\": \"3. abortBtn 为 TRUE 时立即进入 phase=9，elapsed 与 timeout 保持；同拍启动沿已消耗，重新启动必须松开再按。\"}, {\"id\": \"PUB007\", \"text\": \"4. 无中止且出现新启动沿时进入 phase=1，elapsed=0、timeout=FALSE；启动拍不计数。\"}, {\"id\": \"PUB008\", \"text\": \"5. 上一拍 phase 为1或2时先将 elapsed 加1。达到本拍 maxDuration 则 timeout=TRUE、phase=3，优先于升温达标；否则 phase=1 且 pv>=setpoint 时进入 phase=2。\"}, {\"id\": \"PUB009\", \"text\": \"6. phase=3 为完成态、phase=9 为中止态，两态冻结计数及超时标志，直到新的有效启动或中止。不设无接口支持的操作员确认。\"}]}]",
+      "timing": {
+        "static_seconds": 0.172,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 15.859,
+        "functional_seconds": 0.172
+      },
+      "idx": 2,
+      "code": "(* ENGINEERING_CONTRACT:\n * Phase activation:\n *   - Phase 0 (IDLE): Initial and idle; no counting, waiting for start\n *   - Phase 1 (HEATING): Active; elapsed increments, transitions to phase 2 on pv>=setpoint\n *   - Phase 2 (HOLDING): Active; elapsed increments, retained until timeout/abort/start\n *   - Phase 3 (COMPLETE): Retention; elapsed/timeout frozen until new start or abort\n *   - Phase 9 (ABORTED): Retention; elapsed/timeout frozen until new start\n *\n * Priority per scan (same-scan order):\n *   1. abortBtn=TRUE  → phase=9, preserve elapsed/timeout\n *   2. startBtn rising edge (no abort) → phase=1, elapsed=0, timeout=FALSE\n *   3. running (no abort, no start edge) → count if prev phase 1/2, else hold\n *\n * Counting:\n *   - Start scan: elapsed=0 (not counted)\n *   - Running scans: elapsed += 1 while prev phase 1 or 2\n *   - maxDuration: positive INT, comparison elapsed >= maxDuration triggers timeout\n *\n * Units: maxDuration in scan cycles, elapsed in scan cycles\n * Reset: Only new start rising edge (with no abort) clears elapsed/timeout\n *)\n\nFUNCTION_BLOCK FB\nVAR_INPUT\n    startBtn    : BOOL;\n    abortBtn    : BOOL;\n    setpoint    : REAL;\n    pv          : REAL;\n    maxDuration : INT;\nEND_VAR\n\nVAR_OUTPUT\n    elapsed : INT := 0;\n    phase   : INT := 0;\n    timeout : BOOL := FALSE;\nEND_VAR\n\nVAR\n    prev_startBtn : BOOL := FALSE;\n    startRising   : BOOL;\n    prev_phase    : INT;\nEND_VAR\n\n// Detect rising edge of startBtn for this scan\nstartRising := startBtn AND NOT prev_startBtn;\nprev_phase  := phase;\n\n// Priority 1: Abort (highest)\nIF abortBtn THEN\n    phase := 9;\n    prev_startBtn := startBtn;\n    RETURN;\nEND_IF;\n\n// Priority 2: New start rising edge (no abort)\nIF startRising THEN\n    phase   := 1;\n    elapsed := 0;\n    timeout := FALSE;\n    prev_startBtn := startBtn;\n    RETURN;\nEND_IF;\n\n// Priority 3: Running / frozen states (no abort, no new start edge)\nIF prev_phase = 1 OR prev_phase = 2 THEN\n    // Running: increment elapsed\n    elapsed := elapsed + 1;\n\n    IF elapsed >= maxDuration THEN\n        // Timeout: enter complete state\n        timeout := TRUE;\n        phase   := 3;\n    ELSE\n        // Not yet timed out: determine phase\n        IF pv >= setpoint THEN\n            phase := 2;\n        ELSE\n            phase := 1;\n        END_IF;\n    END_IF;\nEND_IF;\n\nprev_startBtn := startBtn;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "5c6cf849dadd9e3cfbe4d4062f77dfb73d0866e6a8cd6074e222c59072d72503",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 21,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "model_exact_edits",
+        "base_sha256": "36acec19b085bd53ebe08cf0b6f0732b02ec5fd7c245bde5d8b2aca9dbcdce6f",
+        "plan": {
+          "edits": [
+            {
+              "old": "VAR\n    prev_startBtn : BOOL := FALSE;\nEND_VAR\n\nVAR\n    startRising : BOOL;\n    prev_phase  : INT;\nEND_VAR\n\n// Detect rising edge of startBtn for this scan\nstartRising := startBtn AND NOT prev_startBtn;\nprev_phase  := phase;\n\n// Priority 1: Abort (highest)\nIF abortBtn THEN\n    phase := 9;\n    // elapsed and timeout are preserved\n    prev_startBtn := startBtn;\n    RETURN;\nEND_IF;\n\n// Priority 2: New start rising edge (no abort)\nIF startRising THEN\n    phase   := 1;\n    elapsed := 0;\n    timeout := FALSE;\n    prev_startBtn := startBtn;\n    RETURN;\nEND_IF;\n\n// Priority 3: Running / frozen states (no abort, no new start edge)\nIF prev_phase = 1 OR prev_phase = 2 THEN\n    // Running: increment elapsed\n    elapsed := elapsed + 1;\n\n    IF elapsed >= maxDuration THEN\n        // Timeout: enter complete state\n        timeout := TRUE;\n        phase   := 3;\n    ELSE\n        // Not yet timed out: determine phase\n        IF pv >= setpoint THEN\n            phase := 2;          // pv达标，保持保温\n        ELSE\n            phase := 1;          // 仍处于升温\n        END_IF;\n    END_IF;\nELSE\n    // Frozen: idle (phase=0), complete (phase=3), or aborted (phase=9)\n    // phase and timeout retain their values\nEND_IF;\n\nprev_startBtn := startBtn;",
+              "new": "VAR\n    prev_startBtn : BOOL := FALSE;\n    startRising   : BOOL;\n    prev_phase    : INT;\nEND_VAR\n\n// Detect rising edge of startBtn for this scan\nstartRising := startBtn AND NOT prev_startBtn;\nprev_phase  := phase;\n\n// Priority 1: Abort (highest)\nIF abortBtn THEN\n    phase := 9;\n    prev_startBtn := startBtn;\n    RETURN;\nEND_IF;\n\n// Priority 2: New start rising edge (no abort)\nIF startRising THEN\n    phase   := 1;\n    elapsed := 0;\n    timeout := FALSE;\n    prev_startBtn := startBtn;\n    RETURN;\nEND_IF;\n\n// Priority 3: Running / frozen states (no abort, no new start edge)\nIF prev_phase = 1 OR prev_phase = 2 THEN\n    // Running: increment elapsed\n    elapsed := elapsed + 1;\n\n    IF elapsed >= maxDuration THEN\n        // Timeout: enter complete state\n        timeout := TRUE;\n        phase   := 3;\n    ELSE\n        // Not yet timed out: determine phase\n        IF pv >= setpoint THEN\n            phase := 2;\n        ELSE\n            phase := 1;\n        END_IF;\n    END_IF;\nEND_IF;\n\nprev_startBtn := startBtn;"
+            }
+          ]
+        }
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 12350,
+      "completion_tokens": 1788,
+      "cost_cny": 0.032353818,
+      "latency_s": 61.828,
+      "generation_seconds": 61.828,
+      "end_to_end_seconds": 78.031,
+      "format_edits": [],
+      "raw_source_sha256": "5c6cf849dadd9e3cfbe4d4062f77dfb73d0866e6a8cd6074e222c59072d72503",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 2,
+  "stop_reason": "",
+  "tests_total": 47,
+  "study_plan_sha256": "e0db2940199cc656528584436ab352ead1fdbaa878edd82cd2958bfa3af1ca4c",
+  "started_at": "2026-11-13T19:32:32.112006+08:00",
+  "wall_seconds": 220.421,
+  "finished_at": "2026-11-13T19:36:12.444570+08:00"
+}

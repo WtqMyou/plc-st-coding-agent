@@ -1,0 +1,1898 @@
+{
+  "job_id": "custom_minimax-m27/self-hard-03",
+  "pid": "self-hard-03",
+  "condition": "custom_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 45,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_FLOW_STRUCTURE",
+            "line": 57,
+            "message": "Pascal wrapper BEGIN is not part of a CODESYS ST function-block body. Start statements immediately after END_VAR; terminate the POU with END_FUNCTION_BLOCK."
+          },
+          {
+            "level": "error",
+            "line": 26,
+            "code": "E_BAD_STMT",
+            "message": "无法解析的语句，遇到 'BEGIN'"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 45,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "168210afeb2943703301a9a58a5e52a749f90e96f21cf74b6d037761c212a06a",
+          "task_json_sha256": "3058a7add5c17f8458db24a0d1bb729143d769153f51ddbc42191f0475a66df1",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/45; bounded status: not_run.\nLine 57 [E_FLOW_STRUCTURE]: Pascal wrapper BEGIN is not part of a CODESYS ST function-block body. Start statements immediately after END_VAR; terminate the POU with END_FUNCTION_BLOCK.\nLine 26 [E_BAD_STMT]: 无法解析的语句，遇到 'BEGIN'\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n1: FUNCTION_BLOCK FB\n2: VAR_INPUT\n25: END_VAR\n26: END_VAR\n27: \n28: (*\n56: *)\n57: BEGIN\n58:     (* First-scan initialization: ensure defined state for fifo[1..8] *)\n59:     IF firstScan THEN",
+      "timing": {
+        "static_seconds": 0.172
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    pushEn  : BOOL;\n    pushItem: INT;\n    popEn   : BOOL;\nEND_VAR\nVAR_IN_OUT\n    fifo    : ARRAY[1..8] OF INT;\nEND_VAR\nVAR_OUTPUT\n    count   : INT := 0;\n    full    : BOOL := FALSE;\n    empty   : BOOL := TRUE;\n    head    : INT := 0;\nEND_VAR\nVAR\n    pushR   : R_TRIG;\n    popR    : R_TRIG;\n    prevPushEn  : BOOL := FALSE;\n    prevPopEn   : BOOL := FALSE;\n    firstScan   : BOOL := TRUE;\nEND_VAR\nVAR_TEMP\n    prevCount   : INT;\nEND_VAR\nEND_VAR\n\n(*\nENGINEERING_CONTRACT\n================================================================================\nPUB001 §rising-edge trigger·pushEn  → pushR.Q = pulse\nPUB002 §rising-edge trigger·popEn   → popR.Q  = pulse\nPUB003 §pop-first: popR then pushR; pop on count>0 only; push on count<8 only\nPUB004 §output: count/empty/full/head consistent with array state each scan\nPUB005 §fifo[1..count] compact, fifo[1]=head when count>0; others unspecified\nPUB006 §full ∧ pushR only: count=8 (no change); empty ∧ popR only: count=0\nPUB007 §simultaneous: prev(full)→pop frees slot, then push succeeds; count stays\nPUB008 §simultaneous: prev(empty)→pop no-op, push succeeds; count = 1\nPUB009 §head=0 when empty; head=fifo[1] when count>0\nPUB010 §no hidden timers; state in VAR; edge detection via R_TRIG\nPUB011 §IN_OUT fifo bound by caller; write to positions 1..count only\nPUB012 §rising edge detected on transition FALSE→TRUE; hold does not repeat\nPUB013 §shift-left only when count>1; count=1 pop leaves array unchanged\nPUB014 §push to unfull queue: fifo[count]=pushItem on same scan\nPUB015 §all outputs derived from same-scan state; no multi-scan buffering\nPUB016 §R_TRIG/Q is valid only during the scan where rising edge occurs\nPUB017 §first scan: init fifo to defined state via firstScan guard\nPUB018 §prev(pushEn) tracked via prevPushEn; prev(popEn) via prevPopEn\nPUB019 §S1: count∈[0,8], full↔count=8, empty↔count=0\nPUB020 §S2: prev(full)∧pushR∧!popR → count=8\nPUB021 §S3: prev(empty)∧popR∧!pushR → count=0\nPUB022 §S6: count updated after pop+push chain; only successful actions change it\nPUB023 §S7: accepted push → fifo[count]=pushItem\nPUB024 §S8: shift-left by one position when pop succeeds; count>1 shift else nop\n================================================================================\n*)\nBEGIN\n    (* First-scan initialization: ensure defined state for fifo[1..8] *)\n    IF firstScan THEN\n        firstScan := FALSE;\n        fifo[1] := 0;\n        fifo[2] := 0;\n        fifo[3] := 0;\n        fifo[4] := 0;\n        fifo[5] := 0;\n        fifo[6] := 0;\n        fifo[7] := 0;\n        fifo[8] := 0;\n    END_IF;\n\n    (* Capture prevCount before any state mutation this scan *)\n    prevCount := count;\n\n    (* Detect rising edges per PUB001, PUB002, PUB012 *)\n    pushR(CLK := pushEn);\n    popR(CLK := popEn);\n\n    (* PUB003 §pop-first order: handle pop before push *)\n    IF popR.Q AND prevCount > 0 THEN\n        (* S8 §shift-left only when count>1; count=1 pop leaves array unchanged (PUB013) *)\n        IF prevCount > 1 THEN\n            fifo[1] := fifo[2];\n            fifo[2] := fifo[3];\n            fifo[3] := fifo[4];\n            fifo[4] := fifo[5];\n            fifo[5] := fifo[6];\n            fifo[6] := fifo[7];\n            fifo[7] := fifo[8];\n            fifo[8] := 0;\n        ELSE\n            (* count=1: array untouched, only count decrements (PUB013) *)\n        END_IF;\n        count := count - 1;\n    END_IF;\n\n    (* PUB003 §push on count<8; PUB007/PUB008 §simultaneous pop+push chain *)\n    IF pushR.Q AND count < 8 THEN\n        (* PUB014/PUB023 §accepted push: fifo[count]=pushItem (position BEFORE increment) *)\n        fifo[count + 1] := pushItem;\n        count := count + 1;\n    END_IF;\n\n    (* PUB004/PUB009 §derive output signals from final same-scan state *)\n    full  := (count = 8);\n    empty := (count = 0);\n    IF count > 0 THEN\n        head := fifo[1];\n    ELSE\n        head := 0;\n    END_IF;\n\n    (* Track previous input state for next-scan edge detection (PUB018) *)\n    prevPushEn := pushEn;\n    prevPopEn  := popEn;\nEND_FUNCTION_BLOCK\n\n(* CONTRACT_RULES [] *)",
+      "code_hash": "168210afeb2943703301a9a58a5e52a749f90e96f21cf74b6d037761c212a06a",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 29,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007",
+          "PUB008",
+          "PUB009",
+          "PUB010",
+          "PUB011",
+          "PUB012",
+          "PUB013",
+          "PUB014",
+          "PUB015",
+          "PUB016",
+          "PUB017",
+          "PUB018",
+          "PUB019",
+          "PUB020",
+          "PUB021",
+          "PUB022",
+          "PUB023",
+          "PUB024"
+        ]
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 4440,
+      "completion_tokens": 2776,
+      "cost_cny": 0.025787496,
+      "latency_s": 69.343,
+      "generation_seconds": 69.343,
+      "end_to_end_seconds": 69.515,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2587,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3355,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3394,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3676,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3889,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "208ad95e884afcb7c824bed7bde7c24dfb82d78de29679c00eb9de4e00a9450f",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": true,
+      "tests_passed": 45,
+      "tests_total": 45,
+      "verification_status": "truncated",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 45,
+        "tests_passed": 45,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "q1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 0,
+              "empty": true,
+              "full": false,
+              "head": 0
+            },
+            "actual": {
+              "count": 0,
+              "empty": true,
+              "full": false,
+              "head": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 1,
+              "empty": false,
+              "head": 11,
+              "fifo": {
+                "$prefix": [
+                  11
+                ]
+              }
+            },
+            "actual": {
+              "count": 1,
+              "empty": false,
+              "fifo": [
+                11,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "head": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 1,
+              "head": 11,
+              "fifo": {
+                "$prefix": [
+                  11
+                ]
+              }
+            },
+            "actual": {
+              "count": 1,
+              "fifo": [
+                11,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "head": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 2,
+              "head": 11,
+              "fifo": {
+                "$prefix": [
+                  11,
+                  22
+                ]
+              }
+            },
+            "actual": {
+              "count": 2,
+              "fifo": [
+                11,
+                22,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "head": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 2,
+              "fifo": {
+                "$prefix": [
+                  11,
+                  22
+                ]
+              }
+            },
+            "actual": {
+              "count": 2,
+              "fifo": [
+                11,
+                22,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 3,
+              "head": 11,
+              "fifo": {
+                "$prefix": [
+                  11,
+                  22,
+                  33
+                ]
+              }
+            },
+            "actual": {
+              "count": 3,
+              "fifo": [
+                11,
+                22,
+                33,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "head": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 3,
+              "head": 11,
+              "fifo": {
+                "$prefix": [
+                  11,
+                  22,
+                  33
+                ]
+              }
+            },
+            "actual": {
+              "count": 3,
+              "fifo": [
+                11,
+                22,
+                33,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "head": 11
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 3,
+              "head": 22,
+              "fifo": {
+                "$prefix": [
+                  22,
+                  33,
+                  44
+                ]
+              }
+            },
+            "actual": {
+              "count": 3,
+              "fifo": [
+                22,
+                33,
+                44,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 3,
+              "head": 22,
+              "fifo": {
+                "$prefix": [
+                  22,
+                  33,
+                  44
+                ]
+              }
+            },
+            "actual": {
+              "count": 3,
+              "fifo": [
+                22,
+                33,
+                44,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-fill-55",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 4,
+              "empty": false,
+              "full": false,
+              "head": 22,
+              "fifo": {
+                "$prefix": [
+                  22,
+                  33,
+                  44,
+                  55
+                ]
+              }
+            },
+            "actual": {
+              "count": 4,
+              "empty": false,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                0,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-release-55",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 4,
+              "empty": false,
+              "full": false,
+              "head": 22,
+              "fifo": {
+                "$prefix": [
+                  22,
+                  33,
+                  44,
+                  55
+                ]
+              }
+            },
+            "actual": {
+              "count": 4,
+              "empty": false,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                0,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-fill-66",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 5,
+              "empty": false,
+              "full": false,
+              "head": 22,
+              "fifo": {
+                "$prefix": [
+                  22,
+                  33,
+                  44,
+                  55,
+                  66
+                ]
+              }
+            },
+            "actual": {
+              "count": 5,
+              "empty": false,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-release-66",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 5,
+              "empty": false,
+              "full": false,
+              "head": 22,
+              "fifo": {
+                "$prefix": [
+                  22,
+                  33,
+                  44,
+                  55,
+                  66
+                ]
+              }
+            },
+            "actual": {
+              "count": 5,
+              "empty": false,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-fill-77",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 6,
+              "empty": false,
+              "full": false,
+              "head": 22,
+              "fifo": {
+                "$prefix": [
+                  22,
+                  33,
+                  44,
+                  55,
+                  66,
+                  77
+                ]
+              }
+            },
+            "actual": {
+              "count": 6,
+              "empty": false,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                77,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-release-77",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 6,
+              "empty": false,
+              "full": false,
+              "head": 22,
+              "fifo": {
+                "$prefix": [
+                  22,
+                  33,
+                  44,
+                  55,
+                  66,
+                  77
+                ]
+              }
+            },
+            "actual": {
+              "count": 6,
+              "empty": false,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                77,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-fill-88",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 7,
+              "empty": false,
+              "full": false,
+              "head": 22,
+              "fifo": {
+                "$prefix": [
+                  22,
+                  33,
+                  44,
+                  55,
+                  66,
+                  77,
+                  88
+                ]
+              }
+            },
+            "actual": {
+              "count": 7,
+              "empty": false,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                0
+              ],
+              "full": false,
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-release-88",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 7,
+              "empty": false,
+              "full": false,
+              "head": 22,
+              "fifo": {
+                "$prefix": [
+                  22,
+                  33,
+                  44,
+                  55,
+                  66,
+                  77,
+                  88
+                ]
+              }
+            },
+            "actual": {
+              "count": 7,
+              "empty": false,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                0
+              ],
+              "full": false,
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-fill-99",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 8,
+              "empty": false,
+              "full": true,
+              "head": 22,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99
+              ]
+            },
+            "actual": {
+              "count": 8,
+              "empty": false,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99
+              ],
+              "full": true,
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-release-99",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 8,
+              "empty": false,
+              "full": true,
+              "head": 22,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99
+              ]
+            },
+            "actual": {
+              "count": 8,
+              "empty": false,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99
+              ],
+              "full": true,
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-full-reject",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 8,
+              "empty": false,
+              "full": true,
+              "head": 22,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99
+              ]
+            },
+            "actual": {
+              "count": 8,
+              "empty": false,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99
+              ],
+              "full": true,
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-full-release",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 8,
+              "empty": false,
+              "full": true,
+              "head": 22,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99
+              ]
+            },
+            "actual": {
+              "count": 8,
+              "empty": false,
+              "fifo": [
+                22,
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99
+              ],
+              "full": true,
+              "head": 22
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-full-both",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 8,
+              "empty": false,
+              "full": true,
+              "head": 33,
+              "fifo": [
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99,
+                456
+              ]
+            },
+            "actual": {
+              "count": 8,
+              "empty": false,
+              "fifo": [
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99,
+                456
+              ],
+              "full": true,
+              "head": 33
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-both-held",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 8,
+              "empty": false,
+              "full": true,
+              "head": 33,
+              "fifo": [
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99,
+                456
+              ]
+            },
+            "actual": {
+              "count": 8,
+              "empty": false,
+              "fifo": [
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99,
+                456
+              ],
+              "full": true,
+              "head": 33
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-both-release",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 8,
+              "empty": false,
+              "full": true,
+              "head": 33,
+              "fifo": [
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99,
+                456
+              ]
+            },
+            "actual": {
+              "count": 8,
+              "empty": false,
+              "fifo": [
+                33,
+                44,
+                55,
+                66,
+                77,
+                88,
+                99,
+                456
+              ],
+              "full": true,
+              "head": 33
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-drain-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 7,
+              "empty": false,
+              "full": false,
+              "head": 44,
+              "fifo": {
+                "$prefix": [
+                  44,
+                  55,
+                  66,
+                  77,
+                  88,
+                  99,
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 7,
+              "empty": false,
+              "fifo": [
+                44,
+                55,
+                66,
+                77,
+                88,
+                99,
+                456,
+                0
+              ],
+              "full": false,
+              "head": 44
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-pop-held",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 7,
+              "empty": false,
+              "full": false,
+              "head": 44,
+              "fifo": {
+                "$prefix": [
+                  44,
+                  55,
+                  66,
+                  77,
+                  88,
+                  99,
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 7,
+              "empty": false,
+              "fifo": [
+                44,
+                55,
+                66,
+                77,
+                88,
+                99,
+                456,
+                0
+              ],
+              "full": false,
+              "head": 44
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-pop-release-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 7,
+              "empty": false,
+              "full": false,
+              "head": 44,
+              "fifo": {
+                "$prefix": [
+                  44,
+                  55,
+                  66,
+                  77,
+                  88,
+                  99,
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 7,
+              "empty": false,
+              "fifo": [
+                44,
+                55,
+                66,
+                77,
+                88,
+                99,
+                456,
+                0
+              ],
+              "full": false,
+              "head": 44
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-drain-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 6,
+              "empty": false,
+              "full": false,
+              "head": 55,
+              "fifo": {
+                "$prefix": [
+                  55,
+                  66,
+                  77,
+                  88,
+                  99,
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 6,
+              "empty": false,
+              "fifo": [
+                55,
+                66,
+                77,
+                88,
+                99,
+                456,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 55
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-pop-release-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 6,
+              "empty": false,
+              "full": false,
+              "head": 55,
+              "fifo": {
+                "$prefix": [
+                  55,
+                  66,
+                  77,
+                  88,
+                  99,
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 6,
+              "empty": false,
+              "fifo": [
+                55,
+                66,
+                77,
+                88,
+                99,
+                456,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 55
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-drain-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 5,
+              "empty": false,
+              "full": false,
+              "head": 66,
+              "fifo": {
+                "$prefix": [
+                  66,
+                  77,
+                  88,
+                  99,
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 5,
+              "empty": false,
+              "fifo": [
+                66,
+                77,
+                88,
+                99,
+                456,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 66
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-pop-release-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 5,
+              "empty": false,
+              "full": false,
+              "head": 66,
+              "fifo": {
+                "$prefix": [
+                  66,
+                  77,
+                  88,
+                  99,
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 5,
+              "empty": false,
+              "fifo": [
+                66,
+                77,
+                88,
+                99,
+                456,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 66
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-drain-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 4,
+              "empty": false,
+              "full": false,
+              "head": 77,
+              "fifo": {
+                "$prefix": [
+                  77,
+                  88,
+                  99,
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 4,
+              "empty": false,
+              "fifo": [
+                77,
+                88,
+                99,
+                456,
+                0,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 77
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-pop-release-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 4,
+              "empty": false,
+              "full": false,
+              "head": 77,
+              "fifo": {
+                "$prefix": [
+                  77,
+                  88,
+                  99,
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 4,
+              "empty": false,
+              "fifo": [
+                77,
+                88,
+                99,
+                456,
+                0,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 77
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-drain-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 3,
+              "empty": false,
+              "full": false,
+              "head": 88,
+              "fifo": {
+                "$prefix": [
+                  88,
+                  99,
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 3,
+              "empty": false,
+              "fifo": [
+                88,
+                99,
+                456,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 88
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-pop-release-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 3,
+              "empty": false,
+              "full": false,
+              "head": 88,
+              "fifo": {
+                "$prefix": [
+                  88,
+                  99,
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 3,
+              "empty": false,
+              "fifo": [
+                88,
+                99,
+                456,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 88
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-drain-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 2,
+              "empty": false,
+              "full": false,
+              "head": 99,
+              "fifo": {
+                "$prefix": [
+                  99,
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 2,
+              "empty": false,
+              "fifo": [
+                99,
+                456,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 99
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-pop-release-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 2,
+              "empty": false,
+              "full": false,
+              "head": 99,
+              "fifo": {
+                "$prefix": [
+                  99,
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 2,
+              "empty": false,
+              "fifo": [
+                99,
+                456,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 99
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-drain-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 1,
+              "empty": false,
+              "full": false,
+              "head": 456,
+              "fifo": {
+                "$prefix": [
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 1,
+              "empty": false,
+              "fifo": [
+                456,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 456
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-pop-release-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 1,
+              "empty": false,
+              "full": false,
+              "head": 456,
+              "fifo": {
+                "$prefix": [
+                  456
+                ]
+              }
+            },
+            "actual": {
+              "count": 1,
+              "empty": false,
+              "fifo": [
+                456,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 456
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-drain-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 0,
+              "empty": true,
+              "full": false,
+              "head": 0
+            },
+            "actual": {
+              "count": 0,
+              "empty": true,
+              "full": false,
+              "head": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-pop-release-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 0,
+              "empty": true,
+              "full": false,
+              "head": 0
+            },
+            "actual": {
+              "count": 0,
+              "empty": true,
+              "full": false,
+              "head": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-empty-pop",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 0,
+              "empty": true,
+              "full": false,
+              "head": 0
+            },
+            "actual": {
+              "count": 0,
+              "empty": true,
+              "full": false,
+              "head": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-empty-release",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 0,
+              "empty": true,
+              "full": false,
+              "head": 0
+            },
+            "actual": {
+              "count": 0,
+              "empty": true,
+              "full": false,
+              "head": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-empty-both",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 1,
+              "empty": false,
+              "full": false,
+              "head": 111,
+              "fifo": {
+                "$prefix": [
+                  111
+                ]
+              }
+            },
+            "actual": {
+              "count": 1,
+              "empty": false,
+              "fifo": [
+                111,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 111
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "q-push-held",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "count": 1,
+              "empty": false,
+              "full": false,
+              "head": 111,
+              "fifo": {
+                "$prefix": [
+                  111
+                ]
+              }
+            },
+            "actual": {
+              "count": 1,
+              "empty": false,
+              "fifo": [
+                111,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "full": false,
+              "head": 111
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 4230,
+          "traces": 60000,
+          "specs_total": 7,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 7,
+          "violations": [],
+          "error": "",
+          "truncated": true,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 15.78200000000652,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\self-hard-03_9b60fca66d",
+            "source_sha256": "51c7d9d5b38932202262c3fced8501a5807b7254f1e189a76260c6d1da8d472e",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "input_partition": {
+            "original_combinations": 60,
+            "classes": {},
+            "representative_combinations": 60
+          },
+          "search": {
+            "algorithm": "finite_window_product_bfs",
+            "stop_reason": "transition_limit",
+            "completed_depth": 4,
+            "current_depth": 5,
+            "elapsed_seconds": 17.875,
+            "edges_checked": 60000,
+            "frontier_states": 576,
+            "product_states": 4230,
+            "states_explored": 4230,
+            "input_space_size": 60
+          },
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "9fe28a3be6dd723ee454356de11663e0850bcd8dc9e160b78f63c41bb7785ff7",
+          "source_sha256": "51c7d9d5b38932202262c3fced8501a5807b7254f1e189a76260c6d1da8d472e",
+          "problem_sha256": "10029808a93a8bd3d94953552043b5cc764265e465b9ac7ff91cd301a84310f9",
+          "mc_timeout_seconds": 35,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {},
+          "cache_hit": false,
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "bounded",
+          "candidate_text_rewritten": false,
+          "task_json_sha256": "3058a7add5c17f8458db24a0d1bb729143d769153f51ddbc42191f0475a66df1",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated",
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          }
+        }
+      },
+      "feedback": "Functional checks: 45/45; bounded status: truncated.",
+      "timing": {
+        "static_seconds": 0.156,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 15.782,
+        "functional_seconds": 0.172,
+        "formal_queue_seconds": 0.0,
+        "bounded_seconds": 18.234
+      },
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    pushEn  : BOOL;\n    pushItem: INT;\n    popEn   : BOOL;\nEND_VAR\nVAR_IN_OUT\n    fifo    : ARRAY[1..8] OF INT;\nEND_VAR\nVAR_OUTPUT\n    count   : INT := 0;\n    full    : BOOL := FALSE;\n    empty   : BOOL := TRUE;\n    head    : INT := 0;\nEND_VAR\nVAR\n    pushR   : R_TRIG;\n    popR    : R_TRIG;\n    prevPushEn  : BOOL := FALSE;\n    prevPopEn   : BOOL := FALSE;\n    firstScan   : BOOL := TRUE;\nEND_VAR\nVAR\n    tmp_prevCount : INT;\nEND_VAR\n\n(*\nENGINEERING_CONTRACT\n================================================================================\nPUB001 §rising-edge trigger·pushEn  → pushR.Q = pulse\nPUB002 §rising-edge trigger·popEn   → popR.Q  = pulse\nPUB003 §pop-first: popR then pushR; pop on count>0 only; push on count<8 only\nPUB004 §output: count/empty/full/head consistent with array state each scan\nPUB005 §fifo[1..count] compact, fifo[1]=head when count>0; others unspecified\nPUB006 §full ∧ pushR only: count=8 (no change); empty ∧ popR only: count=0\nPUB007 §simultaneous: prev(full)→pop frees slot, then push succeeds; count stays\nPUB008 §simultaneous: prev(empty)→pop no-op, push succeeds; count = 1\nPUB009 §head=0 when empty; head=fifo[1] when count>0\nPUB010 §no hidden timers; state in VAR; edge detection via R_TRIG\nPUB011 §IN_OUT fifo bound by caller; write to positions 1..count only\nPUB012 §rising edge detected on transition FALSE→TRUE; hold does not repeat\nPUB013 §shift-left only when count>1; count=1 pop leaves array unchanged\nPUB014 §push to unfull queue: fifo[count]=pushItem on same scan\nPUB015 §all outputs derived from same-scan state; no multi-scan buffering\nPUB016 §R_TRIG/Q is valid only during the scan where rising edge occurs\nPUB017 §first scan: init fifo to defined state via firstScan guard\nPUB018 §prev(pushEn) tracked via prevPushEn; prev(popEn) via prevPopEn\nPUB019 §S1: count∈[0,8], full↔count=8, empty↔count=0\nPUB020 §S2: prev(full)∧pushR∧!popR → count=8\nPUB021 §S3: prev(empty)∧popR∧!pushR → count=0\nPUB022 §S6: count updated after pop+push chain; only successful actions change it\nPUB023 §S7: accepted push → fifo[count]=pushItem\nPUB024 §S8: shift-left by one position when pop succeeds; count>1 shift else nop\n================================================================================\n*)\n    (* Capture tmp_prevCount before any state mutation this scan *)\n    tmp_prevCount := count;\n\n    (* Detect rising edges per PUB001, PUB002, PUB012 *)\n    pushR(CLK := pushEn);\n    popR(CLK := popEn);\n\n    (* PUB003 §pop-first order: handle pop before push *)\n    IF popR.Q AND tmp_prevCount > 0 THEN\n        (* S8 §shift-left only when count>1; count=1 pop leaves array unchanged (PUB013) *)\n        IF tmp_prevCount > 1 THEN\n            fifo[1] := fifo[2];\n            fifo[2] := fifo[3];\n            fifo[3] := fifo[4];\n            fifo[4] := fifo[5];\n            fifo[5] := fifo[6];\n            fifo[6] := fifo[7];\n            fifo[7] := fifo[8];\n            fifo[8] := 0;\n        END_IF;\n        count := count - 1;\n    END_IF;\n\n    (* PUB003 §push on count<8; PUB007/PUB008 §simultaneous pop+push chain *)\n    IF pushR.Q AND count < 8 THEN\n        (* PUB014/PUB023 §accepted push: fifo[count]=pushItem (position BEFORE increment) *)\n        fifo[count + 1] := pushItem;\n        count := count + 1;\n    END_IF;\n\n    (* PUB004/PUB009 §derive output signals from final same-scan state *)\n    full  := (count = 8);\n    empty := (count = 0);\n    IF count > 0 THEN\n        head := fifo[1];\n    ELSE\n        head := 0;\n    END_IF;\n\n    (* Track previous input state for next-scan edge detection (PUB018) *)\n    prevPushEn := pushEn;\n    prevPopEn  := popEn;\nEND_FUNCTION_BLOCK\n\n(* CONTRACT_RULES [] *)",
+      "code_hash": "51c7d9d5b38932202262c3fced8501a5807b7254f1e189a76260c6d1da8d472e",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 29,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB002",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007",
+          "PUB008",
+          "PUB009",
+          "PUB010",
+          "PUB011",
+          "PUB012",
+          "PUB013",
+          "PUB014",
+          "PUB015",
+          "PUB016",
+          "PUB017",
+          "PUB018",
+          "PUB019",
+          "PUB020",
+          "PUB021",
+          "PUB022",
+          "PUB023",
+          "PUB024"
+        ]
+      },
+      "model_patch": {
+        "mode": "model_exact_edits",
+        "base_sha256": "168210afeb2943703301a9a58a5e52a749f90e96f21cf74b6d037761c212a06a",
+        "plan": {
+          "edits": [
+            {
+              "old": "VAR_TEMP\n    prevCount   : INT;\nEND_VAR\nEND_VAR\n\n(*\nENGINEERING_CONTRACT",
+              "new": "VAR\n    tmp_prevCount : INT;\nEND_VAR\n\n(*\nENGINEERING_CONTRACT"
+            },
+            {
+              "old": "BEGIN\n    (* First-scan initialization: ensure defined state for fifo[1..8] *)\n    IF firstScan THEN\n        firstScan := FALSE;\n        fifo[1] := 0;\n        fifo[2] := 0;\n        fifo[3] := 0;\n        fifo[4] := 0;\n        fifo[5] := 0;\n        fifo[6] := 0;\n        fifo[7] := 0;\n        fifo[8] := 0;\n    END_IF;\n\n    (* Capture prevCount before any state mutation this scan *)\n    prevCount := count;\n\n    (* Detect rising edges per PUB001, PUB002, PUB012 *)\n    pushR(CLK := pushEn);\n    popR(CLK := popEn);\n\n    (* PUB003 §pop-first order: handle pop before push *)\n    IF popR.Q AND prevCount > 0 THEN\n        (* S8 §shift-left only when count>1; count=1 pop leaves array unchanged (PUB013) *)\n        IF prevCount > 1 THEN\n            fifo[1] := fifo[2];\n            fifo[2] := fifo[3];\n            fifo[3] := fifo[4];\n            fifo[4] := fifo[5];\n            fifo[5] := fifo[6];\n            fifo[6] := fifo[7];\n            fifo[7] := fifo[8];\n            fifo[8] := 0;\n        ELSE\n            (* count=1: array untouched, only count decrements (PUB013) *)\n        END_IF;\n        count := count - 1;\n    END_IF;\n\n    (* PUB003 §push on count<8; PUB007/PUB008 §simultaneous pop+push chain *)\n    IF pushR.Q AND count < 8 THEN\n        (* PUB014/PUB023 §accepted push: fifo[count]=pushItem (position BEFORE increment) *)\n        fifo[count + 1] := pushItem;\n        count := count + 1;\n    END_IF;\n\n    (* PUB004/PUB009 §derive output signals from final same-scan state *)\n    full  := (count = 8);\n    empty := (count = 0);\n    IF count > 0 THEN\n        head := fifo[1];\n    ELSE\n        head := 0;\n    END_IF;\n\n    (* Track previous input state for next-scan edge detection (PUB018) *)\n    prevPushEn := pushEn;\n    prevPopEn  := popEn;\nEND_FUNCTION_BLOCK",
+              "new": "    (* Capture tmp_prevCount before any state mutation this scan *)\n    tmp_prevCount := count;\n\n    (* Detect rising edges per PUB001, PUB002, PUB012 *)\n    pushR(CLK := pushEn);\n    popR(CLK := popEn);\n\n    (* PUB003 §pop-first order: handle pop before push *)\n    IF popR.Q AND tmp_prevCount > 0 THEN\n        (* S8 §shift-left only when count>1; count=1 pop leaves array unchanged (PUB013) *)\n        IF tmp_prevCount > 1 THEN\n            fifo[1] := fifo[2];\n            fifo[2] := fifo[3];\n            fifo[3] := fifo[4];\n            fifo[4] := fifo[5];\n            fifo[5] := fifo[6];\n            fifo[6] := fifo[7];\n            fifo[7] := fifo[8];\n            fifo[8] := 0;\n        END_IF;\n        count := count - 1;\n    END_IF;\n\n    (* PUB003 §push on count<8; PUB007/PUB008 §simultaneous pop+push chain *)\n    IF pushR.Q AND count < 8 THEN\n        (* PUB014/PUB023 §accepted push: fifo[count]=pushItem (position BEFORE increment) *)\n        fifo[count + 1] := pushItem;\n        count := count + 1;\n    END_IF;\n\n    (* PUB004/PUB009 §derive output signals from final same-scan state *)\n    full  := (count = 8);\n    empty := (count = 0);\n    IF count > 0 THEN\n        head := fifo[1];\n    ELSE\n        head := 0;\n    END_IF;\n\n    (* Track previous input state for next-scan edge detection (PUB018) *)\n    prevPushEn := pushEn;\n    prevPopEn  := popEn;\nEND_FUNCTION_BLOCK"
+            }
+          ]
+        }
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 6301,
+      "completion_tokens": 1507,
+      "cost_cny": 0.020453811000000002,
+      "latency_s": 29.156,
+      "generation_seconds": 29.156,
+      "end_to_end_seconds": 63.5,
+      "format_edits": [],
+      "raw_source_sha256": "51c7d9d5b38932202262c3fced8501a5807b7254f1e189a76260c6d1da8d472e",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "functional_pass_formal_truncated",
+  "tests_total": 45,
+  "study_plan_sha256": "e0db2940199cc656528584436ab352ead1fdbaa878edd82cd2958bfa3af1ca4c",
+  "started_at": "2026-11-13T19:41:02.098856+08:00",
+  "wall_seconds": 133.141,
+  "finished_at": "2026-11-13T19:43:15.140880+08:00",
+  "operational_network_wait": {
+    "batch": "v4_wait900",
+    "ceiling_seconds": 900,
+    "task_seconds": 2400,
+    "evaluation_reserve_seconds": 150,
+    "model_parameters_unchanged": true
+  }
+}
