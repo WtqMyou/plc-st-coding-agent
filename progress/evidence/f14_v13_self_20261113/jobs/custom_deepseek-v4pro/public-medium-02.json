@@ -1,0 +1,120 @@
+{
+  "job_id": "custom_deepseek-v4pro/public-medium-02",
+  "pid": "public-medium-02",
+  "condition": "custom_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": false,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 17,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 104,
+            "code": "E_MISSING_END_POU",
+            "message": "FUNCTION_BLOCK AnalogBatchProcessing 缺少结束关键字"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 17,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "0530efb05411c372aa5e590505a0e3fe2d479ef80aa833ac088334375e9883a3",
+          "task_json_sha256": "c08c5e524b5aa20156f605658b1eb1e1cf312809acfbb3b7eddbcf378f0b902f",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/17; bounded status: not_run.\nLine 104 [E_MISSING_END_POU]: FUNCTION_BLOCK AnalogBatchProcessing 缺少结束关键字\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n1: TYPE ST_AnalogChannel :\n2: STRUCT\n103:     END_FOR;\n104: END_IF;",
+      "timing": {
+        "static_seconds": 0.219
+      },
+      "idx": 0,
+      "code": "TYPE ST_AnalogChannel :\nSTRUCT\n    enable : BOOL;\n    hiLIM : REAL;\n    loLIM : REAL;\n    bipolar : BOOL;\n    measuringMode : INT;\n    retVal : WORD;\n    outputValue : REAL;\nEND_STRUCT\nEND_TYPE;\n\n(* ENGINEERING_CONTRACT\n   Loop count: count limited to 0..min(array lengths); ordinal start at each array lower bound (PUB001).\n   channels[].retVal: activated on enabled scan; invalid mode -> 16#8001, invalid limits -> 16#8002,\n   success -> 0 (PUB006, PUB007, PUB008).\n   channels[].outputValue: written only on successful conversion; mode 0 linear scaling,\n   mode 1 /10, mode 2 /100 (PUB003, PUB004, PUB005).\n   Disabled channels retain prior retVal/outputValue (unspecified retention interpretation).\n*)\n\n(* CONTRACT_RULES [] *)\n\nFUNCTION_BLOCK AnalogBatchProcessing\nVAR_INPUT\n    count : DINT;\nEND_VAR\nVAR_IN_OUT\n    analogValues : ARRAY[*] OF INT;\n    channels : ARRAY[*] OF ST_AnalogChannel;\nEND_VAR\nVAR\n    local_i : DINT;\n    local_n : DINT;\n    local_analog_idx : DINT;\n    local_channel_idx : DINT;\n    local_raw : INT;\n    local_mode : INT;\n    local_min_len : DINT;\n    local_ch_len : DINT;\n    local_raw_min : REAL;\n    local_raw_max : REAL;\n    local_span_raw : REAL;\n    local_ratio : REAL;\nEND_VAR\n\nlocal_n := count;\nIF local_n < 0 THEN\n    local_n := 0;\nEND_IF;\n\nlocal_min_len := UPPER_BOUND(analogValues, 1) - LOWER_BOUND(analogValues, 1) + 1;\nlocal_ch_len := UPPER_BOUND(channels, 1) - LOWER_BOUND(channels, 1) + 1;\nIF local_min_len > local_ch_len THEN\n    local_min_len := local_ch_len;\nEND_IF;\nIF local_n > local_min_len THEN\n    local_n := local_min_len;\nEND_IF;\n\nIF local_n > 0 THEN\n    FOR local_i := 0 TO local_n - 1 DO\n        local_analog_idx := LOWER_BOUND(analogValues, 1) + local_i;\n        local_channel_idx := LOWER_BOUND(channels, 1) + local_i;\n\n        IF channels[local_channel_idx].enable THEN\n            local_mode := channels[local_channel_idx].measuringMode;\n\n            IF (local_mode <> 0) AND (local_mode <> 1) AND (local_mode <> 2) THEN\n                channels[local_channel_idx].retVal := 16#8001;\n                (* skip conversion: outputValue unchanged *)\n            ELSIF channels[local_channel_idx].hiLIM <= channels[local_channel_idx].loLIM THEN\n                channels[local_channel_idx].retVal := 16#8002;\n                (* skip conversion: outputValue unchanged *)\n            ELSE\n                channels[local_channel_idx].retVal := 0;\n                CASE local_mode OF\n                    0:\n                        local_raw := analogValues[local_analog_idx];\n                        IF channels[local_channel_idx].bipolar THEN\n                            local_raw_min := -27648.0;\n                            local_raw_max := 27648.0;\n                        ELSE\n                            local_raw_min := 0.0;\n                            local_raw_max := 27648.0;\n                        END_IF;\n\n                        local_span_raw := local_raw_max - local_raw_min;\n                        local_ratio := (TO_REAL(local_raw) - local_raw_min) / local_span_raw;\n                        channels[local_channel_idx].outputValue := channels[local_channel_idx].loLIM\n                            + local_ratio * (channels[local_channel_idx].hiLIM - channels[local_channel_idx].loLIM);\n\n                    1:\n                        channels[local_channel_idx].outputValue := TO_REAL(analogValues[local_analog_idx]) / 10.0;\n\n                    2:\n                        channels[local_channel_idx].outputValue := TO_REAL(analogValues[local_analog_idx]) / 100.0;\n                END_CASE;\n            END_IF;\n        ELSE\n            (* disabled: no writes to retVal or outputValue *)\n        END_IF;\n    END_FOR;\nEND_IF;",
+      "code_hash": "0530efb05411c372aa5e590505a0e3fe2d479ef80aa833ac088334375e9883a3",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 8,
+        "cited_public_clauses": [
+          "PUB001",
+          "PUB003",
+          "PUB004",
+          "PUB005",
+          "PUB006",
+          "PUB007",
+          "PUB008"
+        ]
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 3142,
+      "completion_tokens": 5863,
+      "cost_cny": 0.14739741,
+      "latency_s": 71.078,
+      "generation_seconds": 71.078,
+      "end_to_end_seconds": 71.297,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 193,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "aca9213d8aaff739180fe904151cd8f42c0de93ba2bdd9b8f01fedab2f4a1c26",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 0,
+  "stop_reason": "",
+  "tests_total": 17,
+  "study_plan_sha256": "632546bc266f4cf26f43ce1153aa224d78c8a6769799f1649daaf213b9908620",
+  "started_at": "2026-11-13T13:19:41.387711+08:00",
+  "wall_seconds": 71.422,
+  "finished_at": "2026-11-13T13:20:52.709361+08:00"
+}
