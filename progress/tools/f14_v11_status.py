@@ -36,38 +36,49 @@ def report(cfg,plan):
             requests=len(fees),formal_statuses=dict(Counter(a['verification_status'] for a in bounded)),formal_not_executed=20-len(bounded),
             accounted_cny=float(sum((s.money(e.get('accounted_cny',e['reserved_cny'])) for e in fees),s.money(0)))))
     halt=ledger.get('halted','') if 'f14_v11_authorization' in ledger else ''
+    condition=state.get('active_condition')
+    visible=[r for r in rows if not condition or r['condition']==condition]
+    planned=20 if condition else 80
+    visible_events=[e for e in events if not condition or e['request']['job_id'].startswith(condition+'/')]
     pending=[]
-    for e in events:
+    for e in visible_events:
         if e['status']!='reserved':continue
-        condition,pid=e['request']['job_id'].split('/');idx=e['request']['candidate_index']
-        diag=s.load(root/'transport_private'/condition/pid/str(idx)/'diagnostic.json')
+        event_condition,pid=e['request']['job_id'].split('/');idx=e['request']['candidate_index']
+        diag=s.load(root/'transport_private'/event_condition/pid/str(idx)/'diagnostic.json')
         pending.append(dict(job_id=e['request']['job_id'],candidate=idx+1,status='已超时，保留费用预留' if diag.get('outcome')=='wall_deadline' else '等待模型返回',reserved_cny=e['reserved_cny']))
-    labels={'prepared':'免费验收完成','running':'运行中','completed':'80题次完成','stopped':'已停止并保存现场'}
+    labels={'prepared':'免费验收完成','running':'运行中','completed':'80题次完成','stopped':'已停止并保存现场','paused':'已按用户要求暂停'}
     display='停止新增请求，等待在途请求收尾' if halt and state['state']=='running' else labels.get(state['state'],state['state'])
-    summary=dict(kind=s.KIND,state=state,display_state=display,halt_reason=halt,rows=rows,planned=80,
-        recorded=sum(r['recorded'] for r in rows),requests=len(events),maximum_requests=320,
+    if condition:
+        if state['state']=='completed':display='DeepSeek自研组已完成；其他组保持暂停'
+        elif state['state']=='running' and not halt:display='DeepSeek自研组运行中；其他组保持暂停'
+    summary=dict(kind=s.KIND,state=state,display_state=display,halt_reason=halt,rows=rows,planned=planned,
+        active_condition=condition,all_groups_planned=80,all_groups_recorded=sum(r['recorded'] for r in rows),
+        recorded=sum(r['recorded'] for r in visible),requests=len(visible_events),maximum_requests=80 if condition else 320,
         accounted_cny=ledger['spent_cny'],cap_cny=420,new_accounted_cny=float(s.money(ledger['spent_cny'])-s.money(s.BASELINE)),
         unsettled_reserved_cny=float(sum((s.money(e['reserved_cny']) for e in events if e['status']=='reserved'),s.money(0))),
         pending_requests=pending,updated_at=s.stamp(),original_events_preserved=s.prefix_ok(ledger,before),
-        completion_audit_passed=s.load(root/'final_audit.json').get('passed',False))
+        completion_audit_passed=s.load(root/('self_stage_final_audit.json' if condition else 'final_audit.json')).get('passed',False))
     lines=['# V11公共题独立验证','',display,
-        f"完成{summary['recorded']}/80题次，请求{len(events)}/320；累计计入{ledger['spent_cny']:.6f}/420元。",'',
-        '20道公共题 × 两模型 × 两框架；每题最多4候选，输出额度24576。初始8题次并行，4题完成后升至16；每模型最多8请求，CODESYS原生编译独占。',
+        f"完成{summary['recorded']}/{planned}题次，请求{summary['requests']}/{summary['maximum_requests']}；累计计入{ledger['spent_cny']:.6f}/420元。",'',
+        '仅DeepSeek自研组：20道公共题，每题最多4候选，输出额度24576，最多8题并行。其他组保持暂停。' if condition else '20道公共题 × 两模型 × 两框架；每题最多4候选，输出额度24576。初始8题次并行，4题完成后升至16；每模型最多8请求，CODESYS原生编译独占。',
         '改进：控制结构检查、按编译进展选取修复候选、历史错误记忆、包含之前实际输出的完整公开输入轨迹。原题、隐藏期望、规约及评分解释器保持冻结。','',
         '| 组别 | 完成/20 | 功能首次→最终/20 | 原生编译首次→最终/19 | 用例通过/470 | 修复新增 | 请求 | 本轮计入/元 |',
         '| --- | ---: | --- | --- | ---: | ---: | ---: | ---: |']
-    for r in rows:lines.append(f"| {r['label']} | {r['recorded']} | {r['first_functional']}→{r['final_functional']} | {r['first_codesys']}→{r['final_codesys']} | {r['assertions_passed']} | {r['repair_gain']} | {r['requests']} | {r['accounted_cny']:.6f} |")
+    for r in visible:lines.append(f"| {r['label']} | {r['recorded']} | {r['first_functional']}→{r['final_functional']} | {r['first_codesys']}→{r['final_codesys']} | {r['assertions_passed']} | {r['repair_gain']} | {r['requests']} | {r['accounted_cny']:.6f} |")
+    if condition:
+        result=s.load(root/'self_stage_final_audit.json')
+        lines+=['',f"阶段目标：至少18/20整题通过；当前{visible[0]['final_functional']}/20。"+('本轮已达标。' if result.get('target_met') else '等待本组完整结果后判断。' if not result else '本轮未达到18/20，其他组继续暂停。')]
     lines+=['','| 组别 | 实际进入形式阶段的最终候选状态 | 未执行形式阶段 |','| --- | --- | ---: |']
-    for r in rows:lines.append(f"| {r['label']} | {json.dumps(r['formal_statuses'],ensure_ascii=False)} | {r['formal_not_executed']} |")
+    for r in visible:lines.append(f"| {r['label']} | {json.dumps(r['formal_statuses'],ensure_ascii=False)} | {r['formal_not_executed']} |")
     lines+=['',f"本轮完整最坏预留{plan['worst_reservation_cny']:.6f}元。历史费用及未知预留保持，使用原备用Key；80元不暂停，420元为累计硬上限。",
         '原FIFO的VARIANT接口在当前原生平台单列，因此原生分母19；功能分母20保持。首候选全部重新生成，V10答卷与成绩独立保留。',
         '请求超时或费用不明时，停止新增请求、保存全部记录；本地文件访问重试不会重发模型请求。',
         '费用包含已结算的配置价格估算与未确认费用预留。通过是功能整题通过，形式通过另指有界检查通过。',
         '', '在途/未结算请求：'+json.dumps(pending,ensure_ascii=False),'停止原因：'+halt,'更新：'+summary['updated_at']]
     text='\n'.join(lines)+'\n';s.atomic_json(root/'status.json',summary);(root/'实验状态.md').write_text(text,encoding='utf-8')
-    html='<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="15"><title>V11公共题验证</title><style>body{font:16px/1.8 system-ui,"Microsoft YaHei";max-width:1200px;margin:30px auto;padding:0 20px;background:#f3f6fb;color:#172b42}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:white;padding:24px;border-radius:12px}</style><h1>V11 公共题独立验证</h1><p>'+escape(display)+' · '+str(summary['recorded'])+'/80</p><p>输出24576 token · 最多16题次并行 · 每15秒刷新</p><pre>'+escape(text)+'</pre></html>'
+    html='<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="15"><title>V11公共题验证</title><style>body{font:16px/1.8 system-ui,"Microsoft YaHei";max-width:1200px;margin:30px auto;padding:0 20px;background:#f3f6fb;color:#172b42}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:white;padding:24px;border-radius:12px}</style><h1>V11 公共题独立验证</h1><p>'+escape(display)+' · '+str(summary['recorded'])+'/'+str(planned)+'</p><p>输出24576 token · 最多'+('8' if condition else '16')+'题次并行 · 每15秒刷新</p><pre>'+escape(text)+'</pre></html>'
     (root/'status.html').write_text(html,encoding='utf-8')
-    for name in ('study_plan.json','authorization_proof.json','offline_routes.json','offline_repair_routes.json','budget_refinement.json','validation.json','prepared.json','study_state.json','budget_authorization.json','run_environment.json','ledger_checkpoint.json','completion.json','final_audit.json','status.json','实验状态.md','status.html'):
+    for name in ('study_plan.json','authorization_proof.json','offline_routes.json','offline_repair_routes.json','budget_refinement.json','validation.json','prepared.json','study_state.json','budget_authorization.json','run_environment.json','ledger_checkpoint.json','completion.json','final_audit.json','self_stage_control.json','self_stage_final_audit.json','self_stage_completion.json','resume_ready.json','status.json','实验状态.md','status.html'):
         if (root/name).exists():copy_changed(root/name,mirror/name)
     for p in (root/'jobs').glob('*/*.json') if (root/'jobs').exists() else []:
         if p.name.count('.')!=1:continue
@@ -84,7 +95,7 @@ def report(cfg,plan):
                 file=Path(artifact)/name
                 if file.exists():copy_changed(file,mirror/'native_evidence'/record['condition']/record['pid']/str(a['idx'])/name)
     if state['state']=='completed':
-        (mirror/'最终报告.md').write_text(text,encoding='utf-8')
+        (mirror/('自研DeepSeek阶段报告.md' if condition else '最终报告.md')).write_text(text,encoding='utf-8')
         with zipfile.ZipFile(mirror/'验收包.zip','w',zipfile.ZIP_DEFLATED) as archive:
             for file in sorted(mirror.rglob('*')):
                 if file.is_file() and file.suffix!='.zip':archive.write(file,file.relative_to(mirror).as_posix())

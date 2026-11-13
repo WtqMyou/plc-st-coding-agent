@@ -98,6 +98,8 @@ class BudgetView:
         with c.lock,ledger_lock(self.path):
             if c.stopped.is_set():raise CampaignStopped('Campaign stopped before request send')
             state=c.read();assert self.context.get('job_id')==self.job_id and idx in range(4)
+            scope=state.get('active_experiment_scope',{}).get('condition')
+            if scope and not self.job_id.startswith(scope+'/'):raise ProviderError('This condition remains paused by user instruction')
             if idx not in c.pending.get(self.job_id,{}):raise ProviderError('Duplicate or completed candidate')
             bound=c.pending[self.job_id][idx]
             if amount>bound:raise ProviderError('Frozen request bound exceeded')

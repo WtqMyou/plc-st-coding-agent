@@ -60,11 +60,17 @@ def coordinator(cfg,plan):
     root=Path(cfg['campaign_root'])
     return Coordinator(cfg['budget_ledger_path'],dict(plan,sha256=s.sha(root/'study_plan.json'),ledger_before=str(root/'ledger_before_study.json')))
 
-def live(cfg,resume=False):
+def live(cfg,resume=False,condition=None):
     root=Path(cfg['campaign_root']);plan=s.verify(cfg)
     s.old.old.support.no_other_runner(cfg)
     assert cfg['user_authorized_total_cap_cny']==420
-    s.old.ensure_pushed();binding=s.credentials.load_credentials(cfg);catalog=s.credentials.catalog(cfg,'secondary')
+    from f14_v11_scope import selected_jobs,activate,audit as scope_audit
+    scope=selected_jobs(plan,condition);scope_ids={j['job_id'] for j in scope};target_jobs=len(scope)
+    if s.load(cfg['budget_ledger_path']).get('active_experiment_scope'):
+        assert condition==s.load(cfg['budget_ledger_path'])['active_experiment_scope']['condition']
+    s.old.ensure_pushed();binding=s.credentials.load_credentials(cfg)
+    catalog_cfg=dict(cfg,models=[m for m in cfg['models'] if m['id']=='deepseek-v4pro']) if condition else cfg
+    catalog=s.credentials.catalog(catalog_cfg,'secondary')
     assert s.sha(root/'authorization_proof.json')==plan['authorization_proof_sha256']
     if not resume:
         assert s.load(root/'study_state.json')['state']=='prepared'
@@ -76,17 +82,18 @@ def live(cfg,resume=False):
     else:
         assert s.sha(cfg['budget_ledger_path'])==s.load(root/'ledger_checkpoint.json')['sha256']
         assert binding['secondary']==s.load(root/'run_environment.json')['secondary_key_sha256']
+        if condition:activate(cfg,condition)
     budget=coordinator(cfg,plan)
     completed={j['job_id'] for j in plan['jobs'] if s.load(root/'jobs'/j['condition']/(j['pid']+'.json')).get('job_done')}
     for key in completed:budget.finish(key)
-    pending=[j for j in plan['jobs'] if j['job_id'] not in completed]
+    pending=[j for j in scope if j['job_id'] not in completed]
     for j in pending:
         existing=list((root/'jobs'/j['condition']).glob(j['pid']+'.*'))
         if existing:
             recovery=s.load(root/'resume_ready.json')
             record_path=root/'jobs'/j['condition']/(j['pid']+'.json')
             assert resume and recovery['continued_records'].get(j['job_id'])==s.sha(record_path),'Partial evidence needs an inspected resume checkpoint'
-    active={};cursor=0;done_count=len(completed);limit=8;error=None;awake=False;published_start=False;last_publication_count=done_count
+    active={};cursor=0;done_count=len(completed&scope_ids);limit=8;error=None;awake=False;published_start=False;last_publication_count=done_count
     s.atomic_json(root/'active_run.json',dict(**s.old.old.support.current_process_marker(),state='running',entry='f14_v11_study.py'))
     try:
         if os.name=='nt':awake=bool(ctypes.windll.kernel32.SetThreadExecutionState(0x80000001))
@@ -97,7 +104,7 @@ def live(cfg,resume=False):
                     has_record=(root/'jobs'/job['condition']/(job['pid']+'.json')).is_file()
                     future=pool.submit(s.generate_job,cfg,root,plan,job,budget.view(job['job_id']),{},factory=s.credentials.provider_factory,resume=has_record)
                     active[future]=job
-                    s.atomic_json(root/'study_state.json',dict(state='running',at=s.stamp(),active_jobs=[j['job_id'] for j in active.values()],workers=limit,completed=done_count))
+                    s.atomic_json(root/'study_state.json',dict(state='running',at=s.stamp(),active_jobs=[j['job_id'] for j in active.values()],workers=limit,completed=done_count,active_condition=condition,planned=target_jobs))
                 report(cfg,plan)
                 if not published_start:
                     publish();published_start=True
@@ -109,23 +116,28 @@ def live(cfg,resume=False):
                         record=future.result()
                         if not record['job_done']:raise RuntimeError('Job stopped with partial evidence')
                         budget.finish(job['job_id']);done_count+=1
-                        print('FINISHED',job['job_id'],done_count,'/80',flush=True)
+                        print('FINISHED',job['job_id'],done_count,'/',target_jobs,flush=True)
                     except BaseException as exc:
                         error=s.sanitize(type(exc).__name__+': '+str(exc));budget.halt(error)
-                if cursor>=4 and done_count>=4 and not budget.stopped.is_set():limit=16
+                if not condition and cursor>=4 and done_count>=4 and not budget.stopped.is_set():limit=16
                 if ready:
                     report(cfg,plan)
                     if done_count-last_publication_count>=4:
                         publish();last_publication_count=done_count
         state=budget.read(allow_halted=True)
-        final='completed' if done_count==80 and not error and not budget.stopped.is_set() else 'stopped'
-        s.atomic_json(root/'study_state.json',dict(state=final,at=s.stamp(),completed=done_count,error=error or state.get('halted','')))
-        if final=='completed':
+        final='completed' if done_count==target_jobs and not error and not budget.stopped.is_set() else 'stopped'
+        s.atomic_json(root/'study_state.json',dict(state=final,at=s.stamp(),completed=done_count,error=error or state.get('halted',''),active_condition=condition,planned=target_jobs))
+        if final=='completed' and condition:
+            result=scope_audit(cfg,plan,condition)
+            s.atomic_json(root/'self_stage_final_audit.json',result)
+            s.atomic_json(root/'self_stage_completion.json',dict(**result,completed=True,accounted_cny=state['spent_cny']))
+            budget.halt('SELF_STAGE_COMPLETE_OTHER_GROUPS_PAUSED')
+        elif final=='completed':
             from f14_v11_report import audit_final
             s.atomic_json(root/'final_audit.json',audit_final(cfg,plan))
             s.atomic_json(root/'completion.json',dict(completed=True,jobs=80,requests=len(state['events'])-HISTORY,accounted_cny=state['spent_cny'],at=s.stamp()))
     except BaseException as exc:
-        s.atomic_json(root/'study_state.json',dict(state='stopped',at=s.stamp(),error=s.sanitize(str(exc))));raise
+        s.atomic_json(root/'study_state.json',dict(state='stopped',at=s.stamp(),error=s.sanitize(str(exc)),active_condition=condition,planned=target_jobs));raise
     finally:
         if awake:ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
         marker=s.load(root/'active_run.json');marker.update(state=s.load(root/'study_state.json')['state'],ended_at=s.stamp());s.atomic_json(root/'active_run.json',marker)
@@ -134,10 +146,11 @@ def live(cfg,resume=False):
 
 def main():
     p=argparse.ArgumentParser();p.add_argument('command',choices=('prepare','check','live','resume','serve'));p.add_argument('--port',type=int,default=8894)
+    p.add_argument('--condition',choices=('custom_deepseek-v4pro',))
     args=p.parse_args();cfg=s.config()
     if args.command=='prepare':prepare(cfg)
     elif args.command=='check':s.verify(cfg);print('PASS frozen V11 source, judge, model identity and full budget plan')
     elif args.command=='serve':serve(cfg,args.port)
-    else:live(cfg,args.command=='resume')
+    else:live(cfg,args.command=='resume',args.condition)
 
 if __name__=='__main__':main()

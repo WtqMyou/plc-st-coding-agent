@@ -22,5 +22,12 @@ class Status(unittest.TestCase):
             self.assertIn('停止新增请求',result['display_state']);self.assertEqual(result['planned'],80)
             self.assertEqual(result['maximum_requests'],320);self.assertEqual(len(result['rows']),4)
             self.assertTrue(all(r['planned']==20 and r['assertions_total']==470 for r in result['rows']))
+            state['halted']='';s.atomic_json(ledger,state)
+            s.atomic_json(campaign/'study_state.json',dict(state='running',active_condition='custom_deepseek-v4pro'))
+            with patch.object(s,'MIRROR',root/'mirror'),patch.object(s,'HISTORY',0),patch.object(s,'BASELINE',0):
+                result=report(dict(campaign_root=str(campaign),budget_ledger_path=str(ledger)),dict(jobs=jobs,worst_reservation_cny=219.1572))
+            self.assertEqual(result['planned'],20);self.assertEqual(result['maximum_requests'],80)
+            self.assertEqual(result['active_condition'],'custom_deepseek-v4pro')
+            self.assertIn('其他组保持暂停',result['display_state'])
 
 if __name__=='__main__':unittest.main()
