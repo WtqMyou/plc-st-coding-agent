@@ -1,0 +1,124 @@
+"""Per-job budget views, serialized reservations and in-flight receipt settlement."""
+import hashlib
+import json
+from pathlib import Path
+import threading
+import time
+import uuid
+import f14_v2_study as base
+from stbench.billing import ledger_lock,money
+from f14_v11_io import atomic_json
+from stbench.providers.base import ProviderError
+
+KIND='f14_v11_public_20261113'
+TOTAL=420
+BASELINE=159.535005
+HISTORY=1585
+
+class CampaignStopped(ProviderError):pass
+
+def authorize(path,before_bytes,plan_sha,proof_sha):
+    path=Path(path);before=json.loads(before_bytes)
+    with ledger_lock(path):
+        current=base.load(path)
+        if 'f14_v11_authorization' in current:
+            approval=current['f14_v11_authorization']
+            assert approval['study_plan_sha256']==plan_sha and approval['proof_sha256']==proof_sha and current['limit_cny']==TOTAL
+            assert current['events'][:HISTORY]==before['events']
+            return approval
+        assert path.read_bytes()==before_bytes,'Ledger changed; do not reset or refund'
+        assert (before['limit_cny'],before['spent_cny'],len(before['events']))==(TOTAL,BASELINE,HISTORY)
+        assert before.get('halted','') in ('','Unconfirmed upstream result; reservation retained'),'Uninspected halt'
+        if before.get('halted'):
+            audit=base.load(Path('E:/PLC_Dev/evidence/real_experiments/f14_v10_full_20261113/final_audit.json'))
+            assert audit['passed'] and audit['unknown_requests_retained']==3
+            assert audit['ledger_sha256']==hashlib.sha256(before_bytes).hexdigest()
+        after=json.loads(before_bytes)
+        after['limit_cny']=TOTAL
+        after.setdefault('historical_halts',[]).append(dict(reason=before['halted'],retained=True,events=HISTORY))
+        after['halted']=''
+        after['f14_v11_authorization']=dict(kind=KIND,total_cap_cny=TOTAL,manual_pause_at_80=False,
+            study_plan_sha256=plan_sha,proof_sha256=proof_sha,baseline_sha256=hashlib.sha256(before_bytes).hexdigest(),
+            user_instruction='进行调整，并适当提高额度。加快实验时间，如果能并行测试那就并行测试，尽量一次并行测试更多组；当前每次输出16384 token可以适当增大',
+            historical_events=HISTORY,initial_spent_cny=BASELINE)
+        assert after['events']==before['events'] and after['spent_cny']==before['spent_cny']
+        atomic_json(path,after)
+        return after['f14_v11_authorization']
+
+class Coordinator:
+    def __init__(self,path,plan,*,baseline=None):
+        self.path=Path(path);self.plan=plan;self.lock=threading.RLock();self.stopped=threading.Event()
+        self.plan_sha=plan['sha256'];self.baseline=baseline or json.loads(Path(plan['ledger_before']).read_text(encoding='utf-8'))
+        self.bounds={j['job_id']:{i:money(j['first_upper_cny'] if i==0 else j['repair_upper_cny']) for i in range(4)} for j in plan['jobs']}
+        self.pending={key:dict(value) for key,value in self.bounds.items()}
+        state=self.read(allow_halted=True)
+        for event in state['events'][HISTORY:]:
+            self.pending[event['request']['job_id']].pop(event['request']['candidate_index'],None)
+        if state.get('halted'):self.stopped.set()
+    def read(self,allow_halted=False):
+        state=base.load(self.path)
+        if state.get('version')!=3 or state.get('limit_cny')!=TOTAL:raise ProviderError('Budget identity changed')
+        approval=state.get('f14_v11_authorization',{})
+        approved_plans={approval.get('study_plan_sha256'),approval.get('amended_study_plan_sha256'),*approval.get('operational_plan_sha256',[])}
+        assert self.plan_sha in approved_plans and approval.get('total_cap_cny')==TOTAL,'Missing matching frozen-plan authorization'
+        if state.get('halted') and not allow_halted:raise CampaignStopped(state['halted'])
+        assert state['events'][:HISTORY]==self.baseline['events'],'Historical events changed'
+        assert state['recoveries'][:len(self.baseline.get('recoveries',[]))]==self.baseline.get('recoveries',[])
+        assert all(state.get(k)==v for k,v in self.baseline.items() if k.endswith('_authorization'))
+        new=state['events'][HISTORY:]
+        assert len(new)<=320
+        keys=[(e['request']['job_id'],e['request']['candidate_index']) for e in new]
+        assert len(keys)==len(set(keys))
+        for event in new:
+            req=event['request'];assert event['phase']==KIND and req['study_plan_sha256'] in approved_plans
+            assert req['job_id'] in self.bounds and req['candidate_index'] in range(4)
+        accounted=money(BASELINE)+sum((money(e.get('accounted_cny',e['reserved_cny'])) for e in new),money(0))
+        assert accounted==money(state['spent_cny']) and accounted<=money(TOTAL)
+        return state
+    def view(self,job_id):return BudgetView(self,job_id)
+    def finish(self,job_id):
+        with self.lock:self.pending.pop(job_id,None)
+    def halt(self,reason,details=None):
+        self.stopped.set()
+        with self.lock,ledger_lock(self.path):
+            state=self.read(allow_halted=True)
+            if not state.get('halted'):
+                state['halted']=reason
+                if details is not None:state['halt_details']=details
+                atomic_json(self.path,state)
+
+class BudgetView:
+    def __init__(self,coordinator,job_id):
+        self.coordinator=coordinator;self.path=coordinator.path;self.job_id=job_id
+        self.active_batch='secondary';self.context={};self.protected_cny=0
+    def snapshot(self):
+        with self.coordinator.lock,ledger_lock(self.path):return self.coordinator.read()
+    def reserve(self,amount,*,request=None):
+        c=self.coordinator;amount=money(amount);idx=self.context.get('candidate_index')
+        with c.lock,ledger_lock(self.path):
+            if c.stopped.is_set():raise CampaignStopped('Campaign stopped before request send')
+            state=c.read();assert self.context.get('job_id')==self.job_id and idx in range(4)
+            if idx not in c.pending.get(self.job_id,{}):raise ProviderError('Duplicate or completed candidate')
+            bound=c.pending[self.job_id][idx]
+            if amount>bound:raise ProviderError('Frozen request bound exceeded')
+            protected=sum((v for key,values in c.pending.items() for i,v in values.items() if (key,i)!=(self.job_id,idx)),money(0))
+            if money(state['spent_cny'])+amount+protected>money(TOTAL):raise ProviderError('420 total and remaining-job reservations')
+            if len(state['events'])-HISTORY>=320:raise ProviderError('320-request limit')
+            state['spent_cny']=float(money(state['spent_cny'])+amount)
+            state['events'].append(dict(request_id=uuid.uuid4().hex,phase=KIND,status='reserved',reserved_cny=float(amount),
+                created_at=time.time(),phase_ceiling_cny=TOTAL,request=dict(request or {},job_id=self.job_id,candidate_index=idx,
+                    credential_batch='secondary',study_plan_sha256=c.plan_sha)))
+            atomic_json(self.path,state);c.pending[self.job_id].pop(idx)
+            return len(state['events'])-1
+    def settle(self,index,actual,*,metadata=None):
+        c=self.coordinator;actual=money(actual)
+        with c.lock,ledger_lock(self.path):
+            state=c.read(allow_halted=True);event=state['events'][index]
+            assert event['status']=='reserved' and event['request']['job_id']==self.job_id
+            state['spent_cny']=float(money(state['spent_cny'])-money(event['reserved_cny'])+actual)
+            event.update(status='settled',accounted_cny=float(actual),metadata=metadata or {})
+            over=actual>money(event['reserved_cny']) or money(state['spent_cny'])>money(TOTAL)
+            if over:state['halted']='Charge exceeded reservation';c.stopped.set()
+            atomic_json(self.path,state)
+            if over:raise ProviderError(state['halted'])
+    def halt(self,reason,*,details=None):self.coordinator.halt(reason,details)
