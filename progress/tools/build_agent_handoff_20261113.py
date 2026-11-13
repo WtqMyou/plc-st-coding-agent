@@ -429,6 +429,7 @@ def build(tag,commit):
         project_ledger_sha256=hashlib.sha256(ledger_before).hexdigest(),
         latest_release='progress/f14_agent_v14/release',legacy_formal_case_release='progress/f14_candidate/release',
         exclusions='Historical ZIP duplication; native .compileinfo/.precompilecache/.opt; credentials, licenses and installed software'))
+    manifest(package,commit,counts)
     js(package/'07_清单指纹/网页链接检查.json',check_links(package))
     print('SCAN known credentials and nested archive content',flush=True)
     js(package/'07_清单指纹/凭据检查.json',prior.scan(package));manifest(package,commit,counts)
