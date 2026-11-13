@@ -1,0 +1,57 @@
+{
+  "protocol": "responses",
+  "raw_response": {
+    "caching": {
+      "type": "disabled"
+    },
+    "created_at": 1794536296,
+    "id": "resp_02179453629523958818742e03404164f2bdc6cf7ab386a87431a",
+    "max_output_tokens": 16384,
+    "model": "deepseek-v4-pro-0813",
+    "object": "response",
+    "output": [
+      {
+        "id": "rs_02179453629670000000000000000000000ffffac15355f3aa703",
+        "type": "reasoning",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "The previous code lacks END_FUNCTION_BLOCK. Need emit complete ST block with end keyword. Otherwise semantics seem fine. But must consider reset same-scan priority and history update for valid scans. S3: !enable | rising reset | fault -> outputs zero. Our code does. Fault sets history false. S12 first valid scan condition? Need examine prev(enable AND !fault) likely uses prior scan stored? The LTL prev refers previous public scan, not internal history. But our internal history_valid handles fault/disable/reset clear. On reset rising same scan, outputs zero and clear; next scan history false, de=0; if condition says !rising(resetBtn), correction = 20x. good.\n\nPotential issue reset rise same scan in branch clears history, but tmp_prev_reset_btn update after IF. Fine.\n\nNeed add END_FUNCTION_BLOCK. Return complete code. Ensure no semicolon issues. In ST function block END_FUNCTION_BLOCK. Use fixed code."
+          }
+        ],
+        "status": "completed"
+      },
+      {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "```st\nFUNCTION_BLOCK FB\n(* ENGINEERING_CONTRACT\n * power: zero branch has same-scan priority for !enable/fault/reset_rise; valid branch = LIMIT(0.0, bias + correction, 100.0).\n * correction: valid branch = nine-rule weighted centroid, x=e/10.0 and y=de/2.0 both limited to [-1,1]; result is not clamped.\n * fault: combinational = NOT sensorValid OR scanSeconds <= 0.0 OR scanSeconds > 10.0.\n * history: ePrev and history flag cleared on !enable, fault, or reset rise; first valid scan after clear uses de=0.\n * ePrev updates only on valid scans; holding resetBtn does not hold outputs zero after the rising-scan.\n * units: setpoint/temperature degC, scanSeconds s, bias/power/correction %, de degC/s.\n *)\n\n(* CONTRACT_RULES [] *)\nVAR_INPUT\n    enable : BOOL;\n    resetBtn : BOOL;\n    sensorValid : BOOL;\n    setpoint : REAL;\n    temperature : REAL;\n    scanSeconds : REAL;\n    bias : REAL;\nEND_VAR\nVAR_OUTPUT\n    power : REAL;\n    correction : REAL;\n    fault : BOOL;\nEND_VAR\nVAR\n    tmp_prev_reset_btn : BOOL := FALSE;\n    tmp_history_valid : BOOL := FALSE;\n    tmp_e_prev : REAL := 0.0;\n    tmp_reset_rising : BOOL;\n    tmp_e : REAL;\n    tmp_de : REAL;\n    tmp_x : REAL;\n    tmp_y : REAL;\n    tmp_mu_e_n : REAL;\n    tmp_mu_e_z : REAL;\n    tmp_mu_e_p : REAL;\n    tmp_mu_de_n : REAL;\n    tmp_mu_de_z : REAL;\n    tmp_mu_de_p : REAL;\n    tmp_w_nn : REAL;\n    tmp_w_nz : REAL;\n    tmp_w_np : REAL;\n    tmp_w_zn : REAL;\n    tmp_w_zz : REAL;\n    tmp_w_zp : REAL;\n    tmp_w_pn : REAL;\n    tmp_w_pz : REAL;\n    tmp_w_pp : REAL;\n    tmp_weight_sum : REAL;\n    tmp_weighted_output : REAL;\nEND_VAR\n\ntmp_reset_rising := resetBtn AND (NOT tmp_prev_reset_btn);\nfault := (NOT sensorValid) OR (scanSeconds <= 0.0) OR (scanSeconds > 10.0);\n\nIF (NOT enable) OR fault OR tmp_reset_rising THEN\n    power := 0.0;\n    correction := 0.0;\n    tmp_history_valid := FALSE;\n    tmp_e_prev := 0.0;\nELSE\n    tmp_e := setpoint - temperature;\n\n    IF tmp_history_valid THEN\n        tmp_de := (tmp_e - tmp_e_prev) / scanSeconds;\n    ELSE\n        tmp_de := 0.0;\n    END_IF;\n\n    tmp_x := LIMIT(-1.0, tmp_e / 10.0, 1.0);\n    tmp_y := LIMIT(-1.0, tmp_de / 2.0, 1.0);\n\n    tmp_mu_e_n := MAX(-tmp_x, 0.0);\n    tmp_mu_e_z := 1.0 - ABS(tmp_x);\n    tmp_mu_e_p := MAX(tmp_x, 0.0);\n\n    tmp_mu_de_n := MAX(-tmp_y, 0.0);\n    tmp_mu_de_z := 1.0 - ABS(tmp_y);\n    tmp_mu_de_p := MAX(tmp_y, 0.0);\n\n    tmp_w_nn := tmp_mu_e_n * tmp_mu_de_n;\n    tmp_w_nz := tmp_mu_e_n * tmp_mu_de_z;\n    tmp_w_np := tmp_mu_e_n * tmp_mu_de_p;\n    tmp_w_zn := tmp_mu_e_z * tmp_mu_de_n;\n    tmp_w_zz := tmp_mu_e_z * tmp_mu_de_z;\n    tmp_w_zp := tmp_mu_e_z * tmp_mu_de_p;\n    tmp_w_pn := tmp_mu_e_p * tmp_mu_de_n;\n    tmp_w_pz := tmp_mu_e_p * tmp_mu_de_z;\n    tmp_w_pp := tmp_mu_e_p * tmp_mu_de_p;\n\n    tmp_weight_sum := tmp_w_nn + tmp_w_nz + tmp_w_np\n                    + tmp_w_zn + tmp_w_zz + tmp_w_zp\n                    + tmp_w_pn + tmp_w_pz + tmp_w_pp;\n\n    tmp_weighted_output := tmp_w_nn * (-30.0)\n                         + tmp_w_nz * (-20.0)\n                         + tmp_w_np * (-10.0)\n                         + tmp_w_zn * (-10.0)\n                         + tmp_w_zz * 0.0\n                         + tmp_w_zp * 10.0\n                         + tmp_w_pn * 10.0\n                         + tmp_w_pz * 20.0\n                         + tmp_w_pp * 30.0;\n\n    IF tmp_weight_sum <= 0.0 THEN\n        correction := 0.0;\n    ELSE\n        correction := tmp_weighted_output / tmp_weight_sum;\n    END_IF;\n\n    power := LIMIT(0.0, bias + correction, 100.0);\n\n    tmp_e_prev := tmp_e;\n    tmp_history_valid := TRUE;\nEND_IF;\n\ntmp_prev_reset_btn := resetBtn;\n\nEND_FUNCTION_BLOCK\n```"
+          }
+        ],
+        "status": "completed",
+        "id": "msg_02179453630046500000000000000000000ffffac15355fc51532",
+        "phase": "final_answer"
+      }
+    ],
+    "reasoning": {
+      "effort": "low"
+    },
+    "service_tier": "default",
+    "status": "completed",
+    "store": false,
+    "usage": {
+      "input_tokens": 13530,
+      "output_tokens": 1425,
+      "total_tokens": 14955,
+      "input_tokens_details": {
+        "cached_tokens": 8192
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 206
+      },
+      "cost": "¥0.07029"
+    }
+  }
+}
