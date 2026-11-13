@@ -1,0 +1,61 @@
+{
+  "protocol": "chat",
+  "raw_response": {
+    "id": "req-qyn5im-1794570554769729945",
+    "choices": [
+      {
+        "finish_reason": "stop",
+        "index": 0,
+        "message": {
+          "content": "\n```st\nFUNCTION_BLOCK FB\nVAR_INPUT\n    runRequest  : BOOL;\n    flameOK     : BOOL;\n    o2Valid     : BOOL;\n    o2PV        : REAL;\n    baseAir     : REAL;\n    resetBtn    : BOOL;\nEND_VAR\nVAR_OUTPUT\n    fuelPermit  : BOOL;\n    trimEnable  : BOOL;\n    airTrim     : REAL;\n    airCommand  : REAL;\n    tripLatched : BOOL;\n    o2Fault     : BOOL;\nEND_VAR\nVAR\n    tmp_reset_rising : BOOL;\n    tmp_trip_set     : BOOL;\nEND_VAR\n(* ENGINEERING_CONTRACT\n * Output: tripLatched\n *   - SET:   runRequest=TRUE AND flameOK=FALSE  → same scan, no delay  [PUB001]\n *   - HOLD:  once set, retained across scans until valid reset edge     [PUB016]\n *   - RESET: rising(resetBtn) AND runRequest=FALSE AND flameOK=FALSE    [PUB016]\n *   - Edge-only reset; hold/rescan does NOT clear; press without edge does NOT clear\n * Output: fuelPermit\n *   - Activation:   runRequest AND flameOK AND NOT tripLatched          [PUB003]\n *   - Retention:    none — combinational, 0 when tripLatched           [PUB003]\n *   - Deactivation: tripLatched rising sets to FALSE; also 0 when any input low [PUB003]\n *   - Units: BOOLEAN\n * Output: trimEnable\n *   - Activation:   fuelPermit=TRUE AND o2Fault=FALSE                    [PUB008]\n *   - Retention:    none — combinational, 0 when o2Fault                [PUB008]\n *   - Deactivation: o2Fault rising (invalid/range)                      [PUB008]\n * Output: airTrim\n *   - Activation:   trimEnable with formula 2.0*(2.0-o2PV), clamp ±10   [PUB005]\n *   - Retention:    0.0 when trimEnable=FALSE (no residual)             [PUB010]\n *   - Units: % offset, clamped [-10,+10]\n * Output: airCommand\n *   - Activation:   baseAir+airTrim clamped [0,100] when fuelPermit=TRUE [PUB006]\n *   - Retention:    0.0 when fuelPermit=FALSE                           [PUB005]\n *   - Units: % absolute, clamped [0,100]; baseAir may be outside range [PUB006]\n * Output: o2Fault\n *   - Activation:   NOT o2Valid OR o2PV<0 OR o2PV>21                    [PUB009]\n *   - Retention:    combinational; does not inhibit fuelPermit          [PUB009]\n * Same-scan priority: trip set, fuelPermit, trimEnable/o2Fault, airTrim, airCommand\n * CONTRACT_RULES []\n *)\n    // Detect rising edge of reset button (edge-only reset per PUB016)\n    tmp_reset_rising := resetBtn AND NOT tmp_reset_rising;\n\n    // Trip latch: set when running without flame, hold until valid reset edge\n    tmp_trip_set := runRequest AND NOT flameOK;\n    IF tmp_trip_set THEN\n        tripLatched := TRUE;\n    ELSIF tmp_reset_rising AND NOT runRequest AND NOT flameOK THEN\n        tripLatched := FALSE;\n    END_IF;\n\n    // Fuel permit: requires run, flame, and no trip\n    fuelPermit := runRequest AND flameOK AND NOT tripLatched;\n\n    // O2 fault detection\n    o2Fault := NOT o2Valid OR o2PV < 0.0 OR o2PV > 21.0;\n\n    // Trim enable: fuel permit without O2 fault\n    trimEnable := fuelPermit AND NOT o2Fault;\n\n    // Air trim: 2.0*(2.0-o2PV), clamped to [-10, +10]; forced 0 when disabled\n    IF trimEnable THEN\n        airTrim := 2.0 * (2.0 - o2PV);\n        IF airTrim > 10.0 THEN\n            airTrim := 10.0;\n        ELSIF airTrim < -10.0 THEN\n            airTrim := -10.0;\n        END_IF;\n    ELSE\n        airTrim := 0.0;\n    END_IF;\n\n    // Air command: base + trim, clamped [0,100]; forced 0 when no fuel permit\n    IF fuelPermit THEN\n        airCommand := baseAir + airTrim;\n        IF airCommand > 100.0 THEN\n            airCommand := 100.0;\n        ELSIF airCommand < 0.0 THEN\n            airCommand := 0.0;\n        END_IF;\n    ELSE\n        airCommand := 0.0;\n    END_IF;\nEND_FUNCTION_BLOCK\n```",
+          "role": "assistant",
+          "reasoning_content": "Let me analyze the requirements carefully:\n\n1. **Trip Latching Logic**:\n   - `tripLatched` is set when `runRequest=TRUE AND flameOK=FALSE`\n   - `tripLatched` is only cleared by a rising edge of `resetBtn` when `runRequest=FALSE AND flameOK=FALSE`\n   - The reset is edge-triggered, not level-triggered\n\n2. **Fuel Permit**:\n   - `fuelPermit = runRequest AND flameOK AND NOT tripLatched`\n\n3. **O2 Fault Detection**:\n   - `o2Fault = NOT o2Valid OR o2PV < 0.0 OR o2PV > 21.0`\n\n4. **Trim Control**:\n   - `trimEnable = fuelPermit AND NOT o2Fault`\n   - When `trimEnable=TRUE`: `airTrim = 2.0 * (2.0 - o2PV)`, clamped to [-10, +10]\n   - When `trimEnable=FALSE`: `airTrim = 0.0`\n\n5. **Air Command**:\n   - `airCommand = baseAir + airTrim`, clamped to [0, 100]\n   - When `fuelPermit=FALSE`: `airCommand = 0.0`\n\nNow I need to implement this in Structured Text for CODESYS 3.5, using `R_TRIG` to detect rising edges on the reset button and maintaining the latched state properly across scan cycles.\n\nFor the trip latch logic, I'm tracking whether we're already in a trip condition and whether a valid reset edge has occurred. The key is ensuring the reset only clears the trip when the system is safely stopped—both the run request and flame signal are false—so I need to check for a rising edge on the reset button while verifying both safety conditions are met.\n\nImplementing the same-scan logic... Writing the ST code...\n",
+          "reasoning_details": [
+            {
+              "type": "reasoning.text",
+              "id": "reasoning-text-1",
+              "format": "MiniMax-response-v1",
+              "index": 0,
+              "text": "Let me analyze the requirements carefully:\n\n1. **Trip Latching Logic**:\n   - `tripLatched` is set when `runRequest=TRUE AND flameOK=FALSE`\n   - `tripLatched` is only cleared by a rising edge of `resetBtn` when `runRequest=FALSE AND flameOK=FALSE`\n   - The reset is edge-triggered, not level-triggered\n\n2. **Fuel Permit**:\n   - `fuelPermit = runRequest AND flameOK AND NOT tripLatched`\n\n3. **O2 Fault Detection**:\n   - `o2Fault = NOT o2Valid OR o2PV < 0.0 OR o2PV > 21.0`\n\n4. **Trim Control**:\n   - `trimEnable = fuelPermit AND NOT o2Fault`\n   - When `trimEnable=TRUE`: `airTrim = 2.0 * (2.0 - o2PV)`, clamped to [-10, +10]\n   - When `trimEnable=FALSE`: `airTrim = 0.0`\n\n5. **Air Command**:\n   - `airCommand = baseAir + airTrim`, clamped to [0, 100]\n   - When `fuelPermit=FALSE`: `airCommand = 0.0`\n\nNow I need to implement this in Structured Text for CODESYS 3.5, using `R_TRIG` to detect rising edges on the reset button and maintaining the latched state properly across scan cycles.\n\nFor the trip latch logic, I'm tracking whether we're already in a trip condition and whether a valid reset edge has occurred. The key is ensuring the reset only clears the trip when the system is safely stopped—both the run request and flame signal are false—so I need to check for a rising edge on the reset button while verifying both safety conditions are met.\n\nImplementing the same-scan logic... Writing the ST code...\n"
+            }
+          ]
+        }
+      }
+    ],
+    "created": 1794570556,
+    "model": "minimax-m2.7",
+    "object": "chat.completion",
+    "usage": {
+      "prompt_tokens": 11941,
+      "completion_tokens": 1423,
+      "total_tokens": 13364,
+      "prompt_tokens_details": {
+        "cached_tokens": 0,
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0
+      },
+      "completion_tokens_details": {
+        "text_tokens": 0,
+        "audio_tokens": 0,
+        "image_tokens": 0,
+        "reasoning_tokens": 0
+      },
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "input_tokens_details": null,
+      "claude_cache_creation_5_m_tokens": 0,
+      "claude_cache_creation_1_h_tokens": 0,
+      "cost": "¥0.029254"
+    },
+    "input_sensitive": false,
+    "output_sensitive": false,
+    "input_sensitive_type": 0,
+    "output_sensitive_type": 0,
+    "output_sensitive_int": 0,
+    "base_resp": {
+      "status_code": 0,
+      "status_msg": ""
+    }
+  }
+}
