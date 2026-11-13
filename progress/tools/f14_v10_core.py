@@ -35,7 +35,8 @@ API_SEMAPHORES={key:threading.Semaphore(4) for key in ("deepseek-v4pro","minimax
 NATIVE_LOCK=threading.Lock()
 FORMAL_SEMAPHORE=threading.Semaphore(2)
 import f14_rotation_credentials as credentials
-load,sha,stamp,atomic_json=old.load,old.sha,old.stamp,old.atomic_json
+load,sha,stamp=old.load,old.sha,old.stamp
+from f14_v10_io import atomic_json
 sanitize=old.old.support.sanitize
 CONFIG=REPO/'progress/f14_agent_v10/config.json'
 RELEASE=REPO/'progress/f14_agent_v10/release'
@@ -75,7 +76,7 @@ def files():
     import f14_v6_core as prior
     root=REPO/'progress/f14_agent_v10'
     own=[p for p in root.rglob('*') if p.is_file() and 'release' not in p.relative_to(root).parts and '__pycache__' not in p.parts]
-    own += [Path(__file__).with_name('f14_v10_'+name+'.py') for name in ('core','budget','study','report','offline','preflight','review','dashboard','repair_probe')]
+    own += [Path(__file__).with_name('f14_v10_'+name+'.py') for name in ('core','budget','study','report','offline','preflight','review','dashboard','repair_probe','io','resume_recovery')]
     own += sorted((REPO/'progress/tests').glob('test_f14_v10*.py'))
     return sorted(set(prior.files()+own))
 
@@ -263,16 +264,32 @@ def capture(transport,budget,job,idx,pending,folder,root):
     transport.sender=sender;transport.before_send=before;transport.response_observer=observe
     return count
 
-def generate_job(cfg,root,plan,job,budget,pending,*,factory=MeteredProvider,evaluator=evaluate):
+def generate_job(cfg,root,plan,job,budget,pending,*,factory=MeteredProvider,evaluator=evaluate,resume=False):
     folder=root/'jobs'/job['condition'];folder.mkdir(parents=True,exist_ok=True)
-    assert not list(folder.glob(job['pid']+'.*')),'Existing job evidence; no implicit replay'
+    if not resume:assert not list(folder.glob(job['pid']+'.*')),'Existing job evidence; no implicit replay'
     path=folder/(job['pid']+'.json');model=next(m for m in cfg['models'] if m['id']==job['model_id'])
     started=time.monotonic();deadline=started+2400;current=messages(job);fatal=None
     record=dict(job_id=job['job_id'],pid=job['pid'],condition=job['condition'],model=model['model'],
         experiment_kind='live',credential_batch='secondary',job_done=False,attempts=[],best_attempt=None,stop_reason='',tests_total=len(tasks()[job['pid']]['test_cases']),
         study_plan_sha256=sha(root/'study_plan.json'),started_at=stamp())
+    prior_seconds=0;start_index=0
+    if resume:
+        record=load(path)
+        assert record and not record['job_done'] and record['stop_reason'] in ('campaign_stopped_before_send','recovered_response_needs_repair')
+        assert record['attempts'] and all(not a.get('provider_error') for a in record['attempts'])
+        start_index=len(record['attempts']);assert start_index in (1,2,3)
+        assert [a['idx'] for a in record['attempts']]==list(range(start_index))
+        assert not (folder/(job['pid']+f'.request_{start_index+1:02}.json')).exists(),'Never repeat an existing request'
+        strongest=record['attempts'][select_best(record['attempts'])]
+        from policy import BOUNDARY_REVIEW
+        progress=[dict(candidate=a['idx']+1,native_pass=a['native_pass'],functional_pass=a['functional_pass'],passed=a['tests_passed'],total=a['tests_total']) for a in record['attempts']]
+        instruction=BOUNDARY_REVIEW+'\n'+strongest['feedback']+'\nPrevious candidate progress: '+json.dumps(progress,ensure_ascii=False)+'\nRepair the provided strongest candidate against public requirements and replay traces. Preserve previously correct behavior. Return complete code with the original interface and contract comments.'
+        current=messages(job)+[dict(role='assistant',content=strongest['code']),dict(role='user',content=instruction)]
+        prior_seconds=record['wall_seconds'];deadline=started+max(0,2400-prior_seconds)
+        record.setdefault('resume_sessions',[]).append(dict(at=stamp(),next_candidate_index=start_index,previous_wall_seconds=prior_seconds))
+        record.update(stop_reason='',error='')
     def save():
-        record.update(best_attempt=select_best(record['attempts']),wall_seconds=round(time.monotonic()-started,6),finished_at=stamp())
+        record.update(best_attempt=select_best(record['attempts']),wall_seconds=round(prior_seconds+time.monotonic()-started,6),finished_at=stamp())
         atomic_json(path,record)
     try:
         with ExitStack() as stack:
@@ -281,7 +298,7 @@ def generate_job(cfg,root,plan,job,budget,pending,*,factory=MeteredProvider,eval
             if job['framework']=='codex':
                 gateway=stack.enter_context(ResponsesGateway(provider=transport,model=transport.model))
                 provider=InitialTextCodexProvider(gateway,model=transport.model,work_root=root/'cli_private',timeout=65 if transport.offline else 451)
-            for idx in range(4):
+            for idx in range(start_index,4):
                 if deadline-time.monotonic()<451:record.update(job_done=True,stop_reason='insufficient_request_window');break
                 capture(transport,budget,job,idx,pending,folder,root)
                 call_started=time.monotonic()

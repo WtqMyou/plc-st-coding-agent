@@ -7,6 +7,7 @@ import time
 import uuid
 import f14_v2_study as base
 from stbench.billing import ledger_lock,money
+from f14_v10_io import atomic_json
 from stbench.providers.base import ProviderError
 
 KIND='f14_v10_full_20261113'
@@ -35,7 +36,7 @@ def authorize(path,before_bytes,plan_sha,proof_sha):
             user_instruction='提高到420元，保留每题最多4候选并直接启动',
             historical_events=HISTORY,initial_spent_cny=BASELINE)
         assert after['events']==before['events'] and after['spent_cny']==before['spent_cny']
-        base.atomic_json(path,after)
+        atomic_json(path,after)
         return after['f14_v10_authorization']
 
 class Coordinator:
@@ -52,7 +53,7 @@ class Coordinator:
         state=base.load(self.path)
         if state.get('version')!=3 or state.get('limit_cny')!=TOTAL:raise ProviderError('Budget identity changed')
         approval=state.get('f14_v10_authorization',{})
-        approved_plans={approval.get('study_plan_sha256'),approval.get('amended_study_plan_sha256')}
+        approved_plans={approval.get('study_plan_sha256'),approval.get('amended_study_plan_sha256'),*approval.get('operational_plan_sha256',[])}
         assert self.plan_sha in approved_plans and approval.get('total_cap_cny')==TOTAL,'Missing matching frozen-plan authorization'
         if state.get('halted') and not allow_halted:raise CampaignStopped(state['halted'])
         assert state['events'][:HISTORY]==self.baseline['events'],'Historical events changed'
@@ -78,7 +79,7 @@ class Coordinator:
             if not state.get('halted'):
                 state['halted']=reason
                 if details is not None:state['halt_details']=details
-                base.atomic_json(self.path,state)
+                atomic_json(self.path,state)
 
 class BudgetView:
     def __init__(self,coordinator,job_id):
@@ -101,7 +102,7 @@ class BudgetView:
             state['events'].append(dict(request_id=uuid.uuid4().hex,phase=KIND,status='reserved',reserved_cny=float(amount),
                 created_at=time.time(),phase_ceiling_cny=TOTAL,request=dict(request or {},job_id=self.job_id,candidate_index=idx,
                     credential_batch='secondary',study_plan_sha256=c.plan_sha)))
-            base.atomic_json(self.path,state);c.pending[self.job_id].pop(idx)
+            atomic_json(self.path,state);c.pending[self.job_id].pop(idx)
             return len(state['events'])-1
     def settle(self,index,actual,*,metadata=None):
         c=self.coordinator;actual=money(actual)
@@ -112,6 +113,6 @@ class BudgetView:
             event.update(status='settled',accounted_cny=float(actual),metadata=metadata or {})
             over=actual>money(event['reserved_cny']) or money(state['spent_cny'])>money(TOTAL)
             if over:state['halted']='Charge exceeded reservation';c.stopped.set()
-            base.atomic_json(self.path,state)
+            atomic_json(self.path,state)
             if over:raise ProviderError(state['halted'])
     def halt(self,reason,*,details=None):self.coordinator.halt(reason,details)

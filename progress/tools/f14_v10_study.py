@@ -86,7 +86,11 @@ def live(cfg,resume=False):
     for key in completed:budget.finish(key)
     pending=[j for j in plan['jobs'] if j['job_id'] not in completed]
     for j in pending:
-        assert not list((root/'jobs'/j['condition']).glob(j['pid']+'.*')),'Partial request evidence requires inspection, never resend'
+        existing=list((root/'jobs'/j['condition']).glob(j['pid']+'.*'))
+        if existing:
+            recovery=s.load(root/'resume_ready.json')
+            record_path=root/'jobs'/j['condition']/(j['pid']+'.json')
+            assert resume and recovery['continued_records'].get(j['job_id'])==s.sha(record_path),'Partial evidence needs an inspected resume checkpoint'
     active={};cursor=0;done_count=len(completed);limit=4;error=None;awake=False;published_start=False
     s.atomic_json(root/'active_run.json',dict(**s.old.old.support.current_process_marker(),state='running',entry='f14_v10_study.py'))
     try:
@@ -95,7 +99,8 @@ def live(cfg,resume=False):
             while cursor<len(pending) or active:
                 while not budget.stopped.is_set() and cursor<len(pending) and len(active)<limit:
                     s.verify(cfg);job=pending[cursor];cursor+=1
-                    future=pool.submit(s.generate_job,cfg,root,plan,job,budget.view(job['job_id']),{},factory=s.credentials.provider_factory)
+                    has_record=(root/'jobs'/job['condition']/(job['pid']+'.json')).is_file()
+                    future=pool.submit(s.generate_job,cfg,root,plan,job,budget.view(job['job_id']),{},factory=s.credentials.provider_factory,resume=has_record)
                     active[future]=job
                     s.atomic_json(root/'study_state.json',dict(state='running',at=s.stamp(),active_jobs=[j['job_id'] for j in active.values()],workers=limit,completed=done_count))
                 report(cfg,plan)

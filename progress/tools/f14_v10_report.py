@@ -34,27 +34,37 @@ def audit_final(cfg,plan):
     assert len(plan['jobs'])==140 and plan['planned']==140 and plan['maximum_requests']==560
     conditions=Counter(j['condition'] for j in plan['jobs']);assert len(conditions)==4 and set(conditions.values())=={35}
     assert sum(len(p['test_cases']) for p in s.tasks().values())==946
-    requests=0
+    approved_unknown=set(s.load(root/'timeout_reservations.json').get('request_ids',[]))
+    unknown_count=0;requests=0
     for job in plan['jobs']:
         folder=root/'jobs'/job['condition'];record=s.load(folder/(job['pid']+'.json'))
         assert record['job_done'] and record['best_attempt']==s.select_best(record['attempts'])
         assert len(record['attempts']) in (1,2,3,4)
         for index,a in enumerate(record['attempts']):
-            event=linked[(job['job_id'],index)];assert event['status']=='settled'
+            event=linked[(job['job_id'],index)]
+            if event['status']=='reserved':
+                assert event['request_id'] in approved_unknown
+                assert a.get('provider_error') and not a.get('code') and a.get('unknown_cost_reservation_cny')==event['reserved_cny']
+                assert (folder/(job['pid']+f'.request_{index+1:02}.json')).is_file()
+                diag=s.load(root/'transport_private'/job['condition']/job['pid']/str(index)/'diagnostic.json')
+                assert diag['outcome']=='wall_deadline' and diag['bytes_received']==0
+                unknown_count+=1;requests+=1;continue
+            assert event['status']=='settled'
             assert s.money(event['accounted_cny'])==s.money(a['cost_cny'])
             assert a['actual_model']==event['metadata']['model']
             for field in ('prompt_tokens','completion_tokens'):assert a[field]==event['metadata'][field]
             assert (folder/(job['pid']+f'.request_{index+1:02}.json')).is_file()
             assert (folder/(job['pid']+f'.response_{index+1:02}.json')).is_file()
             if a['code']:
-                raw=(folder/(job['pid']+f'.raw_candidate_{index+1:02}.st')).read_bytes().decode()
+                raw=(folder/(job['pid']+f'.raw_candidate_{index+1:02}.st')).read_text(encoding='utf-8')
                 normalized,edits=s.normalize(raw)
                 assert normalized==a['code'] and edits==a['format_edits']
-                assert (folder/(job['pid']+f'.candidate_{index+1:02}.st')).read_bytes()==normalized.encode()
+                assert (folder/(job['pid']+f'.candidate_{index+1:02}.st')).read_text(encoding='utf-8')==normalized
                 assert s.hashlib.sha256(normalized.encode()).hexdigest()==a['code_hash']
                 native=a.get('judge',{}).get('platform_results',{}).get('codesys',{})
                 if native.get('status')=='passed':assert native['source_sha256']==a['code_hash']
             requests+=1
     assert requests==len(events)
     return dict(passed=True,jobs=140,requests=requests,cases_per_arm=sum(len(p['test_cases']) for p in s.tasks().values()),normalization_reproducible=True,
-        original_events_preserved=True,all_new_requests_settled=True,accounted_cny=state['spent_cny'],ledger_sha256=s.sha(cfg['budget_ledger_path']))
+        original_events_preserved=True,all_new_requests_settled=unknown_count==0,unknown_requests_retained=unknown_count,
+        unknown_costs_fully_reserved=True,accounted_cny=state['spent_cny'],ledger_sha256=s.sha(cfg['budget_ledger_path']))
