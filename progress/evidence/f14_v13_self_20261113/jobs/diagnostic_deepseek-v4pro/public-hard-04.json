@@ -1,0 +1,696 @@
+{
+  "job_id": "diagnostic_deepseek-v4pro/public-hard-04",
+  "pid": "public-hard-04",
+  "condition": "diagnostic_deepseek-v4pro",
+  "model": "deepseek-v4-pro-0813",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 90,
+            "code": "E_MISSING_END_POU",
+            "message": "FUNCTION_BLOCK FIFO 缺少结束关键字"
+          },
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "2e9bb8753efb559c8f61966765dcad8267c3965ef637f2cacc5a13e0af837bb0",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 90 [E_MISSING_END_POU]: FUNCTION_BLOCK FIFO 缺少结束关键字\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n1: (* ENGINEERING_CONTRACT\n2:    elementCount DINT: retained process value; 0 after reset, +1 successful enqueue, -1 successful dequeue, held otherwise; range 0..capacity.\n89: elementCount := local_count;",
+      "timing": {
+        "static_seconds": 0.172
+      },
+      "idx": 0,
+      "code": "(* ENGINEERING_CONTRACT\n   elementCount DINT: retained process value; 0 after reset, +1 successful enqueue, -1 successful dequeue, held otherwise; range 0..capacity.\n   status WORD: overwritten every invocation; 0 idle/reset/success, 16#8002 rejected full enqueue, 16#8001 rejected empty dequeue; reset priority sets 0.\n   queue state: first invocation empty; reset priority clears head/tail/count; enqueue writes at tail, dequeue reads head; circular indices low..high.\n   edge triggers: R_TRIG consumed every scan; reset priority ignores edge requests; simultaneous enqueue+dequeue unspecified -> no-op.\n   units/boundaries: capacity positive DINT derived each scan from LOWER_BOUND/UPPER_BOUND of the supplied array; first element index may be nonzero.\n*)\n(* CONTRACT_RULES [] *)\nFUNCTION_BLOCK FIFO\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    item : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    local_rEnq : R_TRIG;\n    local_rDeq : R_TRIG;\n    local_enqEdge : BOOL;\n    local_deqEdge : BOOL;\n\n    local_low : DINT;\n    local_high : DINT;\n    local_capacity : DINT;\n    local_count : DINT := 0;\n    local_head : DINT := 0;\n    local_tail : DINT := 0;\nEND_VAR\n\nlocal_rEnq(CLK := enqueue);\nlocal_enqEdge := local_rEnq.Q;\nlocal_rDeq(CLK := dequeue);\nlocal_deqEdge := local_rDeq.Q;\n\nstatus := 16#0000;\n\nlocal_low := LOWER_BOUND(buffer, 1);\nlocal_high := UPPER_BOUND(buffer, 1);\nlocal_capacity := local_high - local_low + 1;\nIF local_capacity < 1 THEN\n    local_capacity := 1;\nEND_IF;\n\nIF local_count = 0 THEN\n    local_head := local_low;\n    local_tail := local_low;\nEND_IF;\n\nIF reset THEN\n    local_count := 0;\n    local_head := local_low;\n    local_tail := local_low;\n    status := 16#0000;\nELSE\n    IF local_enqEdge AND NOT local_deqEdge THEN\n        IF local_count < local_capacity THEN\n            buffer[local_tail] := item;\n            local_tail := local_tail + 1;\n            IF local_tail > local_high THEN\n                local_tail := local_low;\n            END_IF;\n            local_count := local_count + 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8002;\n        END_IF;\n    ELSIF local_deqEdge AND NOT local_enqEdge THEN\n        IF local_count > 0 THEN\n            item := buffer[local_head];\n            local_head := local_head + 1;\n            IF local_head > local_high THEN\n                local_head := local_low;\n            END_IF;\n            local_count := local_count - 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8001;\n        END_IF;\n    END_IF;\nEND_IF;\n\nelementCount := local_count;\n",
+      "code_hash": "2e9bb8753efb559c8f61966765dcad8267c3965ef637f2cacc5a13e0af837bb0",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 7,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "model_replacement",
+        "base_sha256": "4d0f31552bafbe0ca803628a9042f724e63ab16ce587338ac4fc7f9389dd1cce",
+        "plan": {
+          "replace_program": "(* ENGINEERING_CONTRACT\n   elementCount DINT: retained process value; 0 after reset, +1 successful enqueue, -1 successful dequeue, held otherwise; range 0..capacity.\n   status WORD: overwritten every invocation; 0 idle/reset/success, 16#8002 rejected full enqueue, 16#8001 rejected empty dequeue; reset priority sets 0.\n   queue state: first invocation empty; reset priority clears head/tail/count; enqueue writes at tail, dequeue reads head; circular indices low..high.\n   edge triggers: R_TRIG consumed every scan; reset priority ignores edge requests; simultaneous enqueue+dequeue unspecified -> no-op.\n   units/boundaries: capacity positive DINT derived each scan from LOWER_BOUND/UPPER_BOUND of the supplied array; first element index may be nonzero.\n*)\n(* CONTRACT_RULES [] *)\nFUNCTION_BLOCK FIFO\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    item : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    local_rEnq : R_TRIG;\n    local_rDeq : R_TRIG;\n    local_enqEdge : BOOL;\n    local_deqEdge : BOOL;\n\n    local_low : DINT;\n    local_high : DINT;\n    local_capacity : DINT;\n    local_count : DINT := 0;\n    local_head : DINT := 0;\n    local_tail : DINT := 0;\nEND_VAR\n\nlocal_rEnq(CLK := enqueue);\nlocal_enqEdge := local_rEnq.Q;\nlocal_rDeq(CLK := dequeue);\nlocal_deqEdge := local_rDeq.Q;\n\nstatus := 16#0000;\n\nlocal_low := LOWER_BOUND(buffer, 1);\nlocal_high := UPPER_BOUND(buffer, 1);\nlocal_capacity := local_high - local_low + 1;\nIF local_capacity < 1 THEN\n    local_capacity := 1;\nEND_IF;\n\nIF local_count = 0 THEN\n    local_head := local_low;\n    local_tail := local_low;\nEND_IF;\n\nIF reset THEN\n    local_count := 0;\n    local_head := local_low;\n    local_tail := local_low;\n    status := 16#0000;\nELSE\n    IF local_enqEdge AND NOT local_deqEdge THEN\n        IF local_count < local_capacity THEN\n            buffer[local_tail] := item;\n            local_tail := local_tail + 1;\n            IF local_tail > local_high THEN\n                local_tail := local_low;\n            END_IF;\n            local_count := local_count + 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8002;\n        END_IF;\n    ELSIF local_deqEdge AND NOT local_enqEdge THEN\n        IF local_count > 0 THEN\n            item := buffer[local_head];\n            local_head := local_head + 1;\n            IF local_head > local_high THEN\n                local_head := local_low;\n            END_IF;\n            local_count := local_count - 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8001;\n        END_IF;\n    END_IF;\nEND_IF;\n\nelementCount := local_count;\n"
+        }
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 4641,
+      "completion_tokens": 3461,
+      "cost_cny": 0.10682063999999998,
+      "latency_s": 46.781,
+      "generation_seconds": 46.781,
+      "end_to_end_seconds": 46.969,
+      "format_edits": [],
+      "raw_source_sha256": "2e9bb8753efb559c8f61966765dcad8267c3965ef637f2cacc5a13e0af837bb0",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": true,
+      "tests_passed": 31,
+      "tests_total": 31,
+      "verification_status": "inconclusive",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 31,
+        "tests_passed": 31,
+        "pass_rate": 1.0,
+        "failure_summary": "",
+        "cases": [
+          {
+            "tc_id": "h04-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-2",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "actual": {
+              "elementCount": 1,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-hold-enqueue",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "elementCount": 1,
+              "status": 0
+            },
+            "actual": {
+              "elementCount": 1,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-3",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "actual": {
+              "elementCount": 1,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-4",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 2
+            },
+            "actual": {
+              "elementCount": 2,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-5",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 2
+            },
+            "actual": {
+              "elementCount": 2,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-6",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 3
+            },
+            "actual": {
+              "elementCount": 3,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-7",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 3
+            },
+            "actual": {
+              "elementCount": 3,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-8",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 4
+            },
+            "actual": {
+              "elementCount": 4,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-9",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 4
+            },
+            "actual": {
+              "elementCount": 4,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-10",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 32770,
+              "elementCount": 4
+            },
+            "actual": {
+              "elementCount": 4,
+              "status": 32770
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-11",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 3,
+              "item": 10
+            },
+            "actual": {
+              "elementCount": 3,
+              "item": "VARIANT<DINT>(10)",
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-hold-dequeue",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "elementCount": 3,
+              "item": 10,
+              "status": 0
+            },
+            "actual": {
+              "elementCount": 3,
+              "item": "VARIANT<DINT>(10)",
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-12",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 4
+            },
+            "actual": {
+              "elementCount": 4,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-13",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 3,
+              "item": 21
+            },
+            "actual": {
+              "elementCount": 3,
+              "item": "VARIANT<DINT>(21)",
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-14",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 4
+            },
+            "actual": {
+              "elementCount": 4,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-15",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 3,
+              "item": 32
+            },
+            "actual": {
+              "elementCount": 3,
+              "item": "VARIANT<DINT>(32)",
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-16",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-17",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-18",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 32769,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-19",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "actual": {
+              "elementCount": 1,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-20",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-21",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-22",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 32769,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-empty-dequeue",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 32769,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-idle-after-empty",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-23",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "actual": {
+              "elementCount": 1,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-24",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 1
+            },
+            "actual": {
+              "elementCount": 1,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-25",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 2
+            },
+            "actual": {
+              "elementCount": 2,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-26",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 2
+            },
+            "actual": {
+              "elementCount": 2,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-27",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 32770,
+              "elementCount": 2
+            },
+            "actual": {
+              "elementCount": 2,
+              "status": 32770
+            },
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 7,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 7,
+          "violations": [],
+          "error": "Unsupported modeling: cannot erase payload: ST uses payload beyond storage copies/shape or unsupported syntax",
+          "truncated": false,
+          "executed": true,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "judge_version": "judge-v2.1-fixed-bindings",
+          "judge_source_sha256": "9fe28a3be6dd723ee454356de11663e0850bcd8dc9e160b78f63c41bb7785ff7",
+          "source_sha256": "902cc5538d34418974e1b6570144ec169a09daa183c8968c68eba65d30e32e66",
+          "problem_sha256": "a83b206f4a6e249a4b7dba8c58df669692806d4cb1e753028cc51ec62315fe01",
+          "mc_timeout_seconds": 35,
+          "model_check_requested": true,
+          "mc_fixed_input_domains": {},
+          "cache_hit": false,
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "bounded",
+          "candidate_text_rewritten": false,
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "unsupported_modeling",
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          }
+        }
+      },
+      "feedback": "Functional checks: 31/31; bounded status: inconclusive.",
+      "timing": {
+        "static_seconds": 0.203,
+        "functional_seconds": 0.219,
+        "formal_queue_seconds": 0.0,
+        "bounded_seconds": 0.453
+      },
+      "idx": 1,
+      "code": "(* ENGINEERING_CONTRACT\n   elementCount DINT: retained process value; 0 after reset, +1 successful enqueue, -1 successful dequeue, held otherwise; range 0..capacity.\n   status WORD: overwritten every invocation; 0 idle/reset/success, 16#8002 rejected full enqueue, 16#8001 rejected empty dequeue; reset priority sets 0.\n   queue state: first invocation empty; reset priority clears head/tail/count; enqueue writes at tail, dequeue reads head; circular indices low..high.\n   edge triggers: R_TRIG consumed every scan; reset priority ignores edge requests; simultaneous enqueue+dequeue unspecified -> no-op.\n   units/boundaries: capacity positive DINT derived each scan from LOWER_BOUND/UPPER_BOUND of the supplied array; first element index may be nonzero.\n*)\n(* CONTRACT_RULES [] *)\nFUNCTION_BLOCK FIFO\nVAR_INPUT\n    enqueue : BOOL;\n    dequeue : BOOL;\n    reset : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT;\n    status : WORD;\nEND_VAR\nVAR_IN_OUT\n    item : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    local_rEnq : R_TRIG;\n    local_rDeq : R_TRIG;\n    local_enqEdge : BOOL;\n    local_deqEdge : BOOL;\n\n    local_low : DINT;\n    local_high : DINT;\n    local_capacity : DINT;\n    local_count : DINT := 0;\n    local_head : DINT := 0;\n    local_tail : DINT := 0;\nEND_VAR\n\nlocal_rEnq(CLK := enqueue);\nlocal_enqEdge := local_rEnq.Q;\nlocal_rDeq(CLK := dequeue);\nlocal_deqEdge := local_rDeq.Q;\n\nstatus := 16#0000;\n\nlocal_low := LOWER_BOUND(buffer, 1);\nlocal_high := UPPER_BOUND(buffer, 1);\nlocal_capacity := local_high - local_low + 1;\nIF local_capacity < 1 THEN\n    local_capacity := 1;\nEND_IF;\n\nIF local_count = 0 THEN\n    local_head := local_low;\n    local_tail := local_low;\nEND_IF;\n\nIF reset THEN\n    local_count := 0;\n    local_head := local_low;\n    local_tail := local_low;\n    status := 16#0000;\nELSE\n    IF local_enqEdge AND NOT local_deqEdge THEN\n        IF local_count < local_capacity THEN\n            buffer[local_tail] := item;\n            local_tail := local_tail + 1;\n            IF local_tail > local_high THEN\n                local_tail := local_low;\n            END_IF;\n            local_count := local_count + 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8002;\n        END_IF;\n    ELSIF local_deqEdge AND NOT local_enqEdge THEN\n        IF local_count > 0 THEN\n            item := buffer[local_head];\n            local_head := local_head + 1;\n            IF local_head > local_high THEN\n                local_head := local_low;\n            END_IF;\n            local_count := local_count - 1;\n            status := 16#0000;\n        ELSE\n            status := 16#8001;\n        END_IF;\n    END_IF;\nEND_IF;\n\nelementCount := local_count;\n\nEND_FUNCTION_BLOCK\n",
+      "code_hash": "902cc5538d34418974e1b6570144ec169a09daa183c8968c68eba65d30e32e66",
+      "engineering_contract": {
+        "present": true,
+        "comment_lines": 7,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "model_exact_edits",
+        "base_sha256": "2e9bb8753efb559c8f61966765dcad8267c3965ef637f2cacc5a13e0af837bb0",
+        "plan": {
+          "edits": [
+            {
+              "old": "elementCount := local_count;",
+              "new": "elementCount := local_count;\n\nEND_FUNCTION_BLOCK"
+            }
+          ]
+        }
+      },
+      "actual_model": "deepseek-v4-pro-0813",
+      "prompt_tokens": 4328,
+      "completion_tokens": 104,
+      "cost_cny": 0.0329904,
+      "latency_s": 5.844,
+      "generation_seconds": 5.844,
+      "end_to_end_seconds": 6.735,
+      "format_edits": [],
+      "raw_source_sha256": "902cc5538d34418974e1b6570144ec169a09daa183c8968c68eba65d30e32e66",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 1,
+  "stop_reason": "functional_pass_formal_inconclusive",
+  "tests_total": 31,
+  "study_plan_sha256": "632546bc266f4cf26f43ce1153aa224d78c8a6769799f1649daaf213b9908620",
+  "started_at": "2026-11-13T13:13:22.768502+08:00",
+  "seed_provenance": {
+    "record": "E:\\PLC_Dev\\evidence\\real_experiments\\f14_v11_public_20261113\\jobs\\custom_deepseek-v4pro\\public-hard-04.json",
+    "record_sha256": "8d2cec6c599d1bd68820d5115f0df471d5a86b65ea317b0944ccb0b4f5aefb77",
+    "code_sha256": "4d0f31552bafbe0ca803628a9042f724e63ab16ce587338ac4fc7f9389dd1cce",
+    "counts_as_new_success": false
+  },
+  "wall_seconds": 54.125,
+  "finished_at": "2026-11-13T13:14:16.807156+08:00"
+}
