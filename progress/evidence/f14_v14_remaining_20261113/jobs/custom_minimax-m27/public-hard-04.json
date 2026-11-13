@@ -1,0 +1,462 @@
+{
+  "job_id": "custom_minimax-m27/public-hard-04",
+  "pid": "public-hard-04",
+  "condition": "custom_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": true,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 62,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 'SIZEOF'"
+          },
+          {
+            "level": "error",
+            "line": 62,
+            "code": "E_UNKNOWN_FUNC",
+            "message": "调用了未知函数/功能块 '__ISVALIDPTR'"
+          },
+          {
+            "level": "error",
+            "line": 76,
+            "code": "E_TYPE_MISMATCH",
+            "message": "类型不匹配：VARIANT 不能赋给 DINT"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_UNKNOWN_FUNC] 第62行 调用了未知函数/功能块 'SIZEOF'; [E_UNKNOWN_FUNC] 第62行 调用了未知函数/功能块 '__ISVALIDPTR'; [E_TYPE_MISMATCH] 第76行 类型不匹配：VARIANT 不能赋给 DINT",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "373b02f1603e2bd8ac809ae1d4db6303d26c7786629eb82de8fee9898e681e58",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 62 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 'SIZEOF'\nLine 62 [E_UNKNOWN_FUNC]: 调用了未知函数/功能块 '__ISVALIDPTR'\nLine 76 [E_TYPE_MISMATCH]: 类型不匹配：VARIANT 不能赋给 DINT\nGenerated source context (candidate text only):\n61:     // Validate buffer pointer and extract array bounds\n62:     IF __ISVALIDPTR(buffer, TO_DINT(SIZEOF(emptyArray))) THEN\n63:         tmp_lower    := LOWER_BOUND(buffer, 1);\n64:         tmp_upper    := UPPER_BOUND(buffer, 1);\n75:         tmp_element := buffer[tmp_lower];\n76:         tmp_element := item;\n77:         \n78:         // Execute prioritized operations",
+      "timing": {
+        "static_seconds": 0.172
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    enqueue  : BOOL;\n    dequeue  : BOOL;\n    reset    : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT := 0;\n    status       : WORD := 16#0000;\nEND_VAR\nVAR_IN_OUT\n    item   : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    head          : DINT := 0;\n    tail          : DINT := 0;\n    enqueue_prev  : BOOL := FALSE;\n    dequeue_prev  : BOOL := FALSE;\n    enqueue_trig  : R_TRIG;\n    dequeue_trig  : R_TRIG;\n    tmp_lower     : DINT;\n    tmp_upper     : DINT;\n    tmp_capacity  : DINT;\n    tmp_element   : DINT;\nEND_VAR\nVAR_TEMP\n    emptyArray : ARRAY[0..0] OF DINT;\nEND_VAR\n// ENGINEERING_CONTRACT\n// ─────────────────────────────────────────────────────────────────────────────\n// PUB001: enqueue rising edge → write item to tail; reject if elementCount == capacity.\n// PUB002: dequeue rising edge → read buffer[head] to item; reject if elementCount == 0.\n// PUB003: reset TRUE → head:=0, tail:=0, elementCount:=0; no buffer overwrite.\n// PUB004: elementCount output tracks live queue size (0..capacity).\n// PUB005: status 16#0000=no error/idle; 16#8001=dequeue reject (empty);\n//         16#8002=enqueue reject (full); 16#8003=simultaneous enqueue+dequeue.\n// PUB006: buffer is caller-supplied VARIANT array; capacity = UPPER-LOWER+1.\n// PUB007: item is VARIANT scalar; type must match buffer element type.\n// PUB008: circular queue uses head (read index) and tail (write index) modulo capacity.\n// PUB009: first invocation initializes to empty state (no prior buffer content used).\n// PUB010: reset has priority over enqueue/dequeue.\n// PUB011: simultaneous enqueue+dequeue is invalid usage → rejected with status 16#8003.\n// ─────────────────────────────────────────────────────────────────────────────\n// (* CONTRACT_RULES [] *)\n// ─────────────────────────────────────────────────────────────────────────────\n    // Capture rising edges for enqueue and dequeue commands\n    enqueue_trig(CLK := enqueue);\n    dequeue_trig(CLK := dequeue);\n    \n    // Update previous state for next scan edge detection\n    enqueue_prev  := enqueue;\n    dequeue_prev  := dequeue;\n    \n    // Reject simultaneous enqueue and dequeue requests\n    IF enqueue AND dequeue THEN\n        status := 16#8003;\n        RETURN;\n    END_IF;\n    \n    // Validate buffer pointer and extract array bounds\n    IF __ISVALIDPTR(buffer, TO_DINT(SIZEOF(emptyArray))) THEN\n        tmp_lower    := LOWER_BOUND(buffer, 1);\n        tmp_upper    := UPPER_BOUND(buffer, 1);\n        tmp_capacity := TO_DINT(tmp_upper - tmp_lower + 1);\n        \n        // Validate capacity is positive\n        IF tmp_capacity <= 0 THEN\n            status := 16#FFFF;\n            RETURN;\n        END_IF;\n        \n        // Type validation: ensure item type matches buffer element type\n        // by reading from buffer then assigning to item (runtime type check)\n        tmp_element := buffer[tmp_lower];\n        tmp_element := item;\n        \n        // Execute prioritized operations\n        IF reset THEN\n            // PUB003: Reset clears queue state without overwriting buffer content\n            head        := 0;\n            tail        := 0;\n            elementCount := 0;\n            status      := 16#0000;\n        ELSIF enqueue_trig.Q THEN\n            // PUB001: Enqueue operation\n            IF elementCount >= tmp_capacity THEN\n                // Queue full - reject enqueue\n                status := 16#8002;\n            ELSE\n                // Write item to tail position, advance tail circularly\n                buffer[tail] := item;\n                tail         := (tail + 1) MOD tmp_capacity;\n                elementCount := elementCount + 1;\n                status       := 16#0000;\n            END_IF;\n        ELSIF dequeue_trig.Q THEN\n            // PUB002: Dequeue operation\n            IF elementCount <= 0 THEN\n                // Queue empty - reject dequeue\n                status := 16#8001;\n            ELSE\n                // Read from head position, advance head circularly\n                item        := buffer[head];\n                head        := (head + 1) MOD tmp_capacity;\n                elementCount := elementCount - 1;\n                status       := 16#0000;\n            END_IF;\n        ELSE\n            // No operation requested this scan\n            status := 16#0000;\n        END_IF;\n    ELSE\n        status := 16#FFFF;\n    END_IF;\nEND_FUNCTION_BLOCK",
+      "code_hash": "373b02f1603e2bd8ac809ae1d4db6303d26c7786629eb82de8fee9898e681e58",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 2873,
+      "completion_tokens": 5638,
+      "cost_cny": 0.042180075000000004,
+      "latency_s": 98.922,
+      "generation_seconds": 98.922,
+      "end_to_end_seconds": 99.094,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2245,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 2674,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "4fa1e9a5adbf99ad723cd021ff469dcf46badb27aea97c3fc735d50df03d0b27",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n",
+      "timing": {
+        "static_seconds": 0.172
+      },
+      "idx": 1,
+      "code": "",
+      "code_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "invalid_model_patch",
+        "error": "Expecting value: line 1 column 1 (char 0)"
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 4568,
+      "completion_tokens": 1898,
+      "cost_cny": 0.02017344,
+      "latency_s": 34.922,
+      "generation_seconds": 34.922,
+      "end_to_end_seconds": 35.094,
+      "format_edits": [],
+      "raw_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": false,
+      "functional_pass": false,
+      "tests_passed": 3,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 31,
+        "tests_passed": 3,
+        "pass_rate": 0.0968,
+        "failure_summary": "h04-2: 运行期错误（第73行）：数组下标 0 越界 [1..4]",
+        "cases": [
+          {
+            "tc_id": "h04-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-2",
+            "passed": false,
+            "mode": "sequence",
+            "message": "运行期错误（第73行）：数组下标 0 越界 [1..4]",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-empty-dequeue",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 32769,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 32769
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "f14-idle-after-empty",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "status": 0,
+              "elementCount": 0
+            },
+            "actual": {
+              "elementCount": 0,
+              "status": 0
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "h04-23",
+            "passed": false,
+            "mode": "sequence",
+            "message": "运行期错误（第73行）：数组下标 0 越界 [1..2]",
+            "expected": {},
+            "actual": {},
+            "hint": ""
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "unsupported_platform",
+            "diagnostics": [
+              "Course-original VARIANT interface is unsupported on this CODESYS profile; separate DINT results excluded"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "declared_contract_check": {
+            "status": "declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          },
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "62d16b60286a175a12464e5b048693b8381fba527f2cd1360a327d998005a03b",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 3/31; bounded status: not_run.\nFAILED functional checkpoints: individually_mismatching_outputs names definite assertion mismatches, not a list of passing checks. Compare these actual values with the public requirement. No expected values are supplied. allowed_output_combination_failed concerns a whole permitted combination, not necessarily every field.\nComplete public input prefixes and observed executions (initial-state scope is explicit; no assertion values or test notes):\n[{\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"h04-1\", \"inputs\": {}, \"const_inputs\": {}, \"initial_interface_values\": {\"buffer\": [0, 0, 0, 0]}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {}}, {\"case\": \"h04-2\", \"inputs\": {\"enqueue\": true}, \"const_inputs\": {\"item\": 10}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {}}], \"checkpoints\": [{\"case\": \"h04-2\", \"individually_mismatching_outputs\": [], \"allowed_output_combination_failed\": false, \"observed_outputs\": {}}], \"relevant_public_clauses\": [{\"id\": \"PUB001\", \"text\": \"Write a function block FB implementing a First-In-First-Out (FIFO) circular queue. Derive the queue capacity and element type from the caller-supplied buffer.\"}, {\"id\": \"PUB002\", \"text\": \"1. Each rising edge of enqueue requests one enqueue operation. If the queue is not full, append the current item value to its tail.\"}, {\"id\": \"PUB003\", \"text\": \"2. Each rising edge of dequeue requests one dequeue operation. If the queue is not empty, remove its front element and write that value back to item. The caller must not request enqueue and dequeue in the same invocation.\"}, {\"id\": \"PUB004\", \"text\": \"3. When reset is TRUE, empty the queue and set elementCount to zero. Reset takes priority over enqueue and dequeue; stored buffer values need not be overwritten.\"}, {\"id\": \"PUB005\", \"text\": \"4. Output the current number of valid elements through elementCount. Zero means the queue is empty; a count equal to the actual buffer array length means it is full.\"}]}, {\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"f14-empty-dequeue\", \"inputs\": {\"dequeue\": true}, \"const_inputs\": {}, \"initial_interface_values\": {\"buffer\": [0, 0]}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {}}, {\"case\": \"f14-idle-after-empty\", \"inputs\": {}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {}}, {\"case\": \"h04-23\", \"inputs\": {\"enqueue\": true}, \"const_inputs\": {\"item\": 5}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": null, \"observed_outputs_after_case\": {}}], \"checkpoints\": [{\"case\": \"h04-23\", \"individually_mismatching_outputs\": [], \"allowed_output_combination_failed\": false, \"observed_outputs\": {}}], \"relevant_public_clauses\": [{\"id\": \"PUB001\", \"text\": \"Write a function block FB implementing a First-In-First-Out (FIFO) circular queue. Derive the queue capacity and element type from the caller-supplied buffer.\"}, {\"id\": \"PUB002\", \"text\": \"1. Each rising edge of enqueue requests one enqueue operation. If the queue is not full, append the current item value to its tail.\"}, {\"id\": \"PUB003\", \"text\": \"2. Each rising edge of dequeue requests one dequeue operation. If the queue is not empty, remove its front element and write that value back to item. The caller must not request enqueue and dequeue in the same invocation.\"}, {\"id\": \"PUB004\", \"text\": \"3. When reset is TRUE, empty the queue and set elementCount to zero. Reset takes priority over enqueue and dequeue; stored buffer values need not be overwritten.\"}, {\"id\": \"PUB005\", \"text\": \"4. Output the current number of valid elements through elementCount. Zero means the queue is empty; a count equal to the actual buffer array length means it is full.\"}]}]",
+      "timing": {
+        "static_seconds": 0.172,
+        "functional_seconds": 0.171
+      },
+      "idx": 2,
+      "code": "FUNCTION_BLOCK FB\nVAR_INPUT\n    enqueue  : BOOL;\n    dequeue  : BOOL;\n    reset    : BOOL;\nEND_VAR\nVAR_OUTPUT\n    elementCount : DINT := 0;\n    status       : WORD := 16#0000;\nEND_VAR\nVAR_IN_OUT\n    item   : VARIANT;\n    buffer : VARIANT;\nEND_VAR\nVAR\n    head          : DINT := 0;\n    tail          : DINT := 0;\n    enqueue_prev  : BOOL := FALSE;\n    dequeue_prev  : BOOL := FALSE;\n    enqueue_trig  : R_TRIG;\n    dequeue_trig  : R_TRIG;\n    tmp_lower     : DINT;\n    tmp_upper     : DINT;\n    tmp_capacity  : DINT;\n    tmp_element   : DINT;\nEND_VAR\n// ENGINEERING_CONTRACT\n// ─────────────────────────────────────────────────────────────────────────────\n// PUB001: enqueue rising edge → write item to tail; reject if elementCount == capacity.\n// PUB002: dequeue rising edge → read buffer[head] to item; reject if elementCount == 0.\n// PUB003: reset TRUE → head:=0, tail:=0, elementCount:=0; no buffer overwrite.\n// PUB004: elementCount output tracks live queue size (0..capacity).\n// PUB005: status 16#0000=no error/idle; 16#8001=dequeue reject (empty);\n//         16#8002=enqueue reject (full); 16#8003=simultaneous enqueue+dequeue.\n// PUB006: buffer is caller-supplied VARIANT array; capacity = UPPER-LOWER+1.\n// PUB007: item is VARIANT scalar; type must match buffer element type.\n// PUB008: circular queue uses head (read index) and tail (write index) modulo capacity.\n// PUB009: first invocation initializes to empty state (no prior buffer content used).\n// PUB010: reset has priority over enqueue/dequeue.\n// PUB011: simultaneous enqueue+dequeue is invalid usage → rejected with status 16#8003.\n// ─────────────────────────────────────────────────────────────────────────────\n// (* CONTRACT_RULES [] *)\n// ─────────────────────────────────────────────────────────────────────────────\n    // Capture rising edges for enqueue and dequeue commands\n    enqueue_trig(CLK := enqueue);\n    dequeue_trig(CLK := dequeue);\n    \n    // Reject simultaneous enqueue and dequeue requests\n    IF enqueue AND dequeue THEN\n        status := 16#8003;\n        RETURN;\n    END_IF;\n    \n    // Extract array bounds from caller-supplied buffer\n    tmp_lower    := LOWER_BOUND(buffer, 1);\n    tmp_upper    := UPPER_BOUND(buffer, 1);\n    tmp_capacity := tmp_upper - tmp_lower + 1;\n    \n    // Execute prioritized operations\n    IF reset THEN\n        // PUB003: Reset clears queue state without overwriting buffer content\n        head         := 0;\n        tail         := 0;\n        elementCount := 0;\n        status       := 16#0000;\n    ELSIF enqueue_trig.Q THEN\n        // PUB001: Enqueue operation\n        IF elementCount >= tmp_capacity THEN\n            // Queue full - reject enqueue\n            status := 16#8002;\n        ELSE\n            // Write item to tail position, advance tail circularly\n            buffer[tail] := item;\n            tail         := (tail + 1) MOD tmp_capacity;\n            elementCount := elementCount + 1;\n            status       := 16#0000;\n        END_IF;\n    ELSIF dequeue_trig.Q THEN\n        // PUB002: Dequeue operation\n        IF elementCount <= 0 THEN\n            // Queue empty - reject dequeue\n            status := 16#8001;\n        ELSE\n            // Read from head position, advance head circularly\n            item        := buffer[head];\n            head        := (head + 1) MOD tmp_capacity;\n            elementCount := elementCount - 1;\n            status       := 16#0000;\n        END_IF;\n    ELSE\n        // No operation requested this scan\n        status := 16#0000;\n    END_IF;\nEND_FUNCTION_BLOCK",
+      "code_hash": "62d16b60286a175a12464e5b048693b8381fba527f2cd1360a327d998005a03b",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "model_exact_edits",
+        "base_sha256": "373b02f1603e2bd8ac809ae1d4db6303d26c7786629eb82de8fee9898e681e58",
+        "plan": {
+          "edits": [
+            {
+              "old": "VAR_TEMP\n    emptyArray : ARRAY[0..0] OF DINT;\nEND_VAR\n// ENGINEERING_CONTRACT\n// ─────────────────────────────────────────────────────────────────────────────\n// PUB001: enqueue rising edge → write item to tail; reject if elementCount == capacity.\n// PUB002: dequeue rising edge → read buffer[head] to item; reject if elementCount == 0.\n// PUB003: reset TRUE → head:=0, tail:=0, elementCount:=0; no buffer overwrite.\n// PUB004: elementCount output tracks live queue size (0..capacity).\n// PUB005: status 16#0000=no error/idle; 16#8001=dequeue reject (empty);\n//         16#8002=enqueue reject (full); 16#8003=simultaneous enqueue+dequeue.\n// PUB006: buffer is caller-supplied VARIANT array; capacity = UPPER-LOWER+1.\n// PUB007: item is VARIANT scalar; type must match buffer element type.\n// PUB008: circular queue uses head (read index) and tail (write index) modulo capacity.\n// PUB009: first invocation initializes to empty state (no prior buffer content used).\n// PUB010: reset has priority over enqueue/dequeue.\n// PUB011: simultaneous enqueue+dequeue is invalid usage → rejected with status 16#8003.\n// ─────────────────────────────────────────────────────────────────────────────\n// (* CONTRACT_RULES [] *)\n// ─────────────────────────────────────────────────────────────────────────────\n    // Capture rising edges for enqueue and dequeue commands\n    enqueue_trig(CLK := enqueue);\n    dequeue_trig(CLK := dequeue);\n    \n    // Update previous state for next scan edge detection\n    enqueue_prev  := enqueue;\n    dequeue_prev  := dequeue;\n    \n    // Reject simultaneous enqueue and dequeue requests\n    IF enqueue AND dequeue THEN\n        status := 16#8003;\n        RETURN;\n    END_IF;\n    \n    // Validate buffer pointer and extract array bounds\n    IF __ISVALIDPTR(buffer, TO_DINT(SIZEOF(emptyArray))) THEN\n        tmp_lower    := LOWER_BOUND(buffer, 1);\n        tmp_upper    := UPPER_BOUND(buffer, 1);\n        tmp_capacity := TO_DINT(tmp_upper - tmp_lower + 1);\n        \n        // Validate capacity is positive\n        IF tmp_capacity <= 0 THEN\n            status := 16#FFFF;\n            RETURN;\n        END_IF;\n        \n        // Type validation: ensure item type matches buffer element type\n        // by reading from buffer then assigning to item (runtime type check)\n        tmp_element := buffer[tmp_lower];\n        tmp_element := item;\n        \n        // Execute prioritized operations\n        IF reset THEN\n            // PUB003: Reset clears queue state without overwriting buffer content\n            head        := 0;\n            tail        := 0;\n            elementCount := 0;\n            status      := 16#0000;\n        ELSIF enqueue_trig.Q THEN\n            // PUB001: Enqueue operation\n            IF elementCount >= tmp_capacity THEN\n                // Queue full - reject enqueue\n                status := 16#8002;\n            ELSE\n                // Write item to tail position, advance tail circularly\n                buffer[tail] := item;\n                tail         := (tail + 1) MOD tmp_capacity;\n                elementCount := elementCount + 1;\n                status       := 16#0000;\n            END_IF;\n        ELSIF dequeue_trig.Q THEN\n            // PUB002: Dequeue operation\n            IF elementCount <= 0 THEN\n                // Queue empty - reject dequeue\n                status := 16#8001;\n            ELSE\n                // Read from head position, advance head circularly\n                item        := buffer[head];\n                head        := (head + 1) MOD tmp_capacity;\n                elementCount := elementCount - 1;\n                status       := 16#0000;\n            END_IF;\n        ELSE\n            // No operation requested this scan\n            status := 16#0000;\n        END_IF;\n    ELSE\n        status := 16#FFFF;\n    END_IF;",
+              "new": "// ENGINEERING_CONTRACT\n// ─────────────────────────────────────────────────────────────────────────────\n// PUB001: enqueue rising edge → write item to tail; reject if elementCount == capacity.\n// PUB002: dequeue rising edge → read buffer[head] to item; reject if elementCount == 0.\n// PUB003: reset TRUE → head:=0, tail:=0, elementCount:=0; no buffer overwrite.\n// PUB004: elementCount output tracks live queue size (0..capacity).\n// PUB005: status 16#0000=no error/idle; 16#8001=dequeue reject (empty);\n//         16#8002=enqueue reject (full); 16#8003=simultaneous enqueue+dequeue.\n// PUB006: buffer is caller-supplied VARIANT array; capacity = UPPER-LOWER+1.\n// PUB007: item is VARIANT scalar; type must match buffer element type.\n// PUB008: circular queue uses head (read index) and tail (write index) modulo capacity.\n// PUB009: first invocation initializes to empty state (no prior buffer content used).\n// PUB010: reset has priority over enqueue/dequeue.\n// PUB011: simultaneous enqueue+dequeue is invalid usage → rejected with status 16#8003.\n// ─────────────────────────────────────────────────────────────────────────────\n// (* CONTRACT_RULES [] *)\n// ─────────────────────────────────────────────────────────────────────────────\n    // Capture rising edges for enqueue and dequeue commands\n    enqueue_trig(CLK := enqueue);\n    dequeue_trig(CLK := dequeue);\n    \n    // Reject simultaneous enqueue and dequeue requests\n    IF enqueue AND dequeue THEN\n        status := 16#8003;\n        RETURN;\n    END_IF;\n    \n    // Extract array bounds from caller-supplied buffer\n    tmp_lower    := LOWER_BOUND(buffer, 1);\n    tmp_upper    := UPPER_BOUND(buffer, 1);\n    tmp_capacity := tmp_upper - tmp_lower + 1;\n    \n    // Execute prioritized operations\n    IF reset THEN\n        // PUB003: Reset clears queue state without overwriting buffer content\n        head         := 0;\n        tail         := 0;\n        elementCount := 0;\n        status       := 16#0000;\n    ELSIF enqueue_trig.Q THEN\n        // PUB001: Enqueue operation\n        IF elementCount >= tmp_capacity THEN\n            // Queue full - reject enqueue\n            status := 16#8002;\n        ELSE\n            // Write item to tail position, advance tail circularly\n            buffer[tail] := item;\n            tail         := (tail + 1) MOD tmp_capacity;\n            elementCount := elementCount + 1;\n            status       := 16#0000;\n        END_IF;\n    ELSIF dequeue_trig.Q THEN\n        // PUB002: Dequeue operation\n        IF elementCount <= 0 THEN\n            // Queue empty - reject dequeue\n            status := 16#8001;\n        ELSE\n            // Read from head position, advance head circularly\n            item        := buffer[head];\n            head        := (head + 1) MOD tmp_capacity;\n            elementCount := elementCount - 1;\n            status       := 16#0000;\n        END_IF;\n    ELSE\n        // No operation requested this scan\n        status := 16#0000;\n    END_IF;"
+            }
+          ]
+        }
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 4682,
+      "completion_tokens": 2711,
+      "cost_cny": 0.025757633999999998,
+      "latency_s": 37.203,
+      "generation_seconds": 37.203,
+      "end_to_end_seconds": 37.546,
+      "format_edits": [],
+      "raw_source_sha256": "62d16b60286a175a12464e5b048693b8381fba527f2cd1360a327d998005a03b",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 31,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 31,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "task_json_sha256": "d42ae447111123d91cd1608b548e9bcbc22ab9b4bf3f19e38cf259893dd9af5c",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/31; bounded status: not_run.\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n",
+      "timing": {
+        "static_seconds": 0.172
+      },
+      "idx": 3,
+      "code": "",
+      "code_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "invalid_model_patch",
+        "error": "Expecting value: line 1 column 1 (char 0)"
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 5460,
+      "completion_tokens": 2151,
+      "cost_cny": 0.023332176,
+      "latency_s": 51.219,
+      "generation_seconds": 51.219,
+      "end_to_end_seconds": 51.219,
+      "format_edits": [],
+      "raw_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "provider_error": "",
+      "duplicate_of_candidate_index": 1
+    }
+  ],
+  "best_attempt": 2,
+  "stop_reason": "repeated_candidate",
+  "tests_total": 31,
+  "study_plan_sha256": "e0db2940199cc656528584436ab352ead1fdbaa878edd82cd2958bfa3af1ca4c",
+  "started_at": "2026-11-13T18:37:40.058149+08:00",
+  "wall_seconds": 223.094,
+  "finished_at": "2026-11-13T18:41:23.051939+08:00",
+  "operational_network_wait": {
+    "batch": "v4_wait900",
+    "ceiling_seconds": 900,
+    "task_seconds": 2400,
+    "evaluation_reserve_seconds": 150,
+    "model_parameters_unchanged": true
+  }
+}
