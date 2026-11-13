@@ -1,0 +1,1058 @@
+{
+  "job_id": "custom_minimax-m27/public-medium-06",
+  "pid": "public-medium-06",
+  "condition": "custom_minimax-m27",
+  "model": "MiniMax-M2.7",
+  "experiment_kind": "live",
+  "credential_batch": "secondary",
+  "job_done": true,
+  "attempts": [
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 23,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 23,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "Generate code...",
+              "Cannot convert type 'ULINT' to type 'LTIME'",
+              "Cannot convert type 'LTIME' to type 'ULINT'",
+              "Cannot convert type 'TIME' to type 'ULINT'",
+              "Build complete -- 3 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 18.875,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-06_3ecac4fb84",
+            "source_sha256": "5b97659a3b4f984c9a047bddd79aab772d61668068f24b6ec4adaf80ef9be5e0",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "5b97659a3b4f984c9a047bddd79aab772d61668068f24b6ec4adaf80ef9be5e0",
+          "task_json_sha256": "e1bd558b4da33475b438a1ad69183c5c8ff317d2b656baf65ca182a31449b9b8",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\nGenerate code...\nCannot convert type 'ULINT' to type 'LTIME'\nCannot convert type 'LTIME' to type 'ULINT'\nCannot convert type 'TIME' to type 'ULINT'\nBuild complete -- 3 errors, 0 warnings : No download possible\nAdditional code checks ...\nFunctional checks: 0/23; bounded status: not_run.",
+      "timing": {
+        "static_seconds": 0.187,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 18.875
+      },
+      "idx": 0,
+      "code": "FUNCTION_BLOCK FB_SlabThicknessMonitor\n(* \n * ENGINEERING_CONTRACT\n * =============================================================================\n * Output/State          | Activation          | Retention            | Reset/Deactivation            | Units\n * ----------------------+---------------------+----------------------+-------------------------------+-----------------\n * THICKNESS_ALARM       | Rising edge valid   | Min 500ms hold;      | Signal invalid clears all     | BOOL\n *                       | THICKNESS_FAULT     | continues if fault   | alarm and hold state (PUB001) |\n * Alarm hold timer      | TON(IN: valid &     | TON.ET saturates at  | Signal invalid resets TON     | LTIME (≥500ms)\n *                       |   (fault OR holding))| PT=500ms            |                               |\n * Holding flag          | Fault OR holding    | Self-holds while     | Signal invalid clears         | BOOL\n *                       |                     |   fault OR timer run |                               |\n * Slab_Fault_Counter    | FALSE→TRUE valid    | Accumulates monoton  | None by task spec             | UINT\n *                       | fault transition    | (never auto-reset)   |                               |\n * Slab_Fault_History[0] | New fault entry     | Shifts [n]→[n+1]     | Power-up init to 0            | ARRAY[0..4] DINT\n *                       | writes to index 0   | (0 newest)           |                               |\n * Slab_Runtime_Accumulator| While CUTTING_RUN  | Preserved when       | None by task spec             | LTIME (accumulates)\n *                       | + valid + no fault  | conditions not met   |                               |\n * =============================================================================\n * CONTRACT_RULES [{\"kind\": \"hold_until_reset\", \"output\": \"THICKNESS_ALARM\", \"set_input\": \"THICKNESS_FAULT\", \"reset_input\": null}]\n *)\n\nVAR_INPUT\n    THICKNESS_FAULT        : BOOL;\n    THICKNESS_SIGNAL_VALID : BOOL;\n    CUTTING_RUN            : BOOL;\n    FaultTimestamp         : DINT;\n    CycleTime              : TIME;\nEND_VAR\n\nVAR_OUTPUT\n    THICKNESS_ALARM           : BOOL;\n    Slab_Fault_Counter        : UINT;\n    Slab_Runtime_Accumulator  : LTIME;\n    Slab_Fault_History        : ARRAY[0..4] OF DINT;\nEND_VAR\n\nVAR\n    faultRisingEdge    : R_TRIG;\n    signalValidPrev    : BOOL;\n    alarmHoldTimer     : TON;\n    alarmHolding       : BOOL;\n    faultActive        : BOOL;\nEND_VAR\n\n// ---------------------------------------------------------------------------\n// Power-up initialization (first scan after instantiation)\n// ---------------------------------------------------------------------------\nIF NOT alarmHoldTimer.Q AND NOT faultActive AND NOT alarmHolding THEN\n    Slab_Fault_Counter       := 0;\n    Slab_Runtime_Accumulator := LTIME#0s;\n    Slab_Fault_History[0]    := 0;\n    Slab_Fault_History[1]    := 0;\n    Slab_Fault_History[2]    := 0;\n    Slab_Fault_History[3]    := 0;\n    Slab_Fault_History[4]    := 0;\nEND_IF;\n\n// ---------------------------------------------------------------------------\n// Detect FALSE→TRUE transition on valid fault signal\n// ---------------------------------------------------------------------------\nfaultRisingEdge(CLK := THICKNESS_FAULT AND THICKNESS_SIGNAL_VALID);\n\n// ---------------------------------------------------------------------------\n// Handle signal-valid transitions: clear alarm/hold when signal lost (PUB001)\n// ---------------------------------------------------------------------------\nIF THICKNESS_SIGNAL_VALID THEN\n    IF NOT signalValidPrev THEN\n        // Signal just restored after being invalid\n        alarmHolding  := FALSE;\n        alarmHoldTimer(IN := FALSE);\n        faultActive   := FALSE;\n    END_IF;\n\n    // -------------------------------------------------------------------------\n    // On rising edge of valid fault: record entry and start hold\n    // -------------------------------------------------------------------------\n    IF faultRisingEdge.Q THEN\n        // Increment counter\n        Slab_Fault_Counter := Slab_Fault_Counter + UINT#1;\n\n        // Shift history: index 3→4, 2→3, 1→2, 0→1, then write new to 0\n        Slab_Fault_History[4] := Slab_Fault_History[3];\n        Slab_Fault_History[3] := Slab_Fault_History[2];\n        Slab_Fault_History[2] := Slab_Fault_History[1];\n        Slab_Fault_History[1] := Slab_Fault_History[0];\n        Slab_Fault_History[0] := FaultTimestamp;\n\n        // Activate alarm and start 500 ms hold timer\n        faultActive        := TRUE;\n        alarmHolding       := TRUE;\n        alarmHoldTimer(IN  := TRUE, PT := T#500ms);\n    END_IF;\n\n    // -------------------------------------------------------------------------\n    // Update alarm state: hold while fault persists or timer running\n    // -------------------------------------------------------------------------\n    IF faultActive THEN\n        // Keep timer running while fault is present\n        alarmHoldTimer(IN := TRUE, PT := T#500ms);\n\n        // Alarm stays active while fault or hold timer active\n        alarmHolding := THICKNESS_FAULT OR alarmHoldTimer.Q;\n\n        // Release hold tracking once fault clears and timer completes\n        IF NOT THICKNESS_FAULT AND alarmHolding AND NOT alarmHoldTimer.Q THEN\n            alarmHolding := FALSE;\n        END_IF;\n\n        // Clear fault-active flag when fault goes away (hold may continue)\n        IF NOT THICKNESS_FAULT THEN\n            faultActive := FALSE;\n        END_IF;\n    END_IF;\n\n    // Final alarm output\n    THICKNESS_ALARM := alarmHolding OR faultActive;\n\n    // -------------------------------------------------------------------------\n    // Runtime accumulation: only while cutting, signal valid, no fault\n    // -------------------------------------------------------------------------\n    IF CUTTING_RUN AND NOT THICKNESS_FAULT THEN\n        Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + CycleTime;\n    END_IF;\n\nELSE\n    // Signal invalid: clear alarm and all hold state (PUB001)\n    THICKNESS_ALARM  := FALSE;\n    alarmHolding     := FALSE;\n    faultActive      := FALSE;\n    alarmHoldTimer(IN := FALSE);\nEND_IF;\n\n// ---------------------------------------------------------------------------\n// Latch previous scan signal-valid state for edge detection\n// ---------------------------------------------------------------------------\nsignalValidPrev := THICKNESS_SIGNAL_VALID;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "5b97659a3b4f984c9a047bddd79aab772d61668068f24b6ec4adaf80ef9be5e0",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 2848,
+      "completion_tokens": 2156,
+      "cost_cny": 0.019032048000000003,
+      "latency_s": 43.688,
+      "generation_seconds": 43.688,
+      "end_to_end_seconds": 62.75,
+      "format_edits": [
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3009,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 3755,
+          "delete": 0,
+          "text": ";"
+        },
+        {
+          "kind": "insert_terminator_semicolon",
+          "offset": 4638,
+          "delete": 0,
+          "text": ";"
+        }
+      ],
+      "raw_source_sha256": "de1cecce2b26e1ab19a1f6487a5e3f9e32f8c749f9b3e95d269d99d39571c7c7",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 23,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "level": "error",
+            "line": 51,
+            "code": "E_DURATION_LITERAL",
+            "message": "Invalid duration literal: LTIME#0"
+          }
+        ],
+        "tests_total": 23,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "静态检查未通过：[E_DURATION_LITERAL] 第51行 Invalid duration literal: LTIME#0",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "failed",
+            "diagnostics": [
+              "------ Build started: Application: CODESYS_Control_Win_x64.Application -------",
+              "Typify code...",
+              "';' expected instead of 'LTIME#0'",
+              "Expression expected instead of 'LTIME#0'",
+              "Compile complete -- 2 errors, 0 warnings",
+              "Build complete -- 2 errors, 0 warnings : No download possible",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 18.780999999988126,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-06_b8f32721e3",
+            "source_sha256": "c0921deb3eeec9567d22623151fc89e00e362fd488ec8347e51ef3375d420968",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "c0921deb3eeec9567d22623151fc89e00e362fd488ec8347e51ef3375d420968",
+          "task_json_sha256": "e1bd558b4da33475b438a1ad69183c5c8ff317d2b656baf65ca182a31449b9b8",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "CODESYS native compilation: failed\n------ Build started: Application: CODESYS_Control_Win_x64.Application -------\nTypify code...\n';' expected instead of 'LTIME#0'\nExpression expected instead of 'LTIME#0'\nCompile complete -- 2 errors, 0 warnings\nBuild complete -- 2 errors, 0 warnings : No download possible\nAdditional code checks ...\nAdditional code checks complete -- 0 errors\nFunctional checks: 0/23; bounded status: not_run.\nLine 51 [E_DURATION_LITERAL]: Invalid duration literal: LTIME#0\nGenerated source context (candidate text only):\n50:     Slab_Fault_Counter       := 0;\n51:     Slab_Runtime_Accumulator := LTIME#0;\n52:     Slab_Fault_History[0]    := 0;\n53:     Slab_Fault_History[1]    := 0;",
+      "timing": {
+        "static_seconds": 0.172,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 18.781
+      },
+      "idx": 1,
+      "code": "FUNCTION_BLOCK FB_SlabThicknessMonitor\n(* \n * ENGINEERING_CONTRACT\n * =============================================================================\n * Output/State          | Activation          | Retention            | Reset/Deactivation            | Units\n * ----------------------+---------------------+----------------------+-------------------------------+-----------------\n * THICKNESS_ALARM       | Rising edge valid   | Min 500ms hold;      | Signal invalid clears all     | BOOL\n *                       | THICKNESS_FAULT     | continues if fault   | alarm and hold state (PUB001) |\n * Alarm hold timer      | TON(IN: valid &     | TON.ET saturates at  | Signal invalid resets TON     | LTIME (≥500ms)\n *                       |   (fault OR holding))| PT=500ms            |                               |\n * Holding flag          | Fault OR holding    | Self-holds while     | Signal invalid clears         | BOOL\n *                       |                     |   fault OR timer run |                               |\n * Slab_Fault_Counter    | FALSE→TRUE valid    | Accumulates monoton  | None by task spec             | UINT\n *                       | fault transition    | (never auto-reset)   |                               |\n * Slab_Fault_History[0] | New fault entry     | Shifts [n]→[n+1]     | Power-up init to 0            | ARRAY[0..4] DINT\n *                       | writes to index 0   | (0 newest)           |                               |\n * Slab_Runtime_Accumulator| While CUTTING_RUN  | Preserved when       | None by task spec             | LTIME (accumulates)\n *                       | + valid + no fault  | conditions not met   |                               |\n * =============================================================================\n * CONTRACT_RULES [{\"kind\": \"hold_until_reset\", \"output\": \"THICKNESS_ALARM\", \"set_input\": \"THICKNESS_FAULT\", \"reset_input\": null}]\n *)\n\nVAR_INPUT\n    THICKNESS_FAULT        : BOOL;\n    THICKNESS_SIGNAL_VALID : BOOL;\n    CUTTING_RUN            : BOOL;\n    FaultTimestamp         : DINT;\n    CycleTime              : TIME;\nEND_VAR\n\nVAR_OUTPUT\n    THICKNESS_ALARM           : BOOL;\n    Slab_Fault_Counter        : UINT;\n    Slab_Runtime_Accumulator  : LTIME;\n    Slab_Fault_History        : ARRAY[0..4] OF DINT;\nEND_VAR\n\nVAR\n    faultRisingEdge    : R_TRIG;\n    signalValidPrev    : BOOL;\n    alarmHoldTimer     : TON;\n    alarmHolding       : BOOL;\n    faultActive        : BOOL;\nEND_VAR\n\n// ---------------------------------------------------------------------------\n// Power-up initialization (first scan after instantiation)\n// ---------------------------------------------------------------------------\nIF NOT alarmHoldTimer.Q AND NOT faultActive AND NOT alarmHolding THEN\n    Slab_Fault_Counter       := 0;\n    Slab_Runtime_Accumulator := LTIME#0;\n    Slab_Fault_History[0]    := 0;\n    Slab_Fault_History[1]    := 0;\n    Slab_Fault_History[2]    := 0;\n    Slab_Fault_History[3]    := 0;\n    Slab_Fault_History[4]    := 0;\nEND_IF;\n\n// ---------------------------------------------------------------------------\n// Detect FALSE→TRUE transition on valid fault signal\n// ---------------------------------------------------------------------------\nfaultRisingEdge(CLK := THICKNESS_FAULT AND THICKNESS_SIGNAL_VALID);\n\n// ---------------------------------------------------------------------------\n// Handle signal-valid transitions: clear alarm/hold when signal lost (PUB001)\n// ---------------------------------------------------------------------------\nIF THICKNESS_SIGNAL_VALID THEN\n    IF NOT signalValidPrev THEN\n        // Signal just restored after being invalid\n        alarmHolding  := FALSE;\n        alarmHoldTimer(IN := FALSE);\n        faultActive   := FALSE;\n    END_IF;\n\n    // -------------------------------------------------------------------------\n    // On rising edge of valid fault: record entry and start hold\n    // -------------------------------------------------------------------------\n    IF faultRisingEdge.Q THEN\n        // Increment counter\n        Slab_Fault_Counter := Slab_Fault_Counter + UINT#1;\n\n        // Shift history: index 3→4, 2→3, 1→2, 0→1, then write new to 0\n        Slab_Fault_History[4] := Slab_Fault_History[3];\n        Slab_Fault_History[3] := Slab_Fault_History[2];\n        Slab_Fault_History[2] := Slab_Fault_History[1];\n        Slab_Fault_History[1] := Slab_Fault_History[0];\n        Slab_Fault_History[0] := FaultTimestamp;\n\n        // Activate alarm and start 500 ms hold timer\n        faultActive        := TRUE;\n        alarmHolding       := TRUE;\n        alarmHoldTimer(IN  := TRUE, PT := T#500ms);\n    END_IF;\n\n    // -------------------------------------------------------------------------\n    // Update alarm state: hold while fault persists or timer running\n    // -------------------------------------------------------------------------\n    IF faultActive THEN\n        // Keep timer running while fault is present\n        alarmHoldTimer(IN := TRUE, PT := T#500ms);\n\n        // Alarm stays active while fault or hold timer active\n        alarmHolding := THICKNESS_FAULT OR alarmHoldTimer.Q;\n\n        // Release hold tracking once fault clears and timer completes\n        IF NOT THICKNESS_FAULT AND alarmHolding AND NOT alarmHoldTimer.Q THEN\n            alarmHolding := FALSE;\n        END_IF;\n\n        // Clear fault-active flag when fault goes away (hold may continue)\n        IF NOT THICKNESS_FAULT THEN\n            faultActive := FALSE;\n        END_IF;\n    END_IF;\n\n    // Final alarm output\n    THICKNESS_ALARM := alarmHolding OR faultActive;\n\n    // -------------------------------------------------------------------------\n    // Runtime accumulation: only while cutting, signal valid, no fault\n    // -------------------------------------------------------------------------\n    IF CUTTING_RUN AND NOT THICKNESS_FAULT THEN\n        Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + TO_LTIME(CycleTime);\n    END_IF;\n\nELSE\n    // Signal invalid: clear alarm and all hold state (PUB001)\n    THICKNESS_ALARM  := FALSE;\n    alarmHolding     := FALSE;\n    faultActive      := FALSE;\n    alarmHoldTimer(IN := FALSE);\nEND_IF;\n\n// ---------------------------------------------------------------------------\n// Latch previous scan signal-valid state for edge detection\n// ---------------------------------------------------------------------------\nsignalValidPrev := THICKNESS_SIGNAL_VALID;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "c0921deb3eeec9567d22623151fc89e00e362fd488ec8347e51ef3375d420968",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "model_exact_edits",
+        "base_sha256": "5b97659a3b4f984c9a047bddd79aab772d61668068f24b6ec4adaf80ef9be5e0",
+        "plan": {
+          "edits": [
+            {
+              "old": "    Slab_Runtime_Accumulator := LTIME#0s;",
+              "new": "    Slab_Runtime_Accumulator := LTIME#0;"
+            },
+            {
+              "old": "    IF CUTTING_RUN AND NOT THICKNESS_FAULT THEN\n        Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + CycleTime;\n    END_IF;",
+              "new": "    IF CUTTING_RUN AND NOT THICKNESS_FAULT THEN\n        Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + TO_LTIME(CycleTime);\n    END_IF;"
+            }
+          ]
+        }
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 4759,
+      "completion_tokens": 1152,
+      "cost_cny": 0.015539853000000001,
+      "latency_s": 24.985,
+      "generation_seconds": 24.985,
+      "end_to_end_seconds": 43.938,
+      "format_edits": [],
+      "raw_source_sha256": "c0921deb3eeec9567d22623151fc89e00e362fd488ec8347e51ef3375d420968",
+      "provider_error": ""
+    },
+    {
+      "complete_code": true,
+      "compiles": true,
+      "native_pass": true,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 5,
+      "tests_total": 23,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": true,
+        "compile_errors": [],
+        "tests_total": 23,
+        "tests_passed": 5,
+        "pass_rate": 0.2174,
+        "failure_summary": "M06-02: Slab_Runtime_Accumulator 期望 20000000，实际 0",
+        "cases": [
+          {
+            "tc_id": "M06-01",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 0,
+              "Slab_Runtime_Accumulator": 20000000,
+              "Slab_Fault_History": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 0,
+              "Slab_Fault_History": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 20000000,
+              "THICKNESS_ALARM": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "M06-02",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Runtime_Accumulator 期望 20000000，实际 0",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Runtime_Accumulator": 20000000,
+              "Slab_Fault_History": [
+                100,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                100,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0,
+              "THICKNESS_ALARM": true
+            },
+            "hint": "M06-02（按实际 CycleTime 复验运行时长、信号有效性或故障历史。）：Slab_Runtime_Accumulator 期望 20000000，实际 0"
+          },
+          {
+            "tc_id": "M06-03",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Fault_Counter 期望 1，实际 0",
+            "expected": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 1,
+              "Slab_Runtime_Accumulator": 20000000,
+              "Slab_Fault_History": [
+                100,
+                0,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 0,
+              "Slab_Fault_History": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0,
+              "THICKNESS_ALARM": false
+            },
+            "hint": "M06-03（按实际 CycleTime 复验运行时长、信号有效性或故障历史。）：Slab_Fault_Counter 期望 1，实际 0"
+          },
+          {
+            "tc_id": "M06-04",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Fault_Counter 期望 2，实际 1",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 2,
+              "Slab_Runtime_Accumulator": 20000000,
+              "Slab_Fault_History": [
+                200,
+                100,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                200,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0,
+              "THICKNESS_ALARM": true
+            },
+            "hint": "M06-04（按实际 CycleTime 复验运行时长、信号有效性或故障历史。）：Slab_Fault_Counter 期望 2，实际 1"
+          },
+          {
+            "tc_id": "M06-05",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Fault_Counter 期望 2，实际 0",
+            "expected": {
+              "Slab_Fault_Counter": 2,
+              "Slab_Runtime_Accumulator": 540000000,
+              "Slab_Fault_History": [
+                200,
+                100,
+                0,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 0,
+              "Slab_Fault_History": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 20000000
+            },
+            "hint": "M06-05（按实际 CycleTime 复验运行时长、信号有效性或故障历史。）：Slab_Fault_Counter 期望 2，实际 0"
+          },
+          {
+            "tc_id": "M06-06",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Fault_Counter 期望 3，实际 1",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 3,
+              "Slab_Runtime_Accumulator": 540000000,
+              "Slab_Fault_History": [
+                300,
+                200,
+                100,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                300,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0,
+              "THICKNESS_ALARM": true
+            },
+            "hint": "M06-06（按实际 CycleTime 复验运行时长、信号有效性或故障历史。）：Slab_Fault_Counter 期望 3，实际 1"
+          },
+          {
+            "tc_id": "M06-07",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Fault_Counter 期望 3，实际 1",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 3,
+              "Slab_Runtime_Accumulator": 540000000,
+              "Slab_Fault_History": [
+                300,
+                200,
+                100,
+                0,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                300,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0,
+              "THICKNESS_ALARM": true
+            },
+            "hint": "M06-07（按实际 CycleTime 复验运行时长、信号有效性或故障历史。）：Slab_Fault_Counter 期望 3，实际 1"
+          },
+          {
+            "tc_id": "M06-08",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Fault_Counter 期望 4，实际 2",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 4,
+              "Slab_Runtime_Accumulator": 540000000,
+              "Slab_Fault_History": [
+                400,
+                300,
+                200,
+                100,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 2,
+              "Slab_Fault_History": [
+                400,
+                300,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0,
+              "THICKNESS_ALARM": true
+            },
+            "hint": "M06-08（按实际 CycleTime 复验运行时长、信号有效性或故障历史。）：Slab_Fault_Counter 期望 4，实际 2"
+          },
+          {
+            "tc_id": "M06-09",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Fault_Counter 期望 4，实际 2",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 4,
+              "Slab_Runtime_Accumulator": 560000000,
+              "Slab_Fault_History": [
+                400,
+                300,
+                200,
+                100,
+                0
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 2,
+              "Slab_Fault_History": [
+                400,
+                300,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 20000000,
+              "THICKNESS_ALARM": true
+            },
+            "hint": "M06-09（按实际 CycleTime 复验运行时长、信号有效性或故障历史。）：Slab_Fault_Counter 期望 4，实际 2"
+          },
+          {
+            "tc_id": "M06-10",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Fault_Counter 期望 5，实际 3",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 5,
+              "Slab_Runtime_Accumulator": 560000000,
+              "Slab_Fault_History": [
+                500,
+                400,
+                300,
+                200,
+                100
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 3,
+              "Slab_Fault_History": [
+                500,
+                400,
+                300,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 20000000,
+              "THICKNESS_ALARM": true
+            },
+            "hint": "M06-10（按实际 CycleTime 复验运行时长、信号有效性或故障历史。）：Slab_Fault_Counter 期望 5，实际 3"
+          },
+          {
+            "tc_id": "M06-11",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Fault_Counter 期望 5，实际 3",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 5,
+              "Slab_Runtime_Accumulator": 580000000,
+              "Slab_Fault_History": [
+                500,
+                400,
+                300,
+                200,
+                100
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 3,
+              "Slab_Fault_History": [
+                500,
+                400,
+                300,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 40000000,
+              "THICKNESS_ALARM": true
+            },
+            "hint": "M06-11（按实际 CycleTime 复验运行时长、信号有效性或故障历史。）：Slab_Fault_Counter 期望 5，实际 3"
+          },
+          {
+            "tc_id": "M06-12",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Fault_Counter 期望 6，实际 4",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 6,
+              "Slab_Runtime_Accumulator": 580000000,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                200
+              ]
+            },
+            "actual": {
+              "Slab_Fault_Counter": 4,
+              "Slab_Fault_History": [
+                600,
+                500,
+                400,
+                300,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 40000000,
+              "THICKNESS_ALARM": true
+            },
+            "hint": "M06-12（按实际 CycleTime 复验运行时长、信号有效性或故障历史。）：Slab_Fault_Counter 期望 6，实际 4"
+          },
+          {
+            "tc_id": "hold-500ms-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "hold-500ms-2",
+            "passed": false,
+            "mode": "sequence",
+            "message": "THICKNESS_ALARM 期望 True，实际 False",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0,
+              "THICKNESS_ALARM": false
+            },
+            "hint": "hold-500ms-2（距故障起点499毫秒，故障已消失但报警必须维持。）：THICKNESS_ALARM 期望 True，实际 False"
+          },
+          {
+            "tc_id": "hold-500ms-3",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Fault_Counter 期望 1，实际 0",
+            "expected": {
+              "Slab_Fault_Counter": 1,
+              "Slab_Fault_History": [
+                101,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "actual": {
+              "Slab_Fault_Counter": 0,
+              "Slab_Fault_History": [
+                0,
+                0,
+                0,
+                0,
+                0
+              ],
+              "Slab_Runtime_Accumulator": 0
+            },
+            "hint": "hold-500ms-3（达到最小保持时间后，原文未指定最迟清除时刻，此拍只检查计数、时间及历史。）：Slab_Fault_Counter 期望 1，实际 0"
+          },
+          {
+            "tc_id": "slab-elapsed-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "Slab_Runtime_Accumulator": 3000000,
+              "THICKNESS_ALARM": false
+            },
+            "actual": {
+              "Slab_Runtime_Accumulator": 3000000,
+              "THICKNESS_ALARM": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "slab-elapsed-2",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Runtime_Accumulator 期望 120000000，实际 117000000",
+            "expected": {
+              "Slab_Runtime_Accumulator": 120000000,
+              "THICKNESS_ALARM": false
+            },
+            "actual": {
+              "Slab_Runtime_Accumulator": 117000000,
+              "THICKNESS_ALARM": false
+            },
+            "hint": "slab-elapsed-2（）：Slab_Runtime_Accumulator 期望 120000000，实际 117000000"
+          },
+          {
+            "tc_id": "slab-elapsed-3",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Runtime_Accumulator 期望 1000000000，实际 880000000",
+            "expected": {
+              "Slab_Runtime_Accumulator": 1000000000,
+              "THICKNESS_ALARM": false
+            },
+            "actual": {
+              "Slab_Runtime_Accumulator": 880000000,
+              "THICKNESS_ALARM": false
+            },
+            "hint": "slab-elapsed-3（）：Slab_Runtime_Accumulator 期望 1000000000，实际 880000000"
+          },
+          {
+            "tc_id": "elapsed-hold-0",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": false,
+              "Slab_Fault_Counter": 0
+            },
+            "actual": {
+              "Slab_Fault_Counter": 0,
+              "THICKNESS_ALARM": false
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "elapsed-hold-1",
+            "passed": true,
+            "mode": "sequence",
+            "message": "",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "THICKNESS_ALARM": true
+            },
+            "hint": ""
+          },
+          {
+            "tc_id": "elapsed-hold-2",
+            "passed": false,
+            "mode": "sequence",
+            "message": "THICKNESS_ALARM 期望 True，实际 False",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 1
+            },
+            "actual": {
+              "Slab_Fault_Counter": 0,
+              "THICKNESS_ALARM": false
+            },
+            "hint": "elapsed-hold-2（）：THICKNESS_ALARM 期望 True，实际 False"
+          },
+          {
+            "tc_id": "elapsed-hold-3",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Fault_Counter 期望 2，实际 1",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 2
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "THICKNESS_ALARM": true
+            },
+            "hint": "elapsed-hold-3（）：Slab_Fault_Counter 期望 2，实际 1"
+          },
+          {
+            "tc_id": "elapsed-hold-4",
+            "passed": false,
+            "mode": "sequence",
+            "message": "Slab_Fault_Counter 期望 2，实际 1",
+            "expected": {
+              "THICKNESS_ALARM": true,
+              "Slab_Fault_Counter": 2
+            },
+            "actual": {
+              "Slab_Fault_Counter": 1,
+              "THICKNESS_ALARM": true
+            },
+            "hint": "elapsed-hold-4（）：Slab_Fault_Counter 期望 2，实际 1"
+          }
+        ],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "passed",
+            "diagnostics": [
+              "The application is up to date",
+              "Build complete -- 0 errors, 0 warnings : Ready for download",
+              "Additional code checks ...",
+              "Additional code checks complete -- 0 errors"
+            ],
+            "returncode": 0,
+            "elapsed_s": 19.0,
+            "artifact_dir": "E:\\PLC_Dev\\builds\\codesys\\public-medium-06_324fcd4a63",
+            "source_sha256": "332e4b2ebcb2bb3d93ba013158986d85b2702f9829438597eba99bee8750b71e",
+            "platform_identity": {
+              "platform": "codesys",
+              "executable": "E:\\PLC_Dev\\platforms\\CODESYS_3.5.22.40\\CODESYS\\Common\\CODESYS.exe",
+              "size": 526592,
+              "mtime": 1790564746000000000,
+              "compile_inputs_sha256": {
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\scripts\\codesys_build.py": "f6f48fe43e14f621f606fef273f544f8b8148df4bffcdbdac23d7566cd00e540",
+                "C:\\Users\\27478\\OneDrive\\桌面\\GenAI赋能工业编程\\homework\\finalwork\\agent_dev_r9_stage3\\stbench\\platforms.py": "b02372d2173bf38ad2cecd7b1e1ce76a70a94ffb53f41723f0c359b403b122d7",
+                "E:\\PLC_Dev\\builds\\codesys_template.project": "b9d4f4a48989d80b95f4e3c0587ba8d9643800e2845114c7324926d1c69a07b5"
+              },
+              "target": null,
+              "profile": "CODESYS V3.5 SP22 Patch 4"
+            }
+          }
+        },
+        "evidence_metadata": {
+          "declared_contract_check": {
+            "status": "not_declared",
+            "supported": 0,
+            "unsupported": 0,
+            "violations": [],
+            "generated_from": "candidate declarations and public Boolean interface only"
+          },
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "functional",
+          "candidate_text_rewritten": false,
+          "source_sha256": "332e4b2ebcb2bb3d93ba013158986d85b2702f9829438597eba99bee8750b71e",
+          "task_json_sha256": "e1bd558b4da33475b438a1ad69183c5c8ff317d2b656baf65ca182a31449b9b8",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 5/23; bounded status: not_run.\nFAILED functional checkpoints: individually_mismatching_outputs names definite assertion mismatches, not a list of passing checks. Compare these actual values with the public requirement. No expected values are supplied. allowed_output_combination_failed concerns a whole permitted combination, not necessarily every field.\nComplete public input prefixes and observed executions (initial-state scope is explicit; no assertion values or test notes):\n[{\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"M06-01\", \"inputs\": {\"THICKNESS_SIGNAL_VALID\": true, \"THICKNESS_FAULT\": false, \"CUTTING_RUN\": true, \"FaultTimestamp\": 0, \"CycleTime\": 20}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": 20, \"observed_outputs_after_case\": {\"Slab_Fault_Counter\": 0, \"Slab_Fault_History\": [0, 0, 0, 0, 0], \"Slab_Runtime_Accumulator\": 20000000}}, {\"case\": \"M06-02\", \"inputs\": {\"THICKNESS_SIGNAL_VALID\": true, \"THICKNESS_FAULT\": true, \"CUTTING_RUN\": true, \"FaultTimestamp\": 100, \"CycleTime\": 20}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 2, \"scan_interval_ms\": 20, \"observed_outputs_after_case\": {\"Slab_Fault_Counter\": 1, \"Slab_Fault_History\": [100, 0, 0, 0, 0], \"Slab_Runtime_Accumulator\": 0}}, {\"case\": \"M06-03\", \"inputs\": {\"THICKNESS_SIGNAL_VALID\": false, \"THICKNESS_FAULT\": true, \"CUTTING_RUN\": true, \"FaultTimestamp\": 999, \"CycleTime\": 20}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 3, \"scan_interval_ms\": 20, \"observed_outputs_after_case\": {\"Slab_Fault_Counter\": 0, \"Slab_Fault_History\": [0, 0, 0, 0, 0], \"Slab_Runtime_Accumulator\": 0}}, {\"case\": \"M06-04\", \"inputs\": {\"THICKNESS_SIGNAL_VALID\": true, \"THICKNESS_FAULT\": true, \"CUTTING_RUN\": true, \"FaultTimestamp\": 200, \"CycleTime\": 20}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": 20, \"observed_outputs_after_case\": {\"Slab_Fault_Counter\": 1, \"Slab_Fault_History\": [200, 0, 0, 0, 0], \"Slab_Runtime_Accumulator\": 0}}], \"checkpoints\": [{\"case\": \"M06-02\", \"individually_mismatching_outputs\": [\"Slab_Runtime_Accumulator\"], \"allowed_output_combination_failed\": false, \"observed_outputs\": {\"Slab_Fault_Counter\": 1, \"Slab_Fault_History\": [100, 0, 0, 0, 0], \"Slab_Runtime_Accumulator\": 0, \"THICKNESS_ALARM\": true}}, {\"case\": \"M06-03\", \"individually_mismatching_outputs\": [\"Slab_Fault_Counter\", \"Slab_Fault_History\", \"Slab_Runtime_Accumulator\"], \"allowed_output_combination_failed\": false, \"observed_outputs\": {\"Slab_Fault_Counter\": 0, \"Slab_Fault_History\": [0, 0, 0, 0, 0], \"Slab_Runtime_Accumulator\": 0, \"THICKNESS_ALARM\": false}}, {\"case\": \"M06-04\", \"individually_mismatching_outputs\": [\"Slab_Fault_Counter\", \"Slab_Fault_History\", \"Slab_Runtime_Accumulator\"], \"allowed_output_combination_failed\": false, \"observed_outputs\": {\"Slab_Fault_Counter\": 1, \"Slab_Fault_History\": [200, 0, 0, 0, 0], \"Slab_Runtime_Accumulator\": 0, \"THICKNESS_ALARM\": true}}], \"relevant_public_clauses\": [{\"id\": \"PUB001\", \"text\": \"Monitor slab-thickness faults on a stone-cutting line, including minimum alarm holding, fault counting, normal-cutting runtime accumulation and a history of the five most recent faults.\"}, {\"id\": \"PUB003\", \"text\": \"2. On each FALSE-to-TRUE transition of a valid fault signal, increment Slab_Fault_Counter and store the current FaultTimestamp in element 0 of Slab_Fault_History. Shift older entries toward higher indices, retaining only the five most recent entries.\"}, {\"id\": \"PUB004\", \"text\": \"3. Accumulate Slab_Runtime_Accumulator using CycleTime only while CUTTING_RUN is TRUE, the thickness signal is valid and no thickness fault is present. Otherwise preserve the accumulated value.\"}, {\"id\": \"PUB006\", \"text\": \"5. At power-up, initialize the fault count, accumulated runtime and all five history entries to zero. Statistics and history are for observation and maintenance only; they must not alter the cutting equipment's operating permissive, and external callers must not modify history entries.\"}, {\"id\": \"PUB005\", \"text\": \"4. At power-up or whenever THICKNESS_SIGNAL_VALID is FALSE, switch off the alarm and clear its holding state. Do not add fault records or accumulate normal runtime while the signal is invalid.\"}], \"candidate_timer_observations\": [{\"case\": \"M06-01\", \"candidate_clock_ms\": 0, \"candidate_timers\": {\"alarmholdtimer\": {\"IN\": false, \"PT\": 0, \"Q\": false, \"ET\": 0}}}, {\"case\": \"M06-02\", \"candidate_clock_ms\": 40, \"candidate_timers\": {\"alarmholdtimer\": {\"IN\": true, \"PT\": 500, \"Q\": false, \"ET\": 20}}}, {\"case\": \"M06-03\", \"candidate_clock_ms\": 100, \"candidate_timers\": {\"alarmholdtimer\": {\"IN\": false, \"PT\": 500, \"Q\": false, \"ET\": 0}}}, {\"case\": \"M06-04\", \"candidate_clock_ms\": 120, \"candidate_timers\": {\"alarmholdtimer\": {\"IN\": true, \"PT\": 500, \"Q\": false, \"ET\": 0}}}]}, {\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"hold-500ms-1\", \"inputs\": {\"THICKNESS_FAULT\": true, \"THICKNESS_SIGNAL_VALID\": true, \"CUTTING_RUN\": false, \"FaultTimestamp\": 101, \"CycleTime\": 34}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": 34, \"observed_outputs_after_case\": {\"Slab_Fault_Counter\": 1, \"Slab_Fault_History\": [101, 0, 0, 0, 0], \"THICKNESS_ALARM\": true}}, {\"case\": \"hold-500ms-2\", \"inputs\": {\"THICKNESS_FAULT\": false, \"THICKNESS_SIGNAL_VALID\": true, \"CUTTING_RUN\": false, \"FaultTimestamp\": 101, \"CycleTime\": 499}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": 499, \"observed_outputs_after_case\": {\"Slab_Fault_Counter\": 1, \"Slab_Fault_History\": [101, 0, 0, 0, 0], \"THICKNESS_ALARM\": false}}, {\"case\": \"hold-500ms-3\", \"inputs\": {\"THICKNESS_FAULT\": false, \"THICKNESS_SIGNAL_VALID\": true, \"CUTTING_RUN\": false, \"FaultTimestamp\": 101, \"CycleTime\": 1}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": 1, \"observed_outputs_after_case\": {\"Slab_Fault_Counter\": 0, \"Slab_Fault_History\": [0, 0, 0, 0, 0]}}], \"checkpoints\": [{\"case\": \"hold-500ms-2\", \"individually_mismatching_outputs\": [\"THICKNESS_ALARM\"], \"allowed_output_combination_failed\": false, \"observed_outputs\": {\"Slab_Fault_Counter\": 1, \"Slab_Fault_History\": [101, 0, 0, 0, 0], \"Slab_Runtime_Accumulator\": 0, \"THICKNESS_ALARM\": false}}, {\"case\": \"hold-500ms-3\", \"individually_mismatching_outputs\": [\"Slab_Fault_Counter\", \"Slab_Fault_History\"], \"allowed_output_combination_failed\": false, \"observed_outputs\": {\"Slab_Fault_Counter\": 0, \"Slab_Fault_History\": [0, 0, 0, 0, 0], \"Slab_Runtime_Accumulator\": 0}}], \"relevant_public_clauses\": [{\"id\": \"PUB001\", \"text\": \"Monitor slab-thickness faults on a stone-cutting line, including minimum alarm holding, fault counting, normal-cutting runtime accumulation and a history of the five most recent faults.\"}, {\"id\": \"PUB003\", \"text\": \"2. On each FALSE-to-TRUE transition of a valid fault signal, increment Slab_Fault_Counter and store the current FaultTimestamp in element 0 of Slab_Fault_History. Shift older entries toward higher indices, retaining only the five most recent entries.\"}, {\"id\": \"PUB002\", \"text\": \"1. When THICKNESS_SIGNAL_VALID is TRUE, THICKNESS_FAULT indicates that thickness deviation exceeds tolerance. Activate THICKNESS_ALARM immediately when the fault becomes TRUE, and hold each triggered alarm for at least 500 ms. Keep the alarm active while the fault persists.\"}, {\"id\": \"PUB004\", \"text\": \"3. Accumulate Slab_Runtime_Accumulator using CycleTime only while CUTTING_RUN is TRUE, the thickness signal is valid and no thickness fault is present. Otherwise preserve the accumulated value.\"}, {\"id\": \"PUB005\", \"text\": \"4. At power-up or whenever THICKNESS_SIGNAL_VALID is FALSE, switch off the alarm and clear its holding state. Do not add fault records or accumulate normal runtime while the signal is invalid.\"}], \"candidate_timer_observations\": [{\"case\": \"hold-500ms-1\", \"candidate_clock_ms\": 0, \"candidate_timers\": {\"alarmholdtimer\": {\"IN\": true, \"PT\": 500, \"Q\": false, \"ET\": 0}}}, {\"case\": \"hold-500ms-2\", \"candidate_clock_ms\": 499, \"candidate_timers\": {\"alarmholdtimer\": {\"IN\": true, \"PT\": 500, \"Q\": false, \"ET\": 499}}}, {\"case\": \"hold-500ms-3\", \"candidate_clock_ms\": 500, \"candidate_timers\": {\"alarmholdtimer\": {\"IN\": true, \"PT\": 500, \"Q\": false, \"ET\": 499}}}]}, {\"mode\": \"sequence\", \"prefix_omitted\": false, \"input_trace\": [{\"case\": \"slab-elapsed-1\", \"inputs\": {\"THICKNESS_SIGNAL_VALID\": true, \"THICKNESS_FAULT\": false, \"CUTTING_RUN\": true, \"CycleTime\": 3, \"FaultTimestamp\": 0}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": 3, \"observed_outputs_after_case\": {\"Slab_Runtime_Accumulator\": 3000000}}, {\"case\": \"slab-elapsed-2\", \"inputs\": {\"THICKNESS_SIGNAL_VALID\": true, \"THICKNESS_FAULT\": false, \"CUTTING_RUN\": true, \"CycleTime\": 117, \"FaultTimestamp\": 0}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": 117, \"observed_outputs_after_case\": {\"Slab_Runtime_Accumulator\": 117000000}}, {\"case\": \"slab-elapsed-3\", \"inputs\": {\"THICKNESS_SIGNAL_VALID\": true, \"THICKNESS_FAULT\": false, \"CUTTING_RUN\": true, \"CycleTime\": 880, \"FaultTimestamp\": 0}, \"const_inputs\": {}, \"initial_interface_values\": {}, \"private_initial_state_present\": false, \"initial_state_scope\": \"public_interface_only\", \"cycles\": 1, \"scan_interval_ms\": 880, \"observed_outputs_after_case\": {\"Slab_Runtime_Accumulator\": 880000000}}], \"checkpoints\": [{\"case\": \"slab-elapsed-2\", \"individually_mismatching_outputs\": [\"Slab_Runtime_Accumulator\"], \"allowed_output_combination_failed\": false, \"observed_outputs\": {\"Slab_Runtime_Accumulator\": 117000000, \"THICKNESS_ALARM\": false}}, {\"case\": \"slab-elapsed-3\", \"individually_mismatching_outputs\": [\"Slab_Runtime_Accumulator\"], \"allowed_output_combination_failed\": false, \"observed_outputs\": {\"Slab_Runtime_Accumulator\": 880000000, \"THICKNESS_ALARM\": false}}], \"relevant_public_clauses\": [{\"id\": \"PUB004\", \"text\": \"3. Accumulate Slab_Runtime_Accumulator using CycleTime only while CUTTING_RUN is TRUE, the thickness signal is valid and no thickness fault is present. Otherwise preserve the accumulated value.\"}, {\"id\": \"PUB001\", \"text\": \"Monitor slab-thickness faults on a stone-cutting line, including minimum alarm holding, fault counting, normal-cutting runtime accumulation and a history of the five most recent faults.\"}, {\"id\": \"PUB006\", \"text\": \"5. At power-up, initialize the fault count, accumulated runtime and all five history entries to zero. Statistics and history are for observation and maintenance only; they must not alter the cutting equipment's operating permissive, and external callers must not modify history entries.\"}, {\"id\": \"PUB005\", \"text\": \"4. At power-up or whenever THICKNESS_SIGNAL_VALID is FALSE, switch off the alarm and clear its holding state. Do not add fault records or accumulate normal runtime while the signal is invalid.\"}, {\"id\": \"PUB003\", \"text\": \"2. On each FALSE-to-TRUE transition of a valid fault signal, increment Slab_Fault_Counter and store the current FaultTimestamp in element 0 of Slab_Fault_History. Shift older entries toward higher indices, retaining only the five most recent entries.\"}], \"candidate_timer_observations\": [{\"case\": \"slab-elapsed-1\", \"candidate_clock_ms\": 0, \"candidate_timers\": {\"alarmholdtimer\": {\"IN\": false, \"PT\": 0, \"Q\": false, \"ET\": 0}}}, {\"case\": \"slab-elapsed-2\", \"candidate_clock_ms\": 117, \"candidate_timers\": {\"alarmholdtimer\": {\"IN\": false, \"PT\": 0, \"Q\": false, \"ET\": 0}}}, {\"case\": \"slab-elapsed-3\", \"candidate_clock_ms\": 997, \"candidate_timers\": {\"alarmholdtimer\": {\"IN\": false, \"PT\": 0, \"Q\": false, \"ET\": 0}}}]}]",
+      "timing": {
+        "static_seconds": 0.219,
+        "native_queue_seconds": 0.0,
+        "native_compile_seconds": 19.0,
+        "functional_seconds": 0.203
+      },
+      "idx": 2,
+      "code": "FUNCTION_BLOCK FB_SlabThicknessMonitor\n(* \n * ENGINEERING_CONTRACT\n * =============================================================================\n * Output/State          | Activation          | Retention            | Reset/Deactivation            | Units\n * ----------------------+---------------------+----------------------+-------------------------------+-----------------\n * THICKNESS_ALARM       | Rising edge valid   | Min 500ms hold;      | Signal invalid clears all     | BOOL\n *                       | THICKNESS_FAULT     | continues if fault   | alarm and hold state (PUB001) |\n * Alarm hold timer      | TON(IN: valid &     | TON.ET saturates at  | Signal invalid resets TON     | LTIME (≥500ms)\n *                       |   (fault OR holding))| PT=500ms            |                               |\n * Holding flag          | Fault OR holding    | Self-holds while     | Signal invalid clears         | BOOL\n *                       |                     |   fault OR timer run |                               |\n * Slab_Fault_Counter    | FALSE→TRUE valid    | Accumulates monoton  | None by task spec             | UINT\n *                       | fault transition    | (never auto-reset)   |                               |\n * Slab_Fault_History[0] | New fault entry     | Shifts [n]→[n+1]     | Power-up init to 0            | ARRAY[0..4] DINT\n *                       | writes to index 0   | (0 newest)           |                               |\n * Slab_Runtime_Accumulator| While CUTTING_RUN  | Preserved when       | None by task spec             | LTIME (accumulates)\n *                       | + valid + no fault  | conditions not met   |                               |\n * =============================================================================\n * CONTRACT_RULES [{\"kind\": \"hold_until_reset\", \"output\": \"THICKNESS_ALARM\", \"set_input\": \"THICKNESS_FAULT\", \"reset_input\": null}]\n *)\n\nVAR_INPUT\n    THICKNESS_FAULT        : BOOL;\n    THICKNESS_SIGNAL_VALID : BOOL;\n    CUTTING_RUN            : BOOL;\n    FaultTimestamp         : DINT;\n    CycleTime              : TIME;\nEND_VAR\n\nVAR_OUTPUT\n    THICKNESS_ALARM           : BOOL;\n    Slab_Fault_Counter        : UINT;\n    Slab_Runtime_Accumulator  : LTIME;\n    Slab_Fault_History        : ARRAY[0..4] OF DINT;\nEND_VAR\n\nVAR\n    faultRisingEdge    : R_TRIG;\n    signalValidPrev    : BOOL;\n    alarmHoldTimer     : TON;\n    alarmHolding       : BOOL;\n    faultActive        : BOOL;\nEND_VAR\n\n// ---------------------------------------------------------------------------\n// Power-up initialization (first scan after instantiation)\n// ---------------------------------------------------------------------------\nIF NOT alarmHoldTimer.Q AND NOT faultActive AND NOT alarmHolding THEN\n    Slab_Fault_Counter       := 0;\n    Slab_Runtime_Accumulator := LTIME#0ms;\n    Slab_Fault_History[0]    := 0;\n    Slab_Fault_History[1]    := 0;\n    Slab_Fault_History[2]    := 0;\n    Slab_Fault_History[3]    := 0;\n    Slab_Fault_History[4]    := 0;\nEND_IF;\n\n// ---------------------------------------------------------------------------\n// Detect FALSE→TRUE transition on valid fault signal\n// ---------------------------------------------------------------------------\nfaultRisingEdge(CLK := THICKNESS_FAULT AND THICKNESS_SIGNAL_VALID);\n\n// ---------------------------------------------------------------------------\n// Handle signal-valid transitions: clear alarm/hold when signal lost (PUB001)\n// ---------------------------------------------------------------------------\nIF THICKNESS_SIGNAL_VALID THEN\n    IF NOT signalValidPrev THEN\n        // Signal just restored after being invalid\n        alarmHolding  := FALSE;\n        alarmHoldTimer(IN := FALSE);\n        faultActive   := FALSE;\n    END_IF;\n\n    // -------------------------------------------------------------------------\n    // On rising edge of valid fault: record entry and start hold\n    // -------------------------------------------------------------------------\n    IF faultRisingEdge.Q THEN\n        // Increment counter\n        Slab_Fault_Counter := Slab_Fault_Counter + UINT#1;\n\n        // Shift history: index 3→4, 2→3, 1→2, 0→1, then write new to 0\n        Slab_Fault_History[4] := Slab_Fault_History[3];\n        Slab_Fault_History[3] := Slab_Fault_History[2];\n        Slab_Fault_History[2] := Slab_Fault_History[1];\n        Slab_Fault_History[1] := Slab_Fault_History[0];\n        Slab_Fault_History[0] := FaultTimestamp;\n\n        // Activate alarm and start 500 ms hold timer\n        faultActive        := TRUE;\n        alarmHolding       := TRUE;\n        alarmHoldTimer(IN  := TRUE, PT := T#500ms);\n    END_IF;\n\n    // -------------------------------------------------------------------------\n    // Update alarm state: hold while fault persists or timer running\n    // -------------------------------------------------------------------------\n    IF faultActive THEN\n        // Keep timer running while fault is present\n        alarmHoldTimer(IN := TRUE, PT := T#500ms);\n\n        // Alarm stays active while fault or hold timer active\n        alarmHolding := THICKNESS_FAULT OR alarmHoldTimer.Q;\n\n        // Release hold tracking once fault clears and timer completes\n        IF NOT THICKNESS_FAULT AND alarmHolding AND NOT alarmHoldTimer.Q THEN\n            alarmHolding := FALSE;\n        END_IF;\n\n        // Clear fault-active flag when fault goes away (hold may continue)\n        IF NOT THICKNESS_FAULT THEN\n            faultActive := FALSE;\n        END_IF;\n    END_IF;\n\n    // Final alarm output\n    THICKNESS_ALARM := alarmHolding OR faultActive;\n\n    // -------------------------------------------------------------------------\n    // Runtime accumulation: only while cutting, signal valid, no fault\n    // -------------------------------------------------------------------------\n    IF CUTTING_RUN AND NOT THICKNESS_FAULT THEN\n        Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + TO_LTIME(CycleTime);\n    END_IF;\n\nELSE\n    // Signal invalid: clear alarm and all hold state (PUB001)\n    THICKNESS_ALARM  := FALSE;\n    alarmHolding     := FALSE;\n    faultActive      := FALSE;\n    alarmHoldTimer(IN := FALSE);\nEND_IF;\n\n// ---------------------------------------------------------------------------\n// Latch previous scan signal-valid state for edge detection\n// ---------------------------------------------------------------------------\nsignalValidPrev := THICKNESS_SIGNAL_VALID;\n\nEND_FUNCTION_BLOCK",
+      "code_hash": "332e4b2ebcb2bb3d93ba013158986d85b2702f9829438597eba99bee8750b71e",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "model_exact_edits",
+        "base_sha256": "5b97659a3b4f984c9a047bddd79aab772d61668068f24b6ec4adaf80ef9be5e0",
+        "plan": {
+          "edits": [
+            {
+              "old": "    Slab_Runtime_Accumulator := LTIME#0s;",
+              "new": "    Slab_Runtime_Accumulator := LTIME#0ms;"
+            },
+            {
+              "old": "    IF CUTTING_RUN AND NOT THICKNESS_FAULT THEN\n        Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + CycleTime;",
+              "new": "    IF CUTTING_RUN AND NOT THICKNESS_FAULT THEN\n        Slab_Runtime_Accumulator := Slab_Runtime_Accumulator + TO_LTIME(CycleTime);"
+            }
+          ]
+        }
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 5076,
+      "completion_tokens": 942,
+      "cost_cny": 0.014672196,
+      "latency_s": 23.203,
+      "generation_seconds": 23.203,
+      "end_to_end_seconds": 42.625,
+      "format_edits": [],
+      "raw_source_sha256": "332e4b2ebcb2bb3d93ba013158986d85b2702f9829438597eba99bee8750b71e",
+      "provider_error": ""
+    },
+    {
+      "complete_code": false,
+      "compiles": false,
+      "native_pass": false,
+      "native_eligible": true,
+      "functional_pass": false,
+      "tests_passed": 0,
+      "tests_total": 23,
+      "verification_status": "not_run",
+      "judge": {
+        "compiles": false,
+        "compile_errors": [
+          {
+            "code": "E_NO_POU",
+            "line": 0,
+            "message": "未找到可执行 POU"
+          }
+        ],
+        "tests_total": 23,
+        "tests_passed": 0,
+        "pass_rate": 0.0,
+        "failure_summary": "未找到可执行 POU",
+        "cases": [],
+        "model_check": {
+          "states": 0,
+          "traces": 0,
+          "specs_total": 0,
+          "specs_hold": 0,
+          "specs_violated": 0,
+          "specs_inconclusive": 0,
+          "violations": [],
+          "error": "",
+          "truncated": false,
+          "executed": false,
+          "fixed_input_domains": {}
+        },
+        "platform_results": {
+          "codesys": {
+            "platform": "codesys",
+            "status": "not_run",
+            "diagnostics": [
+              "Static/interface gate did not pass"
+            ]
+          }
+        },
+        "evidence_metadata": {
+          "data_version": "STBench-F1.4",
+          "distribution": "STBench-F1.4-P1",
+          "stage": "static",
+          "candidate_text_rewritten": false,
+          "source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "task_json_sha256": "e1bd558b4da33475b438a1ad69183c5c8ff317d2b656baf65ca182a31449b9b8",
+          "functional_execution": "Python scan interpreter",
+          "string_index_mode": "codesys_zero_based_byte",
+          "compound_assignment": "value_copy",
+          "classification": "evaluated"
+        }
+      },
+      "feedback": "Functional checks: 0/23; bounded status: not_run.\nLine 0 [E_NO_POU]: 未找到可执行 POU\nGenerated source context (candidate text only):\n",
+      "timing": {
+        "static_seconds": 0.203
+      },
+      "idx": 3,
+      "code": "",
+      "code_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "engineering_contract": {
+        "present": false,
+        "comment_lines": 0,
+        "cited_public_clauses": []
+      },
+      "model_patch": {
+        "mode": "invalid_model_patch",
+        "error": "Expecting value: line 1 column 1 (char 0)"
+      },
+      "actual_model": "minimax-m2.7",
+      "prompt_tokens": 8640,
+      "completion_tokens": 2351,
+      "cost_cny": 0.029934996,
+      "latency_s": 64.235,
+      "generation_seconds": 64.235,
+      "end_to_end_seconds": 64.516,
+      "format_edits": [],
+      "raw_source_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "provider_error": ""
+    }
+  ],
+  "best_attempt": 2,
+  "stop_reason": "maximum_four_candidates",
+  "tests_total": 23,
+  "study_plan_sha256": "e0db2940199cc656528584436ab352ead1fdbaa878edd82cd2958bfa3af1ca4c",
+  "started_at": "2026-11-13T19:14:38.830748+08:00",
+  "wall_seconds": 214.047,
+  "finished_at": "2026-11-13T19:18:12.756262+08:00",
+  "operational_network_wait": {
+    "batch": "v4_wait900",
+    "ceiling_seconds": 900,
+    "task_seconds": 2400,
+    "evaluation_reserve_seconds": 150,
+    "model_parameters_unchanged": true
+  }
+}
